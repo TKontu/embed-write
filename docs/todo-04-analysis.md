@@ -41,7 +41,8 @@ This is the core of revision 2. The pattern model is built and tested offline on
   - done (R26/A1): `analysis/transitions.py` (LabelledSection, TransitionStats, START/END sentinels); streaming per-section-type counts, probability, distinct-document support, deterministic transitions(). seen: tests/test_transitions.py, gate 497 tests OK at head 81240766c9ed657611fa8c12612efd9fe5324398 (PR #71). Production caller: unwired by design until SQ-03. Residual: 100 000-word / full-corpus bound untested.
 - [x] **SQ-02** `[A]` Expected-move set per section type: which moves are near-universal, which optional
   - done (R27/A1): `analysis/expected_moves.py` (MovePresence, ExpectedMoves, EXPECTED/OPTIONAL/RARE roles); one streaming pass over LabelledSection, presence rate per section type with distinct-document support, inclusive thresholds. seen: tests/test_expected_moves.py, gate 508 tests OK at head 6aab73e1536d0cf7ace430dcb7f883fe2ad61304 (PR #73). Production caller: unwired by design until SQ-03. Residual: full-corpus bound untested.
-- [ ] **SQ-03** `[A]` Detectors: missing expected move, move out of order, move foreign to the section — each returns the evidence (how often the pattern occurs in the corpus)
+- [x] **SQ-03** `[A]` Detectors: missing expected move, move out of order, move foreign to the section — each returns the evidence (how often the pattern occurs in the corpus)
+  - done (R28/A1): `analysis/detectors.py` (Finding, Detectors; MISSING/FOREIGN/OUT_OF_ORDER with corpus evidence). seen: tests/test_detectors.py, gate 520 tests OK at head cb20ee87a5d85a929cca6e7202bb7e9ecc9aeb9d (PR #75). Production caller: unwired by design until SQ-04. Residual: full-corpus bound untested.
 - [ ] **SQ-04** `[A]` Confidence from corpus support: a pattern seen in 5 reports is not a rule — check: flags below a minimum support count are suppressed
 - [ ] **SQ-05** `[A]` Perturbation generator for G-05
 - [ ] **SQ-06** `[A→H]` Review of the learned patterns per section type: the expert marks any that are corpus accidents
@@ -83,7 +84,8 @@ This is the core of revision 2. The pattern model is built and tested offline on
 
 ## Redundancy *(G-04)*
 
-- [ ] **RD-01** `[A]` Within-level similarity across sections; adjacent sentences are excluded
+- [x] **RD-01** `[A]` Within-level similarity across sections; adjacent sentences are excluded
+  - done (R28/A2): `analysis/redundancy.py` (Unit, RedundantPair, redundant_pairs; cross-section cosine, adjacent excluded, heap-bounded limit). seen: tests/test_redundancy.py, gate 520 tests OK at head 70729199fc4c39462c8b7978ea0f58d3931b0edf (PR #76). Production caller: unwired by design until RD-02 / G-04. Residual: O(n^2*d) large-document bound untested.
 - [ ] **RD-02** `[A]` Slow layer separates repetition from an intentional recap (summary and conclusion sections restate by design)
 - [ ] **RD-03** `[A]` Per-document suppression: the expert marks a pair as intentional
 
