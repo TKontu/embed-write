@@ -82,6 +82,7 @@ decisions in HANDOFF.md.
 - Live or long work runs only as Herdr lanes in their own live-<lane> tabs. Never wait for one to
   finish: carry it in HANDOFF.md and end the round. Probe before starting; never duplicate.
   Never halt, relaunch or take over a carried lane; each continues across rounds until it completes.
+  Lanes are tabs in this round's Herdr workspace; never create a Herdr workspace.
 - HANDOFF.md must name every carried lane: its tab, owner, what it is doing, how to check it, and
   that it carries over and must not be halted or duplicated.
 - While waiting on CI or subagents, keep a background wake-up armed so the session resumes.
@@ -267,6 +268,12 @@ def log(message: str) -> None:
         print(line, flush=True)
 
 
+def own_workspace() -> list[str]:
+    """Herdr puts a tab without --workspace in the focused workspace; pin it to ours."""
+    ws = os.environ.get("HERDR_WORKSPACE_ID")
+    return ["--workspace", ws] if ws else []
+
+
 class Herdr:
     def __init__(self, run: Run = _run) -> None:
         self.run = run
@@ -287,7 +294,8 @@ class Herdr:
 
     def new_tab(self) -> tuple[str, str]:
         made = self._json(
-            "tab", "create", "--cwd", str(ROOT), "--label", TAB_LABEL, "--no-focus",
+            "tab", "create", *own_workspace(), "--cwd", str(ROOT), "--label", TAB_LABEL,
+        "--no-focus",
             "--env", f"ROUND_SUPERVISOR_ROOT={ROOT}",
         )  # fmt: skip
         return made["tab"]["tab_id"], made["root_pane"]["pane_id"]
@@ -732,7 +740,8 @@ def up(run_args: Sequence[str], herdr: Herdr | None = None) -> int:
     herdr = herdr or Herdr()
     me = f"python3 {SELF}"
     made = herdr._json(
-        "tab", "create", "--cwd", str(ROOT), "--label", "round-loop", "--no-focus",
+        "tab", "create", *own_workspace(), "--cwd", str(ROOT), "--label", "round-loop",
+        "--no-focus",
         "--env", f"ROUND_SUPERVISOR_ROOT={ROOT}",
     )  # fmt: skip
     top = made["root_pane"]["pane_id"]

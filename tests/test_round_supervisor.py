@@ -258,6 +258,35 @@ class HerdrTests(unittest.TestCase):
         self.assertEqual(rs.Herdr(record).new_tab(), ("t", "p"))
         self.assertIn(f"ROUND_SUPERVISOR_ROOT={rs.ROOT}", calls[0])
 
+    def _tabs(self, calls):
+        def record(cmd, _timeout):
+            calls.append(list(cmd))
+            return 0, ('{"result": {"tab": {"tab_id": "t"}, "root_pane": {"pane_id": "p"},'
+                       ' "pane": {"pane_id": "q"}}}')
+        return record
+
+    def test_a_planner_tab_lands_in_the_supervisors_workspace(self):
+        # Herdr puts a tab without --workspace in whichever workspace is focused.
+        calls = []
+        with mock.patch.dict(os.environ, {"HERDR_WORKSPACE_ID": "wS"}):
+            rs.Herdr(self._tabs(calls)).new_tab()
+        self.assertEqual(calls[0][calls[0].index("--workspace") + 1], "wS")
+
+    def test_up_opens_the_loop_tab_in_the_supervisors_workspace(self):
+        calls = []
+        with mock.patch.dict(os.environ, {"HERDR_WORKSPACE_ID": "wS"}), \
+                mock.patch.object(rs.time, "sleep"):
+            rs.up([], rs.Herdr(self._tabs(calls)))
+        create = next(c for c in calls if c[1:3] == ["tab", "create"])
+        self.assertEqual(create[create.index("--workspace") + 1], "wS")
+
+    def test_outside_herdr_a_tab_uses_herdrs_default(self):
+        calls = []
+        env = {k: v for k, v in os.environ.items() if k != "HERDR_WORKSPACE_ID"}
+        with mock.patch.dict(os.environ, env, clear=True):
+            rs.Herdr(self._tabs(calls)).new_tab()
+        self.assertNotIn("--workspace", calls[0])
+
 
 class DashboardTests(unittest.TestCase):
     @staticmethod
