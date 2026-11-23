@@ -47,7 +47,8 @@ The gates in `todo-01` say what is tested. This file builds the machinery that r
 
 ## Blind judgment
 
-- [ ] **BJ-01** `[A]` Blind-pair tool (`todo-01` X-04): random order, arm hidden, choice plus optional reason
+- [~] **BJ-01** `[A]` Blind-pair tool (`todo-01` X-04): random order, arm hidden, choice plus optional reason
+  - partial (R6/A1, PR #26, merge e9d37cf): `experiments/blind_pair.py` (make_pair, render_html, record_choice, to_preference_choices); tests show no arm label or key in the rendered HTML across 100 seeds; synthetic texts only. Unwired by design until BJ-02. Residuals: to_preference_choices counts any non-arm_a winner as 'b'; no write locking; session binding left to BJ-02. Seen when G-02 runs.
 - [ ] **BJ-02** `[A]` Session design: pairs interleaved across arms, with repeated pairs to measure the expert's consistency
 - [ ] **BJ-03** `[H]` The judgments themselves
 - [ ] **BJ-04** `[A]` Consistency report: how often the expert agrees with their own earlier choice. Low consistency loosens every threshold that depends on it
@@ -58,7 +59,8 @@ The gates in `todo-01` say what is tested. This file builds the machinery that r
 
 - [ ] **ST-01** `[A]` Pre-registration: a gate cannot run until its threshold is recorded and confirmed — check: the runner refuses otherwise
   - partial (R5/A2, PR #22, merge 25380c0): `experiments/preregistration.py` + `run_gate` refuses a missing, malformed, mismatched or unconfirmed `experiments/preregistration/<gate>.json` before calling the gate; only `sample` exempt; tests pass. No real record exists; confirming each threshold is the expert's [H] act. Residual: validation cannot tell who wrote `confirmed_by` (process-enforced). Seen when G-01 runs.
-- [ ] **ST-02** `[A]` Sample size and interval on every reported number
+- [~] **ST-02** `[A]` Sample size and interval on every reported number
+  - partial (R6/A2, PR #25, merge d1fc314): `render_report` refuses a row with no interval (ValueError naming gate, arm, metric) unless `allow_missing_interval` / `--allow-missing-interval`, which marks the row and lists it under "## Missing intervals"; store already rejects n<1. Seen when G-01 runs.
 - [ ] **ST-03** `[A]` Multiple arms: report all arms, not only the winner
 - [ ] **ST-04** `[A]` Negative results kept in the store and in the result documents
 - [ ] **ST-05** `[H]` One-annotator limit acknowledged in every result document; a second expert's labels on a sample when one is available
