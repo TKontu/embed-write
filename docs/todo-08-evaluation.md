@@ -52,7 +52,8 @@ The gates in `todo-01` say what is tested. This file builds the machinery that r
 - [~] **BJ-02** `[A]` Session design: pairs interleaved across arms, with repeated pairs to measure the expert's consistency
   - partial (R7/A1, PR #29, merge b191ce2): `experiments/blind_session.py` (build_session, save_session, load_session, record_session_choice, consistency_pairs) wires blind_pair; originals interleaved with no adjacent same comparison, ceil(fraction·total) repeats ≥ min_gap after their original with re-randomised order, repeat links server-side only; synthetic tests pass (sweep 0/900 adjacent clashes after the review fix). Unwired until a G-02 session runs (BJ-03 [H]). Residuals: after 200 placement attempts the fewest-clash session is kept silently; session JSON holds keys and arms (private storage); no write locking. Seen when G-02 runs.
 - [ ] **BJ-03** `[H]` The judgments themselves
-- [ ] **BJ-04** `[A]` Consistency report: how often the expert agrees with their own earlier choice. Low consistency loosens every threshold that depends on it
+- [~] **BJ-04** `[A]` Consistency report: how often the expert agrees with their own earlier choice. Low consistency loosens every threshold that depends on it
+  - partial (R8/A1, PR #31, merge 6bfa273): `experiments/consistency.py` (consistency_report, to_store_record, CLI `python3 -m experiments.consistency CHOICES.jsonl`) over blind_session.consistency_pairs; seeded bootstrap interval; caution line below `--low-threshold` (default 0.8), never loosens anything; synthetic tests pass. Unwired until a G-02 session runs (BJ-03 [H]). Residuals: percentile bootstrap collapses to a point at all-agree/none-agree; CLI raises a traceback on a file with no repeated pairs. Seen when G-02 runs.
 
 ---
 
@@ -64,7 +65,8 @@ The gates in `todo-01` say what is tested. This file builds the machinery that r
   - partial (R6/A2, PR #25, merge d1fc314): `render_report` refuses a row with no interval (ValueError naming gate, arm, metric) unless `allow_missing_interval` / `--allow-missing-interval`, which marks the row and lists it under "## Missing intervals"; store already rejects n<1. Seen when G-01 runs.
 - [~] **ST-03** `[A]` Multiple arms: report all arms, not only the winner
   - partial (R7/A2, PR #28, merge bd96382): `render_report(expected_arms=, allow_missing_arms=)` and CLI `--expected-arm`/`--allow-missing-arms`: a missing expected arm raises, or with the flag is marked and listed under "## Missing arms"; unexpected arms are rendered and listed; default output byte-identical; permutation tests show report and compare render every arm. Seen when G-01 runs.
-- [ ] **ST-04** `[A]` Negative results kept in the store and in the result documents
+- [~] **ST-04** `[A]` Negative results kept in the store and in the result documents
+  - partial (R8/A2, PR #32, merge d56837d): tests pin the store as append-only (API exactly add/add_many/close/query) and round-trip zero/negative values and intervals; render_report renders every row incl. worse earlier/later ones; intervals now render `95% CI [lo, hi]` (fixes the EV-03 ambiguity); compare output footer counts earlier rows not shown. Residual: experiments/results/TEMPLATE.md still shows `low-high`. Seen when G-01 runs.
 - [ ] **ST-05** `[H]` One-annotator limit acknowledged in every result document; a second expert's labels on a sample when one is available
 
 ---
