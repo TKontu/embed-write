@@ -55,6 +55,19 @@ class ComparisonTests(unittest.TestCase):
         self.assertIn('accuracy / a: 2 superseded rows',
                       self.module().render_comparison(self.store, 'G-01'))
 
+    def test_footer_counts_hidden_rows_and_points_to_store(self):
+        self.store.add_many([record(timestamp='2026-01-01', value=0.1),
+                             record(timestamp='2026-02-01', value=-0.5),
+                             record(timestamp='2026-03-01'),
+                             record(arm='b', timestamp='2026-01-01', value=0.0),
+                             record(arm='b', timestamp='2026-02-01')])
+        output = self.module().render_comparison(self.store, 'G-01')
+        self.assertIn('accuracy / a: 2 superseded rows', output)
+        self.assertIn('accuracy / b: 1 superseded rows', output)
+        self.assertTrue(output.endswith(
+            '\n\n3 earlier rows not shown (counts per arm above); '
+            'they remain in the store and in the full report.\n'), output)
+
     def test_timestamp_offsets_are_compared_chronologically(self):
         self.store.add_many([record(timestamp='2026-01-01T10:00:00+02:00'),
                              record(timestamp='2026-01-01T09:00:00Z', value=0.8)])

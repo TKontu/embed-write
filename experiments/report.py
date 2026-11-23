@@ -18,6 +18,8 @@ def render_report(store, gate, question, *, hypothesis='<...>',
     """Reject empty gates, missing intervals and missing expected arms unless drafting.
 
     Every stored arm is always rendered (ST-03); expected_arms only adds checks.
+    Every stored row renders in insertion order, including worse earlier or
+    later rows for the same arm/metric (ST-04: no latest-only/best-only filter).
     """
     arms = {}
     missing_intervals = []
@@ -30,7 +32,7 @@ def render_report(store, gate, question, *, hypothesis='<...>',
             missing_intervals.append(f'- {identity}')
             uncertainty = 'interval: NOT REPORTED (ST-02 violation)'
         else:
-            uncertainty = f'95% CI {interval[0]}-{interval[1]}'
+            uncertainty = f'95% CI [{interval[0]}, {interval[1]}]'
         line = (f"- {row['metric']}: {row['value']} ({uncertainty}), n={row['n']}; "
                 f"commit: {row['commit']}; modelVersion: {row['modelVersion']}; "
                 f"inventoryVersion: {row['inventoryVersion']}; timestamp: {row['timestamp']}")
