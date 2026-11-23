@@ -5,7 +5,8 @@ The handler is called once per request with the whole item list and returns one 
 
 Wires SV-05: the bind host is checked with ``check_host`` (fail closed) and the service runs inside
 ``guard_sockets`` for its lifetime, so outbound connects made by handlers are guarded.
-``AnalysisService`` is unwired by design until SV-02/SV-03 attach real handlers and a client.
+SV-03: ``/v1/batch`` enforces the dirty-node contract (``service.contract.validate_items``) unless
+constructed with ``contract=False``. Production client: ``service.client.AnalysisClient``.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Callable, Sequence
 
+from service.contract import DEFAULT_MAX_NODE_CHARS, ContractError, validate_items
 from service.network_guard import NetworkGuardError, NetworkPolicy, check_host, guard_sockets
 
 Handler = Callable[[Sequence[dict]], Sequence[Any]]
@@ -30,7 +32,8 @@ class _BadRequest(Exception):
     pass
 
 
-def _parse_items(raw: bytes, max_batch: int) -> list:
+def _parse_items(raw: bytes, max_batch: int, max_node_chars: int | None = None) -> list:
+    """Parse a batch; when ``max_node_chars`` is set, enforce the SV-03 dirty-node contract."""
     try:
         payload = json.loads(raw)
     except (ValueError, UnicodeDecodeError) as exc:
@@ -47,6 +50,11 @@ def _parse_items(raw: bytes, max_batch: int) -> list:
             and isinstance(item.get("text"), str)
         ):
             raise _BadRequest(f"items[{i}] must have string 'id' and 'text'")
+    if max_node_chars is not None:
+        try:
+            validate_items(items, max_node_chars)
+        except ContractError as exc:
+            raise _BadRequest(f"contract: {exc}") from exc
     return [{"id": item["id"], "text": item["text"]} for item in items]
 
 
@@ -61,12 +69,15 @@ class AnalysisService:
         policy: NetworkPolicy = NetworkPolicy(),
         max_batch: int = 256,
         max_body_bytes: int = 1 << 20,
+        contract: bool = True,
+        max_node_chars: int = DEFAULT_MAX_NODE_CHARS,
     ):
         check_host(host, port, policy)  # fail closed before binding
         self._handler = handler
         self._policy = policy
         self._max_batch = max_batch
         self._max_body = max_body_bytes
+        self._max_node_chars = max_node_chars if contract else None
         self._server = ThreadingHTTPServer((host, port), self._make_request_handler())
         self._server.daemon_threads = True
         self._thread: threading.Thread | None = None
@@ -139,7 +150,9 @@ class AnalysisService:
                     self._send(413, {"error": f"body exceeds {service._max_body} bytes"})
                     return
                 try:
-                    items = _parse_items(self.rfile.read(length), service._max_batch)
+                    items = _parse_items(
+                        self.rfile.read(length), service._max_batch, service._max_node_chars
+                    )
                 except _BadRequest as exc:
                     self._send(400, {"error": str(exc)})
                     return
