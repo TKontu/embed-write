@@ -1,3 +1,4 @@
+import contextlib
 import io
 import json
 import os
@@ -6,7 +7,7 @@ import tempfile
 import unittest
 
 from experiments.blind_session import build_session, consistency_pairs, record_session_choice
-from experiments.consistency import CAUTION, consistency_report, main, to_store_record
+from experiments.consistency import CAUTION, DEGENERATE_NOTE, consistency_report, main, to_store_record
 from experiments.store import ResultStore
 
 
@@ -37,6 +38,11 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(consistency_report(pairs(5, 0), n_resamples=200)['interval'], (1.0, 1.0))
         r = consistency_report(pairs(0, 5), n_resamples=200)
         self.assertEqual((r['rate'], r['interval']), (0.0, (0.0, 0.0)))
+
+    def test_degenerate_interval_flag(self):
+        self.assertTrue(consistency_report(pairs(5, 0), n_resamples=200)['degenerate_interval'])
+        self.assertTrue(consistency_report(pairs(0, 5), n_resamples=200)['degenerate_interval'])
+        self.assertNotIn('degenerate_interval', consistency_report(pairs(3, 1), n_resamples=200))
 
     def test_empty_raises(self):
         with self.assertRaises(ValueError):
@@ -85,13 +91,25 @@ class IntegrationTests(unittest.TestCase):
         n = self.write_session(flip_repeats=0)
         lines = self.run_cli()
         self.assertEqual(json.loads(lines[0])['rate'], 1.0)
-        self.assertEqual(len(lines), 1)
+        self.assertTrue(json.loads(lines[0])['degenerate_interval'])
+        self.assertEqual(lines[1:], [DEGENERATE_NOTE])
         open(self.path, 'w').close()
         n = self.write_session(flip_repeats=2)
         lines = self.run_cli()
         self.assertEqual(json.loads(lines[0])['n'], n)
         self.assertEqual(lines[1:], [CAUTION])
         self.assertEqual(len(self.run_cli('--low-threshold', '0.1')), 1)
+
+    def test_cli_no_repeated_pairs_exits_2(self):
+        open(self.path, 'w').close()
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), self.assertRaises(SystemExit) as cm:
+            main([self.path], out=io.StringIO())
+        self.assertEqual(cm.exception.code, 2)
+        lines = err.getvalue().splitlines()
+        self.assertEqual(len(lines), 1)
+        self.assertIn('no repeated pairs', lines[0])
+        self.assertNotIn('Traceback', err.getvalue())
 
 
 if __name__ == '__main__':

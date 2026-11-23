@@ -16,10 +16,12 @@ METRIC = 'self_consistency'
 CAUTION = ('CAUTION: self-consistency is below the low threshold; thresholds that depend '
            'on expert agreement must be loosened, and the expert decides how. '
            'Nothing has been loosened automatically.')
+DEGENERATE_NOTE = ('NOTE: the percentile bootstrap interval collapsed to a point (rate 0 or 1); '
+                   'it carries no width information for this n.')
 
 
 def consistency_report(pairs, *, n_resamples=10000, confidence=0.95, seed=0):
-    """Return {n, agreements, rate, interval}; interval is a seeded percentile
+    """Return {n, agreements, rate, interval[, degenerate_interval]}; interval is a seeded percentile
     bootstrap over pairs. Memory O(number of repeated pairs)."""
     # Agree -> 'a', disagree -> 'b': the win rate of 'a' is the agreement rate.
     flags = ['a' if first == repeat else 'b' for _, first, repeat in pairs]
@@ -32,7 +34,10 @@ def consistency_report(pairs, *, n_resamples=10000, confidence=0.95, seed=0):
                                 confidence=confidence, seed=seed)
     # Guard against float rounding at the extremes so lo <= rate <= hi holds.
     interval = (min(lo, rate), max(hi, rate))
-    return dict(n=n, agreements=agreements, rate=rate, interval=interval)
+    report = dict(n=n, agreements=agreements, rate=rate, interval=interval)
+    if interval[0] == interval[1]:
+        report['degenerate_interval'] = True
+    return report
 
 
 def to_store_record(report, *, gate, arm, timestamp, commit, modelVersion, inventoryVersion):
@@ -51,10 +56,15 @@ def main(argv=None, out=None):
     parser.add_argument('--confidence', type=float, default=0.95)
     parser.add_argument('--seed', type=int, default=0)
     args = parser.parse_args(argv)
-    with open(args.choices, encoding='utf-8') as lines:
-        report = consistency_report(consistency_pairs(lines), n_resamples=args.n_resamples,
-                                    confidence=args.confidence, seed=args.seed)
+    try:
+        with open(args.choices, encoding='utf-8') as lines:
+            report = consistency_report(consistency_pairs(lines), n_resamples=args.n_resamples,
+                                        confidence=args.confidence, seed=args.seed)
+    except ValueError as exc:
+        parser.exit(2, f'{parser.prog}: error: {exc}\n')
     print(json.dumps(dict(report, interval=list(report['interval']))), file=out)
+    if report.get('degenerate_interval'):
+        print(DEGENERATE_NOTE, file=out)
     if report['rate'] < args.low_threshold:
         print(CAUTION, file=out)
     return 0

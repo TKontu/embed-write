@@ -17,7 +17,7 @@ reference, and who built it ("expert" only for the expert's own judgment, else "
 <data split, procedure, run id or artifact path, code revision>
 
 ## Numbers
-<metric: value (95% CI low-high), n=<sample size>; population; reference; built by expert | LLM>
+<metric: value (95% CI [low, high]), n=<sample size>; population; reference; built by expert | LLM>
 
 ## Verdict
 <passed | failed | inconclusive — and who decided>
