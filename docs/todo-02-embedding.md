@@ -59,7 +59,8 @@ The service embeds sentences and blocks, caches by content hash, and hosts the f
 
 Reduced in revision 2. L2 normalization is the default. Whitening is an arm of G-03 and is built into the product only if it wins there.
 
-- [ ] **NM-01** `[A]` L2 normalization
+- [x] **NM-01** `[A]` L2 normalization
+  - done (R16/A2): `service/normalize.py` (NormalizationError, l2_normalize, l2_normalize_batch); stdlib-only, scale-before-squaring normalization rejects empty, zero and non-finite vectors. Batch yields lazily with O(1) batch overhead and O(d) current output memory. seen: tests/test_normalize.py (13 tests OK), full offline gate 330 tests OK at base 622356bca33b46224938d097feba88d734da8e01 + this change. Unwired by design until EM-01 embedder calls it. Residuals: no local-model path exercised; level typing remains EM-03; components below floating-point range may underflow to zero.
 - [ ] **NM-02** `[A]` Whitening and all-but-the-top as experiment arms, fitted per level on the corpus
 - [ ] **NM-03** `[A]` If adopted: persist the fitted transform with the genre so results are reproducible — check: reload gives identical vectors
 
