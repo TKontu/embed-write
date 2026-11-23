@@ -13,7 +13,8 @@ The gates in `todo-01` say what is tested. This file builds the machinery that r
 
 ## Harness
 
-- [ ] **EV-01** `[A]` Reproducible runner: pinned seeds, pinned model versions, recorded hardware — check: two runs give identical numbers
+- [~] **EV-01** `[A]` Reproducible runner: pinned seeds, pinned model versions, recorded hardware — check: two runs give identical numbers
+  - partial (R1/A1, PR #3, merge c3c90ce): implemented with X-00; seen when the first gate runs.
 - [ ] **EV-02** `[A]` Result store: `{gate, arm, metric, value, n, interval, timestamp, commit, modelVersion, inventoryVersion}`
 - [ ] **EV-03** `[A]` Report generator producing `experiments/results/G-XX.md` from the store
 - [ ] **EV-04** `[A]` Comparison view across arms with intervals
