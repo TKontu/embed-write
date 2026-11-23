@@ -1,0 +1,202 @@
+# TODO — Experiments & Gates
+
+**Track:** R (research), with agent-built infrastructure
+**Blocks:** G-01 and G-02 block everything except Track E engineering
+
+Markers: `[A]` agent-executable with a mechanical check · `[H]` needs the expert's judgment · `[A→H]` agent prepares, human decides.
+
+Every gate is a notebook or script, not product code. Thresholds below are **proposals**: confirm or change each before its run, then it is fixed. Results go to `experiments/results/G-XX.md` with a verdict of `passed`, `failed` or `inconclusive`. Inconclusive counts as failed.
+
+**Rule:** product code for a gated capability stays behind its flag until the gate reads `passed`.
+
+---
+
+## Infrastructure
+
+- [ ] **X-00** `[A]` `experiments/` package: runner, corpus loader, seed pinning — check: a sample gate runs twice with identical output
+- [ ] **X-01** `[A]` Gate registry `experiments.config.ts`: `{id, status, threshold, resultDoc, flagsUnlocked[]}` — check: schema test
+- [ ] **X-02** `[A]` CI check failing the build when a flag is on and its gate is not `passed` — check: a deliberately wrong flag fails CI
+- [ ] **X-03** `[A]` Result template: hypothesis, threshold, method, numbers with sample sizes and intervals, verdict, fallback taken — check: template lint
+- [ ] **X-04** `[A]` Blind-comparison tool: shows two texts in random order, records the expert's choice without revealing the arm — check: arm labels absent from the UI and from the DOM
+
+---
+
+## G-01 — Can the genre's moves be recovered? *(FATAL)*
+
+Depends on: corpus and move inventory (`todo-09`).
+
+- [ ] **G-01.1** `[H]` Confirm thresholds
+- [ ] **G-01.2** `[H]` Annotate ~300 sentences from held-out reports with moves (`todo-09` AN-03)
+- [ ] **G-01.3** `[H]` Re-annotate a 10 % sample at least a week later
+- [ ] **G-01.4** `[A]` LLM labels the same sentences, with section context — check: every sentence has exactly one label from the inventory or `other`
+- [ ] **G-01.5** `[A]` Compute Cohen's κ expert vs LLM, expert vs self, per-move confusion matrix, share of `other`
+- [ ] **G-01.6** `[A→H]` Result document and verdict
+
+**Proposed threshold:** expert vs LLM κ ≥ 0.6; expert self-agreement κ ≥ 0.7; `other` ≤ 15 %.
+**If failed:** merge the most-confused moves and rerun once. If it fails again, the genre is less regular than assumed: stop and rethink.
+**Unlocks:** corpus-wide LLM labeling, the pattern model.
+
+---
+
+## G-02 — Can LLM output be steered to the genre? *(FATAL)*
+
+Needs no editor. Can run before the classifier exists by using the LLM as critic.
+
+- [ ] **G-02.1** `[H]` Confirm thresholds
+- [ ] **G-02.2** `[A→H]` Pick ~30 sections from held-out reports; extract their content as neutral notes (facts only, no phrasing) — the expert checks a sample for leaked phrasing
+- [ ] **G-02.3** `[A]` Generate each section three ways: (A) plain instruction, (B) with retrieved exemplars, (C) exemplars plus critic rerank — check: 30 × 3 outputs, exemplars never drawn from the same report
+- [ ] **G-02.4** `[H]` Blind pairwise judgments with X-04: A vs C, A vs B, and C vs the original section
+- [ ] **G-02.5** `[A→H]` Preference rates with intervals; verdict
+
+**Proposed threshold:** C preferred over A in ≥ 70 % of pairs.
+**Also report:** B vs A (what exemplars alone give) and C vs original (distance still to go).
+**If failed:** fine-tuning is the only route to stage 2. Stage 1 continues as data collection, provided G-01 passed.
+**Unlocks:** proposal generation, automatic drafting.
+
+---
+
+## G-03 — Embedding model and chunking strategy
+
+- [ ] **G-03.1** `[A]` Candidates: BGE-M3, Jina v3, Nomic Embed, a ModernBERT-based model, one Qwen3-Embedding size
+- [ ] **G-03.2** `[A]` Arms: independent sentence embedding; late chunking; contextual prefix; each with and without per-level whitening
+- [ ] **G-03.3** `[A]` Task 1: move classification, macro-F1 with a fixed classifier head, documents split train/test
+- [ ] **G-03.4** `[A]` Task 2: exemplar retrieval, does the nearest neighbour perform the same move?
+- [ ] **G-03.5** `[A]` Latency and memory per 1 000 words; quality at truncated dimensions
+- [ ] **G-03.6** `[A→H]` Verdict and chosen default
+
+**Proposed threshold:** winner beats the general-purpose baseline on both tasks at under 2 s per 1 000 words cold.
+**If failed:** use the best general-purpose model; drop late chunking and whitening.
+
+---
+
+## G-04 — Is the fast layer close enough to the slow layer?
+
+- [ ] **G-04.1** `[A]` Train the classifier head on LLM labels; test on held-out documents
+- [ ] **G-04.2** `[A]` Disagreement rate fast vs slow, per signal (move, redundancy) and per move
+- [ ] **G-04.3** `[A]` Accuracy of each layer against expert labels
+- [ ] **G-04.4** `[A]` Confidence calibration of the fast layer: is low confidence where the disagreements are?
+- [ ] **G-04.5** `[H]` Precision audit of ~50 redundancy flags
+- [ ] **G-04.6** `[A→H]` Verdict and visibility policy
+
+**Proposed policy:** disagreement ≤ 10 %: show provisional results immediately. 10–30 %: show only above a confidence cutoff. Above 30 %: hide until confirmed.
+**If failed:** that signal comes from the slow layer only.
+
+---
+
+## G-05 — Sequence fit
+
+- [ ] **G-05.1** `[A]` Perturb held-out good reports: delete a move, swap two, insert a foreign one — check: perturbation log with ground truth
+- [ ] **G-05.2** `[A]` Detection precision and recall on perturbations; false flags on unperturbed reports
+- [ ] **G-05.3** `[H]` Review 20 flags raised on real drafts
+- [ ] **G-05.4** `[A→H]` Verdict
+
+**Proposed threshold:** precision ≥ 0.7 at recall ≥ 0.5; at most one false flag per good report.
+**If failed:** sequence fit from the slow layer only.
+
+---
+
+## G-06 — Register fit
+
+- [ ] **G-06.1** `[A]` Build content-controlled pairs: a corpus sentence and an LLM rewrite of it in default style
+- [ ] **G-06.2** `[A]` Arms: style-embedding distance to the genre profile; corpus-vs-LLM classifier on sentence embeddings; both
+- [ ] **G-06.3** `[A]` AUC on held-out pairs; check the score does not simply track topic
+- [ ] **G-06.4** `[H]` Review 30 passages flagged off-register in real drafts
+- [ ] **G-06.5** `[A→H]` Verdict
+
+**Proposed threshold:** AUC ≥ 0.8 on content-controlled pairs.
+**If failed:** register judged by the slow layer only.
+
+---
+
+## G-07 — Support mapping
+
+- [ ] **G-07.1** `[H]` For ~50 conclusions, mark the passages and source items that support them (`todo-09` AN-05)
+- [ ] **G-07.2** `[A]` Retrieval recall@5 of supporting passages
+- [ ] **G-07.3** `[A]` Unsupported-conclusion detection: remove the evidence from a copy, check the flag appears
+- [ ] **G-07.4** `[A→H]` Verdict
+
+**Proposed threshold:** recall@5 ≥ 0.8; unsupported-conclusion precision ≥ 0.6.
+**If failed:** links are made by hand; no automatic support flags.
+
+---
+
+## G-08 — Meaning-preservation check
+
+- [ ] **G-08.1** `[A→H]` Build ~200 rewrite pairs, some preserving meaning and some subtly not; expert labels them (`todo-09` AN-06)
+- [ ] **G-08.2** `[A]` Arms: bidirectional entailment; AlignScore; number-and-unit consistency; combined
+- [ ] **G-08.3** `[A]` Balanced accuracy; calibrate the silent-filter threshold
+- [ ] **G-08.4** `[A→H]` Verdict
+
+**Proposed threshold:** agreement ≥ 0.6; silent filter only at ≥ 0.95 precision.
+**If failed:** every candidate is shown with its result; nothing is filtered.
+
+---
+
+## G-09 — Overlay legibility
+
+- [ ] **G-09.1** `[A]` Colour-blind simulation on the legend — check: minimum pairwise colour difference above threshold in all three simulations
+- [ ] **G-09.2** `[H]` Legend recall after one session
+- [ ] **G-09.3** `[H]` Reading comparison: tinted prose vs plain vs margin-only
+- [ ] **G-09.4** `[H]` Can the expert tell provisional from confirmed without reading the inspector?
+- [ ] **G-09.5** `[A→H]` Verdict
+
+**Proposed threshold:** legend recall ≥ 90 %; no significant reading penalty; colour-blind check passes.
+**If failed:** margin ribbons and gutter marks only, no text tint.
+
+---
+
+## G-10 — Fine-tuning *(stage 2, starts when the edit log has enough pairs)*
+
+- [ ] **G-10.1** `[H]` Confirm the minimum pair count (proposed: 500)
+- [ ] **G-10.2** `[A]` Train LoRA adapters on corpus plus edit-log pairs, documents held out
+- [ ] **G-10.3** `[A]` Leakage test: longest verbatim overlap between outputs and training text
+- [ ] **G-10.4** `[H]` Blind pairs: fine-tuned vs exemplars + critic
+- [ ] **G-10.5** `[A→H]` Verdict
+
+**Proposed threshold:** expert prefers fine-tuned in the majority of pairs with the interval excluding 50 %; no verbatim leakage beyond a set length.
+**If failed:** keep exemplars + critic.
+
+---
+
+## G-11 — Topic overlay *(optional, non-blocking)*
+
+- [ ] **G-11.1** `[H]` Before looking, write down the weak spots of a draft you know well
+- [ ] **G-11.2** `[A]` Static topic-cluster view of the draft
+- [ ] **G-11.3** `[H]` Verdict
+
+**Proposed threshold:** at least 3 findings not already known.
+**If failed:** leave the overlay out.
+
+---
+
+## Mapping from revision 1
+
+| Old | Now |
+|---|---|
+| E-01 premise | Replaced by G-01 and G-02; the old test survives as optional G-11 |
+| E-02 model selection | G-03, measured on new tasks |
+| E-03 whitening | An arm of G-03 |
+| E-04 segmentation | Dropped; structure comes from Markdown and move labels |
+| E-05 cohesion | Replaced by move and sequence fit (G-01, G-05) |
+| E-06 colour encoding | Reduced to G-09 |
+| E-07 word attribution | Dropped |
+| E-08 meaning preservation | G-08 |
+| E-09 projection stability | Dropped; the legend is fixed. Layer disagreement is covered by G-04 |
+
+---
+
+## Progress
+
+| Gate | Status | Result doc |
+|---|---|---|
+| G-01 | ☐ not started | — |
+| G-02 | ☐ | — |
+| G-03 | ☐ | — |
+| G-04 | ☐ | — |
+| G-05 | ☐ | — |
+| G-06 | ☐ | — |
+| G-07 | ☐ | — |
+| G-08 | ☐ | — |
+| G-09 | ☐ | — |
+| G-10 | ☐ | — |
+| G-11 | ☐ | — |

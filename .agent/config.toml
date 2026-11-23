@@ -1,0 +1,17 @@
+# Reconcile-loop project configuration (adapted from config.example.toml).
+[project]
+architecture = "docs/architecture.md"
+backlog = "docs/todo.md"
+item_details = "docs"            # docs/todo-NN-*.md hold the item rows and checks
+decisions = "docs/decisions.md"  # append-only; create with the first recorded decision
+default_branch = "main"
+
+[verification]
+# Until the product stack exists, the gate is the workflow tooling's own tests.
+# Replace with the real gate (and update CLAUDE.md's Project Commands) once code lands.
+command = ["uv", "run", "--no-project", "--with", "pytest", "python", "-m", "pytest", "-q", "tests"]
+environment = "offline; local models only (invariant I9); no network services"
+
+[policy]
+merge_authority = "operator, or the planner when the operator has delegated a round; executors never self-merge"
+human_tasks = "[H] tasks and the [H] half of [A->H] belong to the expert; agents prepare, never decide"

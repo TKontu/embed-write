@@ -1,0 +1,52 @@
+# Reconcile-loop round state and per-session handoff
+.agent-runs/
+HANDOFF.md
+output/
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Claude Code local state
+.claude/settings.local.json
+.claude/worktrees/
+.claude/scheduled_tasks.lock
+
+# Private research data: corpus, annotations, edit log, models (never committed)
+corpus/
+data/
+annotations/
+edit-log/
+models/
+*.lmdb
+*.sqlite
+*.sqlite3
+*.db
+*.onnx
+*.safetensors
+*.gguf
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.hypothesis/
+
+# Node / frontend / app shell
+node_modules/
+dist/
+build/
+.vite/
+coverage/
+src-tauri/target/
+*.log
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
