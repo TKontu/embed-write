@@ -13,9 +13,10 @@ This is the core of revision 2. The pattern model is built and tested offline on
 
 ## Signal framework
 
-- [ ] **SF-01** `[A]` `Signal` type: `{nodeId, level, kind, value, confidence, methodRef, layer, computedAt}`; `confidence`, `methodRef` and `layer` are required (invariant I4) — check: type test
-- [ ] **SF-02** `[A]` Signal registry: each kind declares its gate, display name, definition and known limits
-- [ ] **SF-03** `[A]` Naming lint: display names may not contain "quality", "score", "correct" or "coherence" (invariant I8) — check: lint test
+- [x] **SF-01** `[A]` `Signal` type: `{nodeId, level, kind, value, confidence, methodRef, layer, computedAt}`; `confidence`, `methodRef` and `layer` are required (invariant I4) — check: type test
+- [x] **SF-02** `[A]` Signal registry: each kind declares its gate, display name, definition and known limits
+- [x] **SF-03** `[A]` Naming lint: display names may not contain "quality", "score", "correct" or "coherence" (invariant I8) — check: lint test
+  - done (R11/A1, PR #40, merge e6b48ee): `analysis/signals.py` (Signal, SignalKind, register_kind, get_kind, registered_kinds, lint_display_name), six 5.6 kinds pre-registered. seen: tests/test_signals.py, 282 tests OK at main 9b57dbb. Unwired by design until SF-04 consumes registered_kinds. Residuals: get_kind raises KeyError; test-registered kinds persist in the module registry.
 - [ ] **SF-04** `[A]` Signals default off until their gate passes (invariant I6) — check: CI gate check covers every registered kind
 
 ---
