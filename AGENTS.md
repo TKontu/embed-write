@@ -29,6 +29,25 @@ For behavior changes show the intended failing test, implement the smallest fix 
 checks. Run the configured gate once before the PR. A skipped check is not a pass. Review relevant
 callers, data boundaries and scale.
 
+- **Procedures:** use the `tdd`, `debug` and `verify` skills; run `/lint-fix` once the stack has a
+  linter. Run the packet's premise checks before any code.
+- **Done means seen:** a behaviour row is done only with `seen: <run id or artifact path>`. Merged
+  but never exercised (flag off, gate not run) stays partial and names the run that will show it.
+  A gate is `passed` only with its `experiments/results/G-XX.md` from an actual run.
+- **Connections:** a new public symbol names its production caller, or is "unwired by design"
+  with the row that wires it.
+- **Scale:** loops over the corpus or its embeddings bound memory (stream, never hold the corpus),
+  batch sizes and transaction size (LMDB/SQLite commits), or record the untested bound as a
+  residual.
+- **Private data is absent from fresh checkouts:** the corpus, annotations, models and `.env` are
+  gitignored. A packet names where each comes from; a check skipped for lack of them is reported
+  as skipped. Green CI does not mean the local-model path was exercised.
+- **Who judged what:** say "expert" only for the expert's own judgment; anything a model produced
+  is "LLM-built". Quote a figure only with its basis: population, metric, reference and who built
+  it.
+- **Flags have a lifecycle:** each flag names the gate that removes it; a shortcut is recorded as
+  debt with its follow-up row.
+
 Before publication inspect the diff for defects, secrets and private material. Corpus documents,
 expert annotations and the edit log are private: they stay gitignored and are never quoted in PRs,
 commits or handoffs. PRs record assignment identity, head, actual verification and residuals. The
