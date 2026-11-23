@@ -17,7 +17,8 @@ The service embeds sentences and blocks, caches by content hash, and hosts the f
 - [ ] **SV-02** `[A]` Model loading through ONNX Runtime, CPU and GPU paths; warm start — check: startup test on both
 - [ ] **SV-03** `[A]` Client contract: the client sends dirty node sets, never whole documents — check: contract test
 - [ ] **SV-04** `[A]` Cancellation: an in-flight request is dropped when its text changes — check: test with interleaved edits
-- [ ] **SV-05** `[A]` Network guard: no outbound connection unless a remote model is explicitly enabled (invariant I9) — check: test fails closed
+- [x] **SV-05** `[A]` Network guard: no outbound connection unless a remote model is explicitly enabled (invariant I9) — check: test fails closed
+  - done (R13/A1): `service/network_guard.py` (NetworkPolicy, NetworkPolicy.allow_remote, check_url, check_host, guard_sockets, NetworkGuardError); loopback only by default, no DNS in checks. seen: tests/test_network_guard.py, 300 tests OK at base f593e96 + this change. Unwired by design until SV-01 wires it. Residuals: guard patches only `socket.socket.connect`/`connect_ex` and `socket.create_connection` (raw `_socket` or subprocess traffic is not covered); opt-in hosts match by exact name, not by resolved IP.
 
 ---
 
