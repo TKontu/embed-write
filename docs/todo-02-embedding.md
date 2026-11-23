@@ -13,7 +13,8 @@ The service embeds sentences and blocks, caches by content hash, and hosts the f
 
 ## Service
 
-- [ ] **SV-01** `[A]` Local analysis service: HTTP or IPC, batched requests — check: integration test with a stub client
+- [x] **SV-01** `[A]` Local analysis service: HTTP or IPC, batched requests — check: integration test with a stub client
+  - done (R14/A1): `service/server.py` (AnalysisService, echo_handler); stdlib ThreadingHTTPServer on loopback, `POST /v1/batch` (one handler call per batch, results in order), `GET /v1/health`, 400/404/413/500 JSON errors, `max_batch`/`max_body_bytes` bounds. SV-05 is now wired by service/server.py: bind host checked with `check_host` (fail closed) and `guard_sockets` active for the service lifetime. seen: tests/test_server.py, 308 tests OK at base 7190f7e + this change. AnalysisService unwired by design until SV-02/SV-03. Residuals: `guard_sockets` patches process-wide while the service runs (not per-thread); no auth; oversize bodies are rejected without draining.
 - [ ] **SV-02** `[A]` Model loading through ONNX Runtime, CPU and GPU paths; warm start — check: startup test on both
 - [ ] **SV-03** `[A]` Client contract: the client sends dirty node sets, never whole documents — check: contract test
 - [ ] **SV-04** `[A]` Cancellation: an in-flight request is dropped when its text changes — check: test with interleaved edits
