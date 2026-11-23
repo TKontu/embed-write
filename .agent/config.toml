@@ -13,7 +13,8 @@ command = ["python3", "-m", "unittest", "discover", "-s", "tests"]
 environment = "offline; local models only (invariant I9); no network services"
 
 [policy]
-merge_authority = "operator, or the planner when the operator has delegated a round; executors never self-merge"
+# Delegated standing by the operator (D-002): the planner merges without asking.
+merge_authority = "planner, standing delegation D-002: merge a PR whose current head passed independent review-round and the configured gate and is mergeable; operator only for PRs that change docs/decisions.md, docs/architecture.md or .agent/config.toml, decide an [H] item, or mark a gate passed; executors never self-merge"
 human_tasks = "[H] tasks and the [H] half of [A->H] belong to the expert; agents prepare, never decide"
 
 [supervisor]
