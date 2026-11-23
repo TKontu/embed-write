@@ -29,6 +29,7 @@ No research risk and total structural risk. If node IDs are not stable, the cach
 - [ ] **NI-03** `[A]` Reattachment after an external edit: match by hash, then path, then fuzzy content; unmatched nodes get new IDs — check: test matrix of external changes
 - [ ] **NI-04** `[A]` Split: the first half keeps the ID. Merge: the first node's ID survives. Move: all descendant IDs survive — check: tests for each, including undo
 - [ ] **NI-05** `[A]` Sentence identity inside a block: stable sentence keys derived from block ID and content hash, so signals and edit-log entries can address a sentence
+  - partial (R34/A1, PR #88): key function `service/sentence_keys.py` (`<block_id>:<hash>`, repeats get `#n`) merged; caller supplies hashes (HS-01 owns hashing); unwired until HI-03 and the edit log; residual: repeat-sentence keys depend on order in the block
 
 ---
 
