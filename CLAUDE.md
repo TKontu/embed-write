@@ -12,8 +12,8 @@ yet, so most keys are `n/a`; commands skip those steps and say so. Update when c
 | Key       | Command |
 | --------- | ------- |
 | install   | n/a |
-| test      | uv run --no-project --with pytest python -m pytest -q tests |
-| test-one  | uv run --no-project --with pytest python -m pytest -q {arg} |
+| test      | python3 -m unittest discover -s tests |
+| test-one  | python3 -m unittest {arg} |
 | lint      | n/a |
 | lint-fix  | n/a |
 | format    | n/a |
@@ -27,7 +27,7 @@ yet, so most keys are `n/a`; commands skip those steps and say so. Update when c
 - Round workflow: `/bootstrap`, `/takeoff`, `/plan-round`, `/execute-task`, `/review-round`,
   `/merge-round`, `/reconcile`, `/handoff`, plus `/status` and `/pr-verdict`.
 - Everyday: `/test`, `/lint-fix`, `/review`, `/secrets-check`, `/commit-push-pr`.
-- Skills: `debug`, `tdd`, `verify`, `loop-manager`. Subagents: `review-lens`, `ci-watcher`,
+- Skills: `debug`, `tdd`, `verify`. Loop watcher: `/loop-manager`. Subagents: `review-lens`, `ci-watcher`,
   `quick-fixer`.
 - Unattended loop: `python3 scripts/round_supervisor.py up` from a Herdr pane
-  (`docs/agents/round_supervisor.md`).
+  (`.agent/supervisor.md`).

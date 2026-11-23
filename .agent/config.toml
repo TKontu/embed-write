@@ -9,7 +9,7 @@ default_branch = "main"
 [verification]
 # Until the product stack exists, the gate is the workflow tooling's own tests.
 # Replace with the real gate (and update CLAUDE.md's Project Commands) once code lands.
-command = ["uv", "run", "--no-project", "--with", "pytest", "python", "-m", "pytest", "-q", "tests"]
+command = ["python3", "-m", "unittest", "discover", "-s", "tests"]
 environment = "offline; local models only (invariant I9); no network services"
 
 [policy]

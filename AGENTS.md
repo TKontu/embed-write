@@ -44,6 +44,6 @@ through implementation.
 ## Unattended rounds
 
 `scripts/round_supervisor.py` runs one fresh Claude session per round inside Herdr; see
-`docs/agents/round_supervisor.md`. A supervised orchestrator ends its round with
+`.agent/supervisor.md`. A supervised orchestrator ends its round with
 `python3 scripts/round_supervisor.py complete --outcome continue`, which refuses until
 `HANDOFF.md` is fresh and valid. `/loop-manager` starts a session that watches the loop.

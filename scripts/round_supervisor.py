@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Run the plan/execute/review/merge/reconcile/handoff loop, one fresh Claude session per round.
 
+Optional add-on: the core workflow never depends on it. Needs POSIX, Herdr, Claude Code and an
+authenticated `gh`. See .agent/supervisor.md.
+
 A plain process (no LLM) in its own Herdr pane. Each round gets a new ``claude`` process with a
 supervisor-chosen session id, so "cleared" holds by construction. Completion is an explicit,
 validated sentinel, never Herdr's ``idle``: an orchestrator waiting on CI is idle too.
@@ -13,7 +16,7 @@ nudge; only outward progress refunds nudges, so a heartbeat that merely keeps th
 growing cannot wait forever. Exhausted nudges recycle the session; repeated recycles halt.
 
     up [--for 8h] | watch | run [--dry-run] | status | stop-after-round | stop-in 8h | stop
-    clear-halt | complete --outcome ... | note --kind ... --text ... | check-handoff PATH
+    clear-halt | complete --outcome ... | note --kind ... --text ...
 """
 
 from __future__ import annotations
@@ -32,6 +35,7 @@ import sys
 import termios
 import textwrap
 import time
+import tomllib
 import tty
 import uuid
 from collections.abc import Callable, Sequence
@@ -40,29 +44,47 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(os.environ.get("ROUND_SUPERVISOR_ROOT", Path(__file__).resolve().parents[1]))
-STATE = ROOT / "output" / "round_supervisor"
+STATE = ROOT / ".agent-runs" / "supervisor"  # .agent-runs/ is already gitignored by bootstrap
 AGENT = "round-planner"
 TAB_LABEL = "round-planner"
-PERMISSION_ARGS = ("--permission-mode", "auto")  # operator ruling: rounds run in auto mode
+
+
+def project_config(root: Path = ROOT) -> dict[str, Any]:
+    """`.agent/config.toml`, or {} when absent or unreadable (defaults apply)."""
+    try:
+        return tomllib.loads((root / ".agent" / "config.toml").read_text())
+    except (OSError, tomllib.TOMLDecodeError):
+        return {}
+
+
+CONFIG = project_config()
+BRANCH = CONFIG.get("project", {}).get("default_branch", "main")
+# Unattended sessions cannot answer approval dialogs; `auto` lets the round run. Set
+# [supervisor] permission_mode in .agent/config.toml to choose another mode.
+PERMISSION_ARGS = (
+    "--permission-mode", CONFIG.get("supervisor", {}).get("permission_mode", "auto"),
+)  # fmt: skip
 PROJECT_LOGS = Path.home() / ".claude" / "projects" / re.sub(r"[/.]", "-", str(ROOT))
 LIMIT_RE = re.compile(r"usage limit|limit reached|out of (extra )?usage|rate.limited", re.I)
 SELF = Path(__file__).resolve()
 
 ROUND_PROMPT = """You are the orchestrator of supervised round {round}, in a fresh session.
-Invoke the takeoff skill for orientation, then (overriding its "stop") run exactly one full round:
-plan-round, execute with subagents, review-round, fix simple findings or dispatch fixers,
-merge-round, reconcile, handoff. Autonomous-loop rules apply: decide as recommended; record
-significant decisions in HANDOFF.md.
+Run /takeoff (.agent/commands/takeoff.md) for orientation, then (overriding its "stop") run exactly
+one full round: /plan-round, /execute-task in isolated lanes, /review-round, fix simple findings or
+dispatch fixers, /merge-round, /reconcile, /handoff. Keep the round ledger with
+python3 scripts/round.py throughout. Decide routine choices as recommended; record significant
+decisions in HANDOFF.md.
+- Merge only within the merge authority in .agent/config.toml. If that authority is not yours,
+  park approved PRs in HANDOFF.md as owed to the operator and open a dashboard item for them.
 - Before planning new work, take over every finished lane HANDOFF.md names (check its Herdr
-  agent, its result file under .agent-runs/ and its PR; an idle agent is not a finished lane).
-  Confirm whether it is already recorded (python3 scripts/round.py status <round>); if not, review
-  and merge its PR and record its result this round. Lanes still running stay carried.
+  agent, its result under .agent-runs/ and its PR; an idle agent is not a finished lane). Record
+  it if it is not recorded yet. Lanes still running stay carried.
 - Live or long work runs only as Herdr lanes in their own live-<lane> tabs. Never wait for one to
   finish: carry it in HANDOFF.md and end the round. Probe before starting; never duplicate.
   Never halt, relaunch or take over a carried lane; each continues across rounds until it completes.
 - HANDOFF.md must name every carried lane: its tab, owner, what it is doing, how to check it, and
   that it carries over and must not be halted or duplicated.
-- Keep a background heartbeat armed at every turn end while the round is open.
+- While waiting on CI or subagents, keep a background wake-up armed so the session resumes.
 - A blocked critical path is not a halt: plan other lanes.
 - Report news for the operator's dashboard, plain language, one line, only what they would want to
   know: python3 {script} note --kind KIND --text "..." --ref "<record>"
@@ -294,7 +316,7 @@ class Herdr:
 
 
 def main_sha(run: Run = _run) -> str:
-    rc, out = run(["git", "ls-remote", "origin", "main"], 60)
+    rc, out = run(["git", "ls-remote", "origin", f"refs/heads/{BRANCH}"], 60)
     return out.split()[0] if rc == 0 and out.strip() else ""
 
 
@@ -736,7 +758,7 @@ def complete(outcome: str, reason: str, run: Run = _run) -> int:
         print("HANDOFF.md was not written this round; run handoff first", file=sys.stderr)
         return 1
     rc, out = run(
-        [sys.executable, str(SELF), "check-handoff", str(handoff)], 120
+        [sys.executable, str(SELF.parent / "round.py"), "check-handoff", str(handoff)], 120
     )
     if rc:
         print(f"HANDOFF.md is invalid:\n{out}", file=sys.stderr)
@@ -749,40 +771,6 @@ def complete(outcome: str, reason: str, run: Run = _run) -> int:
     news("round", f"Round {cur['round']} complete" + (f": halt, {reason}" if reason else ""))
     print(f"round {cur['round']} recorded complete ({outcome}); end your turn")
     return 0
-
-
-HANDOFF_SECTIONS = ("## Round delta", "## Open work", "## Next action")
-
-
-def _strip_placeholders(section: str) -> str:
-    """Drop comments and template placeholder lines such as <One exact action>; keep autolinks."""
-    section = re.sub(r"<!--.*?-->", "", section, flags=re.S)
-    return re.sub(r"^[ \t]*<(?![^>\n]*://)[^<>\n]*>[ \t]*$", "", section, flags=re.M)
-
-
-def check_handoff(path: Path) -> int:
-    """Validate HANDOFF.md against templates/handoff.md: header lines and nonempty sections."""
-    try:
-        body = path.read_text()
-    except OSError as exc:
-        print(f"cannot read {path}: {exc}", file=sys.stderr)
-        return 1
-    problems = [] if re.search(
-        r"^Generated-UTC: \d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$", body, re.M
-    ) else ["missing 'Generated-UTC: YYYY-MM-DDTHH:MM:SSZ'"]
-    problems += [] if re.search(r"^Main-SHA: [0-9a-f]{40}", body, re.M) else ["missing 'Main-SHA'"]
-    for heading in HANDOFF_SECTIONS:
-        _, found, rest = body.partition(heading + "\n")
-        section = rest.split("\n## ", 1)[0]
-        if not found:
-            problems.append(f"missing section '{heading}'")
-        elif not re.search(r"\w", _strip_placeholders(section)):
-            problems.append(f"empty section '{heading}'")
-    if len(body.splitlines()) > 50:
-        problems.append("longer than 50 lines")
-    for problem in problems:
-        print(problem, file=sys.stderr)
-    return 1 if problems else 0
 
 
 def status() -> int:
@@ -836,14 +824,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     note_p.add_argument("--text", default="")
     note_p.add_argument("--ref", default="")
     note_p.add_argument("--close", default="")
-    sub.add_parser("check-handoff").add_argument("path", type=Path)
     done_p = sub.add_parser("complete")
     done_p.add_argument("--outcome", choices=("continue", "halt"), required=True)
     done_p.add_argument("--reason", default="")
     args = parser.parse_args(argv)
 
-    if args.cmd == "check-handoff":
-        return check_handoff(args.path)
     if args.cmd == "note":
         return note(args.kind, args.text, args.ref, args.close)
     if args.cmd == "watch":
