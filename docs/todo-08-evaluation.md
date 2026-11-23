@@ -53,7 +53,7 @@ The gates in `todo-01` say what is tested. This file builds the machinery that r
   - partial (R7/A1, PR #29, merge b191ce2): `experiments/blind_session.py` (build_session, save_session, load_session, record_session_choice, consistency_pairs) wires blind_pair; originals interleaved with no adjacent same comparison, ceil(fraction·total) repeats ≥ min_gap after their original with re-randomised order, repeat links server-side only; synthetic tests pass (sweep 0/900 adjacent clashes after the review fix). Unwired until a G-02 session runs (BJ-03 [H]). Residuals: after 200 placement attempts the fewest-clash session is kept silently; session JSON holds keys and arms (private storage); no write locking. Seen when G-02 runs.
 - [ ] **BJ-03** `[H]` The judgments themselves
 - [~] **BJ-04** `[A]` Consistency report: how often the expert agrees with their own earlier choice. Low consistency loosens every threshold that depends on it
-  - partial (R8/A1, PR #31, merge 6bfa273): `experiments/consistency.py` (consistency_report, to_store_record, CLI `python3 -m experiments.consistency CHOICES.jsonl`) over blind_session.consistency_pairs; seeded bootstrap interval; caution line below `--low-threshold` (default 0.8), never loosens anything; synthetic tests pass. Unwired until a G-02 session runs (BJ-03 [H]). Residuals: percentile bootstrap collapses to a point at all-agree/none-agree; CLI raises a traceback on a file with no repeated pairs. Seen when G-02 runs.
+  - partial (R8/A1, PR #31, merge 6bfa273): `experiments/consistency.py` (consistency_report, to_store_record, CLI `python3 -m experiments.consistency CHOICES.jsonl`) over blind_session.consistency_pairs; seeded bootstrap interval; caution line below `--low-threshold` (default 0.8), never loosens anything; synthetic tests pass. Unwired until a G-02 session runs (BJ-03 [H]). R9/A2 (PR #35, merge 3d92a97): report adds `degenerate_interval: true` and the CLI a note when the interval collapses (method unchanged); CLI exits 2 with one stderr line on no repeated pairs (any ValueError now exits 2). Residual: degenerate interval itself remains. Seen when G-02 runs.
 
 ---
 
@@ -66,7 +66,7 @@ The gates in `todo-01` say what is tested. This file builds the machinery that r
 - [~] **ST-03** `[A]` Multiple arms: report all arms, not only the winner
   - partial (R7/A2, PR #28, merge bd96382): `render_report(expected_arms=, allow_missing_arms=)` and CLI `--expected-arm`/`--allow-missing-arms`: a missing expected arm raises, or with the flag is marked and listed under "## Missing arms"; unexpected arms are rendered and listed; default output byte-identical; permutation tests show report and compare render every arm. Seen when G-01 runs.
 - [~] **ST-04** `[A]` Negative results kept in the store and in the result documents
-  - partial (R8/A2, PR #32, merge d56837d): tests pin the store as append-only (API exactly add/add_many/close/query) and round-trip zero/negative values and intervals; render_report renders every row incl. worse earlier/later ones; intervals now render `95% CI [lo, hi]` (fixes the EV-03 ambiguity); compare output footer counts earlier rows not shown. Residual: experiments/results/TEMPLATE.md still shows `low-high`. Seen when G-01 runs.
+  - partial (R8/A2, PR #32, merge d56837d): tests pin the store as append-only (API exactly add/add_many/close/query) and round-trip zero/negative values and intervals; render_report renders every row incl. worse earlier/later ones; intervals now render `95% CI [lo, hi]` (fixes the EV-03 ambiguity); compare output footer counts earlier rows not shown. TEMPLATE.md now shows `95% CI [low, high]` (R9/A2, PR #35, merge 3d92a97). Seen when G-01 runs.
 - [ ] **ST-05** `[H]` One-annotator limit acknowledged in every result document; a second expert's labels on a sample when one is available
 
 ---
@@ -84,7 +84,8 @@ Used only to confirm that components work at all. They do not replace the gates 
 
 ## Continuous evaluation
 
-- [ ] **CE-01** `[A]` Gates re-run on model, inventory or method change; a regressing gate turns its flag off — check: simulated regression disables the flag
+- [~] **CE-01** `[A]` Gates re-run on model, inventory or method change; a regressing gate turns its flag off — check: simulated regression disables the flag
+  - partial (R9/A1, PR #34, merge d797e42): `experiments/continuous.py` (rerun_required, FlagRegistry.apply_rerun) in-memory; a regression disables every flag bound to the gate, a pass never re-enables (operator's act, returns a note); simulated-regression test passes. Unwired by design until CE-02 and the I6 CI check. Residuals: a regression overwrites an already-disabled flag's reason; one weak substring assertion in tests. Seen when CE-02 runs.
 - [ ] **CE-02** `[A]` Nightly small-corpus run in CI
 - [ ] **CE-03** `[A]` Gate statuses visible in the app's debug panel
 - [ ] **CE-04** `[A→H]` `EVIDENCE.md`: for each shipped feature, the gate, the numbers and the known limits. A feature that cannot be described there does not ship
