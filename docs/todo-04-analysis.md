@@ -39,7 +39,8 @@ This is the core of revision 2. The pattern model is built and tested offline on
 
 - [x] **SQ-01** `[A]` Move-transition statistics per section type from the corpus
   - done (R26/A1): `analysis/transitions.py` (LabelledSection, TransitionStats, START/END sentinels); streaming per-section-type counts, probability, distinct-document support, deterministic transitions(). seen: tests/test_transitions.py, gate 497 tests OK at head 81240766c9ed657611fa8c12612efd9fe5324398 (PR #71). Production caller: unwired by design until SQ-03. Residual: 100 000-word / full-corpus bound untested.
-- [ ] **SQ-02** `[A]` Expected-move set per section type: which moves are near-universal, which optional
+- [x] **SQ-02** `[A]` Expected-move set per section type: which moves are near-universal, which optional
+  - done (R27/A1): `analysis/expected_moves.py` (MovePresence, ExpectedMoves, EXPECTED/OPTIONAL/RARE roles); one streaming pass over LabelledSection, presence rate per section type with distinct-document support, inclusive thresholds. seen: tests/test_expected_moves.py, gate 508 tests OK at head 6aab73e1536d0cf7ace430dcb7f883fe2ad61304 (PR #73). Production caller: unwired by design until SQ-03. Residual: full-corpus bound untested.
 - [ ] **SQ-03** `[A]` Detectors: missing expected move, move out of order, move foreign to the section — each returns the evidence (how often the pattern occurs in the corpus)
 - [ ] **SQ-04** `[A]` Confidence from corpus support: a pattern seen in 5 reports is not a rule — check: flags below a minimum support count are suppressed
 - [ ] **SQ-05** `[A]` Perturbation generator for G-05
