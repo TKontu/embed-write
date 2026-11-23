@@ -29,7 +29,8 @@ This is the core of revision 2. The pattern model is built and tested offline on
 - [ ] **PT-03** `[A]` Context features: section type and neighbouring sentences' embeddings as optional inputs; keep only if they improve held-out F1
 - [ ] **PT-04** `[A]` Calibrated confidence (temperature or isotonic) — check: reliability diagram and expected calibration error recorded
 - [ ] **PT-05** `[A]` Export to ONNX; inference under 5 ms per sentence — check: benchmark
-- [ ] **PT-06** `[A]` Paragraph and section labels by aggregation of sentence labels; never by comparing vectors across levels (invariant I2)
+- [x] **PT-06** `[A]` Paragraph and section labels by aggregation of sentence labels; never by comparing vectors across levels (invariant I2)
+  - done (R25/A1): `analysis/aggregate.py` (SentenceLabel, AggregateLabel, aggregate, aggregate_section); confidence-weighted vote with exact Fractions, name-ascending ties, count fallback for all-zero confidence, LevelVector rejected (I2), section pools sentences. seen: tests/test_aggregate.py, gate 485 tests OK at head 335c3b49ff65414dda1221e5c345b0c9395e1e90 (PR #69). Production caller: unwired by design until PT-02. Residual: 100 000-word bound untested.
 - [ ] **PT-07** `[A→H]` Error review: the 50 most confident disagreements with expert labels, for the expert to judge whether the label or the model is wrong
 
 ---
