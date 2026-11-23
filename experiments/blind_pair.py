@@ -67,12 +67,13 @@ def render_html(presentation):
 </body></html>'''
 
 
-def record_choice(path, presentation, choice, reason=None):
+def record_choice(path, presentation, choice, reason=None, extra=None):
     """Resolve a position on the server and append one UTF-8 JSON line.
 
     Memory is bounded by one record; existing records are never read. The caller
     owns private storage and serializes concurrent writers (no session layer here).
-    Texts and opaque keys are not persisted in the record.
+    Texts and opaque keys are not persisted in the record. Optional extra fields
+    (e.g. BJ-02 session item_id) are added but may not override core fields.
     """
     if choice not in ('left', 'right', 'tie'):
         raise ValueError('Expected left, right, or tie')
@@ -80,6 +81,11 @@ def record_choice(path, presentation, choice, reason=None):
               presentation._left_arm if choice == 'left' else presentation._right_arm)
     record = dict(pair_id=presentation.pair_id, choice=choice, winner=winner,
                   reason=reason, recorded_at=datetime.now(timezone.utc).isoformat())
+    if extra:
+        clash = set(extra) & set(record)
+        if clash:
+            raise ValueError(f'extra fields would override: {sorted(clash)}')
+        record.update(extra)
     line = json.dumps(record, ensure_ascii=False) + '\n'
     with open(path, 'a', encoding='utf-8') as output:
         output.write(line)
