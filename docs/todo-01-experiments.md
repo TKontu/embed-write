@@ -90,6 +90,7 @@ Needs no editor. Can run before the classifier exists by using the LLM as critic
 
 - [ ] **G-05.1** `[A]` Perturb held-out good reports: delete a move, swap two, insert a foreign one — check: perturbation log with ground truth
 - [ ] **G-05.2** `[A]` Detection precision and recall on perturbations; false flags on unperturbed reports
+  - partial (R31/A1, PR #82): offline scorer `experiments/metrics/sequence_fit.py` merged; unwired until the G-05 runner; shown only by the G-05 gate run on the held-out split
 - [ ] **G-05.3** `[H]` Review 20 flags raised on real drafts
 - [ ] **G-05.4** `[A→H]` Verdict
 
