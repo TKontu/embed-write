@@ -40,7 +40,8 @@ The service embeds sentences and blocks, caches by content hash, and hosts the f
 
 - [ ] **EM-01** `[A]` Embedder interface: `embed(texts, level) → Vec<Level>`
 - [ ] **EM-02** `[A]` Candidate models for G-03 behind the interface
-- [ ] **EM-03** `[A]` Level-tagged vector types; comparing across levels is a type error (invariant I2) — check: a cross-level comparison fails to compile or lint
+- [x] **EM-03** `[A]` Level-tagged vector types; comparing across levels is a type error (invariant I2) — check: a cross-level comparison fails to compile or lint
+  - done (R17/A1): `service/vectors.py` (Level, LevelVector, CrossLevelError, dot, cosine, normalized) and `scripts/lint_levels.py`; frozen finite non-empty float tuples, runtime cross-level rejection including equality, literal-level AST checks and known raw-similarity import checks. seen: tests/test_vectors.py and tests/test_lint_levels.py (12 tests OK); full offline gate `python3 -m unittest discover -s tests` → 350 tests OK at base e2a028b6605c68ba1cb31db3bf7ebd36c6e4d0e9 + this change; `python3 scripts/lint_levels.py service analysis` → exit 0. Unwired by design until EM-01 returns LevelVector. Per-vector O(d) memory. Residuals: CI lint wiring deferred to a later row; lint does not infer variable levels, resolve aliases, detect custom raw-similarity imports or math on `.values`; raw dot products retain float overflow limits; no local-model/private-corpus path exercised.
 - [ ] **EM-04** `[A]` Truncated-dimension support where the model allows it
 - [ ] **EM-05** `[A]` Determinism: same input, model and version give the same vector — check: repeated-run test
 
