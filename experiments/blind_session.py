@@ -44,12 +44,38 @@ def _interleave(queues, rng):
     return order
 
 
+_PLACEMENT_ATTEMPTS = 200
+
+
+def _place_repeats(base, chosen, min_gap, rng):
+    """Insert repeats; return (entries, adjacent same-comparison count).
+
+    Inserting between two neighbours that both differ from the repeat's
+    comparison cannot create a clash, so clashes come only from the fallback
+    when no clean slot exists; build_session retries with new choices.
+    """
+    # Entries: (comparison, pair, original_slot or None); slot = index into base.
+    entries = [(name, pair, None) for name, pair in base]
+    for slot in chosen:
+        origin = next(i for i, e in enumerate(entries) if e[2] is None and e[1] is base[slot][1])
+        name = base[slot][0]
+        positions = list(range(origin + min_gap, len(entries) + 1))
+        clean = [p for p in positions
+                 if (p == 0 or entries[p - 1][0] != name)
+                 and (p == len(entries) or entries[p][0] != name)]
+        options = clean or positions
+        entries.insert(options[rng.randrange(len(options))], (name, base[slot][1], slot))
+    clashes = sum(a[0] == b[0] for a, b in zip(entries, entries[1:]))
+    return entries, clashes
+
+
 def build_session(comparisons, *, repeat_fraction, min_gap, rng):
     """Return an ordered list of SessionItem.
 
     comparisons maps a name to a list of (pair_id, text_x, arm_x, text_y, arm_y).
     Every pair appears once, interleaved so consecutive items differ in
-    comparison when feasible; ceil(repeat_fraction * total) pairs are repeated
+    comparison when feasible (repeat placement is retried up to
+    _PLACEMENT_ATTEMPTS times; the fewest-clash attempt is kept if none is clean); ceil(repeat_fraction * total) pairs are repeated
     at least min_gap items after their original, with left/right re-randomised
     by a fresh make_pair call. Raises ValueError if repeats cannot be placed.
     """
@@ -72,19 +98,14 @@ def build_session(comparisons, *, repeat_fraction, min_gap, rng):
     if n_repeats > len(feasible):
         raise ValueError(f'Cannot place {n_repeats} repeats with min_gap={min_gap} '
                          f'in {total} pairs')
-    chosen = rng.sample(feasible, n_repeats)
-
-    # Entries: (comparison, pair, original_slot or None); slot = index into base.
-    entries = [(name, pair, None) for name, pair in base]
-    for slot in chosen:
-        origin = next(i for i, e in enumerate(entries) if e[2] is None and e[1] is base[slot][1])
-        name = base[slot][0]
-        positions = list(range(origin + min_gap, len(entries) + 1))
-        clean = [p for p in positions
-                 if (p == 0 or entries[p - 1][0] != name)
-                 and (p == len(entries) or entries[p][0] != name)]
-        options = clean or positions
-        entries.insert(options[rng.randrange(len(options))], (name, base[slot][1], slot))
+    best = None
+    for _ in range(_PLACEMENT_ATTEMPTS):
+        entries, clashes = _place_repeats(base, rng.sample(feasible, n_repeats), min_gap, rng)
+        if best is None or clashes < best[1]:
+            best = (entries, clashes)
+        if clashes == 0:
+            break
+    entries = best[0]
 
     ids = {}
     width = len(str(len(entries)))

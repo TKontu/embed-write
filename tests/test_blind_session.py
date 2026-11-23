@@ -31,7 +31,7 @@ class BuildSessionTests(unittest.TestCase):
         comps = comparisons({'A_vs_C': 10, 'B_vs_C': 10, 'A_vs_B': 10})
         for seed in range(30):
             # Strict for originals; repeat placement avoids adjacency best-effort only.
-            for fraction in (0,):
+            for fraction in (0, 0.1, 0.25, 0.5):
                 session = build_session(comps, repeat_fraction=fraction, min_gap=4,
                                         rng=random.Random(seed))
                 for a, b in zip(session, session[1:]):
