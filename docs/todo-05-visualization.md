@@ -16,6 +16,7 @@ Colour is the expert's main channel into the pattern model. Revision 2 replaces 
 - [ ] **LG-01** `[H]` Colour per move, chosen with the expert (`todo-09` MV-04)
 - [ ] **LG-02** `[A]` Legend stored in the genre file, never computed at runtime (invariant I3) — check: test that two documents of one genre render a move identically
 - [ ] **LG-03** `[A]` Palette validation: minimum pairwise colour difference, in normal vision and three colour-blind simulations — check: automated, fails the build below threshold
+  - partial (R32/A1, PR #84): validator `service/palette.py` (CIEDE2000, Machado CVD sims, CLI exits 1 below threshold) merged; MIN_DELTA_E=20 provisional for the expert under G-09; unwired until LG-02/LG-05; no palette until LG-01 [H], no CI wiring
 - [ ] **LG-04** `[A]` Contrast floor: tinted text stays above a set contrast ratio in light and dark themes — check: automated contrast test
 - [ ] **LG-05** `[A]` Separate dark-theme palette, validated the same way
 - [ ] **LG-06** `[A]` Neutral rendering for `other` and for unlabeled text
