@@ -42,6 +42,7 @@
       "Bash(gh pr comment * --body-file *)",
       "Bash(gh run list:*)",
       "Bash(gh run view:*)",
+      "Bash(python3 scripts/merge_guard.py:*)",
       "Bash(docker ps:*)",
       "Bash(docker images:*)",
       "Bash(docker logs:*)",

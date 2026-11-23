@@ -91,6 +91,8 @@ one full round: /plan-round, /execute-task in isolated lanes, /review-round, fix
 dispatch fixers, /merge-round, /reconcile, /handoff. Keep the round ledger with
 python3 scripts/round.py throughout. Decide routine choices as recommended; record significant
 decisions in HANDOFF.md.
+- Merge only with python3 scripts/merge_guard.py PR --head FULL_REVIEWED_SHA (raw gh pr merge is
+  denied); it refuses what D-002 leaves to the operator, so park those as owed.
 - Merge only within the merge authority in .agent/config.toml. If that authority is not yours,
   park approved PRs in HANDOFF.md as owed to the operator and open a dashboard item for them.
 - Before planning new work, take over every finished lane HANDOFF.md names (check its Herdr

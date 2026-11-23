@@ -28,3 +28,7 @@ Append-only record of operator rulings and architecture decisions.
   main stopped moving, and the supervisor halted with "main unchanged across 3 rounds"
   (2026-11-23, PRs #6 to #9 waiting).
 - **Carried in:** `[policy] merge_authority` in `.agent/config.toml`.
+- **Amendment (2026-11-23, operator):** `.claude/settings.json` denies raw `gh pr merge`, so the
+  planner's merges were refused. Planners merge only through `scripts/merge_guard.py`, which is
+  allowed. It checks the reviewed head, mergeability, the base branch and the operator-owned paths
+  above, then merges with `--match-head-commit` and confirms the merge.
