@@ -2,7 +2,7 @@
 
 Invariants (docs/architecture.md): I4 every signal carries confidence,
 method_ref and layer; I8 no display name implies a quality judgement.
-Unwired by design; SF-04 consumes ``registered_kinds``.
+Consumed by analysis.signal_gates (SF-04 CI check); runtime wiring absent by design.
 """
 
 from __future__ import annotations

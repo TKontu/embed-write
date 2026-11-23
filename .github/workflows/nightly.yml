@@ -18,5 +18,7 @@ jobs:
           python-version: "3.11"
       - name: Unit tests
         run: python3 -m unittest discover -s tests
+      - name: Signal gate check
+        run: python3 -m analysis.signal_gates
       - name: Nightly gates
         run: python3 -m experiments.nightly

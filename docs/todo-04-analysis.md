@@ -17,7 +17,8 @@ This is the core of revision 2. The pattern model is built and tested offline on
 - [x] **SF-02** `[A]` Signal registry: each kind declares its gate, display name, definition and known limits
 - [x] **SF-03** `[A]` Naming lint: display names may not contain "quality", "score", "correct" or "coherence" (invariant I8) — check: lint test
   - done (R11/A1, PR #40, merge e6b48ee): `analysis/signals.py` (Signal, SignalKind, register_kind, get_kind, registered_kinds, lint_display_name), six 5.6 kinds pre-registered. seen: tests/test_signals.py, 282 tests OK at main 9b57dbb. Unwired by design until SF-04 consumes registered_kinds. Residuals: get_kind raises KeyError; test-registered kinds persist in the module registry.
-- [ ] **SF-04** `[A]` Signals default off until their gate passes (invariant I6) — check: CI gate check covers every registered kind
+- [x] **SF-04** `[A]` Signals default off until their gate passes (invariant I6) — check: CI gate check covers every registered kind
+  - done (R12/A1): `analysis/signal_gates.py` (default_flags, check, gate_passed, passed_gates, CLI exit 0/1/2), nightly.yml step after Unit tests. Pass marker: `## Verdict` first line starts `passed`. seen: tests/test_signal_gates.py, 292 tests OK; CLI exit 0 over 6 kinds / 6 gates, 0 passed. Residuals: no persisted flag registry (needs decision); editor/runtime wiring absent until live layers land.
 
 ---
 
