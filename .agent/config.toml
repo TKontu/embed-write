@@ -15,3 +15,7 @@ environment = "offline; local models only (invariant I9); no network services"
 [policy]
 merge_authority = "operator, or the planner when the operator has delegated a round; executors never self-merge"
 human_tasks = "[H] tasks and the [H] half of [A->H] belong to the expert; agents prepare, never decide"
+
+[supervisor]
+# Herdr names are global across repos; keeps the planner at round-planner-embed-write
+name = "embed-write"
