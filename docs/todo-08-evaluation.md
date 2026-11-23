@@ -40,7 +40,8 @@ The gates in `todo-01` say what is tested. This file builds the machinery that r
   - partial (R3/A3, PR #14, merge a48a88c): streaming disagreement overall and per move merged; tests pass. Residual: not benchmarked at corpus scale. Seen when G-01 runs.
 - [~] **MT-06** `[A]` Correction rate per draft and per move, from the edit log
   - partial (R4/A2, PR #20, merge d3aa97a): streaming `correction_rate` over (draft, move, candidate, final) entries merged; exact-string comparison; hand-computed tests pass. Input shape is provisional until the todo-07 edit log exists. Residual: not benchmarked at corpus scale. Seen when G-10 runs.
-- [ ] **MT-07** `[A]` Unit tests for every metric against hand-computed cases
+- [x] **MT-07** `[A]` Unit tests for every metric against hand-computed cases
+  - done (R5/A1, PR #23, merge 2265d33): `tests/test_metrics_hand_computed.py`, 20 worked cases covering all 13 public metric functions, hand arithmetic in comments; no implementation disagreements found. seen: `python3 -m unittest discover -s tests` at main 25380c0, 199 tests OK.
 
 ---
 
@@ -56,6 +57,7 @@ The gates in `todo-01` say what is tested. This file builds the machinery that r
 ## Statistical discipline
 
 - [ ] **ST-01** `[A]` Pre-registration: a gate cannot run until its threshold is recorded and confirmed — check: the runner refuses otherwise
+  - partial (R5/A2, PR #22, merge 25380c0): `experiments/preregistration.py` + `run_gate` refuses a missing, malformed, mismatched or unconfirmed `experiments/preregistration/<gate>.json` before calling the gate; only `sample` exempt; tests pass. No real record exists; confirming each threshold is the expert's [H] act. Residual: validation cannot tell who wrote `confirmed_by` (process-enforced). Seen when G-01 runs.
 - [ ] **ST-02** `[A]` Sample size and interval on every reported number
 - [ ] **ST-03** `[A]` Multiple arms: report all arms, not only the winner
 - [ ] **ST-04** `[A]` Negative results kept in the store and in the result documents
