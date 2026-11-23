@@ -6,6 +6,8 @@ from pathlib import Path
 
 from experiments import corpus, runner
 from experiments.gates import sample
+from experiments.preregistration import PreregistrationError
+from tests.test_preregistration import fixture_record
 
 CONFIG = {"model_versions": {"embedder": "synthetic-embed@1.0", "llm": "synthetic-llm@2.3"}}
 
@@ -38,6 +40,61 @@ class RunnerTest(unittest.TestCase):
     def test_seed_required_and_int(self):
         with self.assertRaises(TypeError):
             runner.run_gate(sample.run, seed="42", config=CONFIG)
+
+
+class PreregistrationRunnerTest(unittest.TestCase):
+    def test_invalid_records_never_call_gate(self):
+        cases = [None, "{", json.dumps({**fixture_record(), "confirmed_by": ""}),
+                 json.dumps({**fixture_record(), "confirmed_at": ""}),
+                 json.dumps({**fixture_record(), "gate": "G-other"})]
+        for content in cases:
+            with self.subTest(content=content), tempfile.TemporaryDirectory() as root:
+                calls = []
+
+                def gate(rng, config):
+                    calls.append(True)
+
+                gate.gate_id = "G-test"
+                if content is not None:
+                    (Path(root) / "G-test.json").write_text(content, encoding="utf-8")
+                with self.assertRaises(PreregistrationError):
+                    runner.run_gate(gate, seed=1, config=CONFIG, preregistration_root=root)
+                self.assertEqual(calls, [])
+
+    def test_confirmed_record_runs_and_is_serialized_reproducibly(self):
+        with tempfile.TemporaryDirectory() as root:
+            record = fixture_record()
+            path = Path(root) / "G-test.json"
+            path.write_text(json.dumps(record), encoding="utf-8")
+            calls = []
+
+            def gate(rng, config):
+                calls.append(True)
+                return rng.random()
+
+            gate.gate_id = "G-test"
+            a = runner.run_gate(gate, seed=42, config=CONFIG, preregistration_root=root)
+            b = runner.run_gate(gate, seed=42, config=CONFIG, preregistration_root=root)
+            self.assertEqual(calls, [True, True])
+            self.assertEqual(a["manifest"]["preregistration"], record)
+            b["manifest"]["timestamp"] = a["manifest"]["timestamp"]
+            self.assertEqual(runner.serialize(a), runner.serialize(b))
+            self.assertEqual(json.loads(path.read_text()), record)
+
+    def test_only_sample_is_exempt(self):
+        self.assertEqual(runner.exempt, ("sample",))
+        with tempfile.TemporaryDirectory() as root:
+            result = runner.run_gate(sample.run, seed=1, config=CONFIG,
+                                     preregistration_root=root)
+            self.assertNotIn("preregistration", result["manifest"])
+
+    def test_module_name_fallback_requires_confirmation(self):
+        def gate(rng, config):
+            self.fail("unconfirmed gate executed")
+
+        gate.__module__ = "experiments.gates.G-test"
+        with tempfile.TemporaryDirectory() as root, self.assertRaises(PreregistrationError):
+            runner.run_gate(gate, seed=1, config=CONFIG, preregistration_root=root)
 
 
 class CorpusTest(unittest.TestCase):
