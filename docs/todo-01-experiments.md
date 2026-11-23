@@ -20,7 +20,7 @@ Every gate is a notebook or script, not product code. Thresholds below are **pro
 - [~] **X-03** `[A]` Result template: hypothesis, threshold, method, numbers with sample sizes and intervals, verdict, fallback taken — check: template lint
   - partial (R1/A2, PR #4, merge 7211c82): `experiments/results/TEMPLATE.md` + `scripts/lint_result.py` merged; lint tests pass. Unwired until X-02 (CI) / EV-03. Residual: lint does not enforce intervals or basis fields.
 - [ ] **X-04** `[A]` Blind-comparison tool: shows two texts in random order, records the expert's choice without revealing the arm — check: arm labels absent from the UI and from the DOM
-  - partial via todo-08 BJ-01 (R6/A1, PR #26): rendering and recording module merged, arm labels absent from the HTML in tests; no session UI yet (BJ-02).
+  - partial via todo-08 BJ-01 (R6/A1, PR #26): rendering and recording module merged, arm labels absent from the HTML in tests; session design merged via BJ-02 (R7/A1, PR #29); no browser front end yet.
 
 ---
 
