@@ -45,7 +45,7 @@ from typing import Any
 
 ROOT = Path(os.environ.get("ROUND_SUPERVISOR_ROOT", Path(__file__).resolve().parents[1]))
 STATE = ROOT / ".agent-runs" / "supervisor"  # .agent-runs/ is already gitignored by bootstrap
-AGENT = "round-planner"
+AGENT = "round-planner-embed-write"  # Herdr agent names are global across projects
 TAB_LABEL = "round-planner"
 
 

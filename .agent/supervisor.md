@@ -13,7 +13,7 @@ Herdr pane (`HERDR_ENV=1`) in the project root.
 ## How a round turns over
 
 1. The supervisor opens tab `round-planner`, starts `claude --session-id <new uuid>` as Herdr agent
-   `round-planner`, and submits the round prompt: takeoff, then one full round.
+   `round-planner-embed-write` (Herdr agent names are global, so it is per-repo), and submits the round prompt: takeoff, then one full round.
 2. The orchestrator's last action is `round_supervisor.py complete --outcome continue`. It refuses
    unless `HANDOFF.md` was written this round and passes `python3 scripts/round.py check-handoff`.
    Herdr's `idle` is never taken as completion, because an orchestrator waiting on CI is idle too.
