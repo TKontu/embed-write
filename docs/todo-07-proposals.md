@@ -31,6 +31,7 @@ Each axis is a separate, separately validated check. They are shown side by side
 - [ ] **VF-01** `[A]` **Move preserved:** classifier plus slow-layer confirmation that the candidate performs the intended move
 - [ ] **VF-02** `[A]` **Meaning preserved:** bidirectional entailment *(G-08)*
 - [ ] **VF-03** `[A]` **Support preserved:** numbers, units and source links unchanged or still entailed — check: unit tests on altered values
+  - partial (R35/A1, PR #90): literal check `service/support_check.py` (numbers with units, percentages, link targets, citation keys; multiset diff, reporting only) merged; unwired until VF-07; residuals: "still entailed" path (e.g. "five" vs "5", converted units) waits for VF-02/G-08; fixed unit list; currency only matched after the number
 - [ ] **VF-04** `[A]` **Register fit:** distance to the genre profile before and after *(G-06)*
 - [ ] **VF-05** `[A]` **Grammar:** grammar-correction model
 - [ ] **VF-06** `[A]` **Length delta:** reported, not judged
