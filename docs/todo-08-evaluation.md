@@ -15,19 +15,24 @@ The gates in `todo-01` say what is tested. This file builds the machinery that r
 
 - [~] **EV-01** `[A]` Reproducible runner: pinned seeds, pinned model versions, recorded hardware — check: two runs give identical numbers
   - partial (R1/A1, PR #3, merge c3c90ce): implemented with X-00; seen when the first gate runs.
-- [ ] **EV-02** `[A]` Result store: `{gate, arm, metric, value, n, interval, timestamp, commit, modelVersion, inventoryVersion}`
+- [~] **EV-02** `[A]` Result store: `{gate, arm, metric, value, n, interval, timestamp, commit, modelVersion, inventoryVersion}`
+  - partial (R2/A1, PR #7, merge b8ac3d0): SQLite result store merged; unit tests pass. Unwired until EV-03 reads it. Seen when G-01 runs.
 - [ ] **EV-03** `[A]` Report generator producing `experiments/results/G-XX.md` from the store
 - [ ] **EV-04** `[A]` Comparison view across arms with intervals
-- [ ] **EV-05** `[A]` Document-level split enforcement: a metric computed on a training document fails the run — check: leak test
+- [~] **EV-05** `[A]` Document-level split enforcement: a metric computed on a training document fails the run — check: leak test
+  - partial (R2/A3, PR #9, merge 8229f8a): split enforcement + leak test merged. Seen when G-01 runs.
 
 ---
 
 ## Metrics library
 
-- [ ] **MT-01** `[A]` Agreement: Cohen's κ, confusion matrix, per-class F1
-- [ ] **MT-02** `[A]` Calibration: reliability diagram, expected calibration error
+- [~] **MT-01** `[A]` Agreement: Cohen's κ, confusion matrix, per-class F1
+  - partial (R2/A2, PR #8, merge 053021a): kappa, confusion matrix, per-class F1 merged; hand-computed tests pass. Residual: confusion_matrix needs sized sequences. Seen when G-01 runs.
+- [~] **MT-02** `[A]` Calibration: reliability diagram, expected calibration error
+  - partial (R2/A4, PR #10, merge f63c1d2): reliability bins + ECE merged; tests pass. Seen when G-01 runs.
 - [ ] **MT-03** `[A]` Retrieval: recall@k, same-move rate of nearest neighbours
-- [ ] **MT-04** `[A]` Preference: win rate with a bootstrap interval for blind pairs
+- [~] **MT-04** `[A]` Preference: win rate with a bootstrap interval for blind pairs
+  - partial (R2/A5, PR #11, merge 8baa224): win rate + seeded bootstrap merged; tests pass. Residual: large-n runtime unbenchmarked. Seen when G-01 runs.
 - [ ] **MT-05** `[A]` Layer disagreement rate, overall and per move
 - [ ] **MT-06** `[A]` Correction rate per draft and per move, from the edit log
 - [ ] **MT-07** `[A]` Unit tests for every metric against hand-computed cases
