@@ -74,7 +74,8 @@ Reduced in revision 2. L2 normalization is the default. Whitening is an arm of G
 ## Incremental recompute
 
 - [ ] **IR-01** `[A]` Dirty-set protocol: `{changedNodeIds, newHashes}` in, affected signals out
-- [ ] **IR-02** `[A]` Ancestor invalidation: a changed sentence dirties its block and section
+- [x] **IR-02** `[A]` Ancestor invalidation: a changed sentence dirties its block and section
+  - done (R22/A1): `service/dirty.py` (NodeRef, Hierarchy.from_nodes, dirty_set); validated section->block->sentence parent map and per-level dirty set of changed nodes plus ancestors (siblings never dirtied). seen: tests/test_dirty.py, gate 452 tests OK at head 1e93b6ea81da42b691a1e5f9c5b14b5805605772 (PR #63). Production caller: unwired by design until IR-01 consumes the dirty set and NI-01/NI-05 supply node ids. from_nodes O(nodes), dirty_set O(changed*depth). Residuals: 100 000-word bound untested; IR-03 sibling invalidation out of scope; synthetic tests only.
 - [ ] **IR-03** `[A]` Late-chunking invalidation: one changed sentence changes all sibling vectors in the section. Measure the cost; if too high, the live path uses independent embedding and late chunking runs on idle — check: benchmark recorded, decision documented
 - [ ] **IR-04** `[A]` Latency benchmark, keystroke to updated fast-layer signal, p50 and p95 on a 100 000-word document
 
