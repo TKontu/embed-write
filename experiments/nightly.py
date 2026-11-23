@@ -21,6 +21,8 @@ config's ``model_versions``, ``inventoryVersion`` the config's ``inventory_versi
 ``"none"``), ``method`` the gate function's ``module.qualname``. With no ``--previous`` entry for a
 gate every key counts as changed.
 
+A gate that raises is recorded as regressed (``crashed: ...``) and the run continues.
+
 Exit codes: 0 no gate regressed, 1 at least one regressed, 2 bad input. ``--flags`` is updated in
 place only when given; this module never chooses a persistent registry location. Offline (I9);
 memory O(gates + flags). Called by ``.github/workflows/nightly.yml``.
@@ -59,12 +61,20 @@ def descriptor(gate_fn, config: Mapping[str, Any]) -> dict:
 
 
 def evaluate(gate_fn, config, *, seed, preregistration_root) -> tuple[str, str]:
-    """Return ``(status, detail)`` with status passed / regressed / skipped."""
+    """Return ``(status, detail)`` with status passed / regressed / skipped.
+
+    A gate that raises an ``Exception`` regresses with detail ``crashed: <Type>: <message>``;
+    ``KeyboardInterrupt`` / ``SystemExit`` propagate."""
     try:
         first = run_gate(gate_fn, seed=seed, config=config, preregistration_root=preregistration_root)
     except PreregistrationError as error:
         return "skipped", str(error)
-    second = run_gate(gate_fn, seed=seed, config=config, preregistration_root=preregistration_root)
+    except Exception as error:
+        return "regressed", f"crashed: {type(error).__name__}: {error}"
+    try:
+        second = run_gate(gate_fn, seed=seed, config=config, preregistration_root=preregistration_root)
+    except Exception as error:
+        return "regressed", f"crashed: {type(error).__name__}: {error}"
     if serialize({"result": first["result"]}) != serialize({"result": second["result"]}):
         return "regressed", "not reproducible: same seed gave different serialized results"
     result = first["result"]

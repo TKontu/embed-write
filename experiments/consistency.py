@@ -19,9 +19,11 @@ CAUTION = ('CAUTION: self-consistency is below the low threshold; thresholds tha
 DEGENERATE_NOTE = ('NOTE: the percentile bootstrap interval collapsed to a point (rate 0 or 1); '
                    'it carries no width information for this n.')
 
+_REQUIRED_KEYS = ('item_id', 'pair_id', 'winner')
+
 
 class ConsistencyInputError(ValueError):
-    """Bad CLI input: no repeated pairs or a malformed choices line (exit 2)."""
+    """Bad CLI input: no repeated pairs or a malformed / incomplete choices line (exit 2)."""
 
 
 def _decoded_lines(lines):
@@ -34,6 +36,9 @@ def _decoded_lines(lines):
             raise ConsistencyInputError(f'line {number}: malformed JSON: {exc}') from exc
         if not isinstance(record, dict):
             raise ConsistencyInputError(f'line {number}: expected a JSON object')
+        for key in _REQUIRED_KEYS:
+            if key not in record:
+                raise ConsistencyInputError(f'line {number}: missing required key {key!r}')
         yield record
 
 
