@@ -121,6 +121,18 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(cm.exception.code, 2)
         self.assertIn('line 1', err.getvalue())
 
+    def test_cli_line_missing_key_exits_2(self):
+        with open(self.path, 'w') as fh:
+            fh.write(json.dumps({'item_id': 'i1', 'pair_id': 'p1', 'winner': 'a'}) + '\n')
+            fh.write(json.dumps({'item_id': 'i2', 'pair_id': 'p1', 'repeat_of': 'i1'}) + '\n')
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), self.assertRaises(SystemExit) as cm:
+            main([self.path], out=io.StringIO())
+        self.assertEqual(cm.exception.code, 2)
+        self.assertIn('line 2', err.getvalue())
+        self.assertIn("'winner'", err.getvalue())
+        self.assertNotIn('Traceback', err.getvalue())
+
     def test_cli_unexpected_value_error_propagates(self):
         self.write_session(flip_repeats=0)
         with mock.patch('experiments.consistency.consistency_report',

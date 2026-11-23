@@ -75,6 +75,37 @@ class NightlyTest(unittest.TestCase):
         self.assertTrue(saved["feat"]["reason"].startswith("sample re-run regressed: not reproducible"))
         self.assertTrue(saved["other"]["enabled"])
 
+    def test_crashing_gate_is_recorded_regressed_and_others_run(self):
+        def boom(rng, config):
+            raise RuntimeError("kaput")
+        flags = self.write("flags.json", {
+            "feat": {"gate": "crashy", "enabled": True, "reason": ""},
+            "other": {"gate": "sample", "enabled": True, "reason": ""},
+        })
+        # Synthetic test fixture only; never an expert confirmation of a real gate.
+        self.write("crashy.json", {"gate": "crashy", "threshold": "synthetic score >= 1", "metric": "score",
+                                   "confirmed_by": "synthetic-test-fixture",
+                                   "confirmed_at": "2026-01-01T00:00:00Z"})
+        code, out, _ = self.run_main(["--flags", flags], gates=[
+            (_gate("crashy", boom), {}), (sample.run, {"n_resamples": 50})],
+            preregistration_root=self.tmp.name)
+        self.assertEqual(code, 1)
+        gates = json.loads(out)["gates"]
+        self.assertEqual(gates["crashy"]["status"], "regressed")
+        self.assertEqual(gates["crashy"]["detail"], "crashed: RuntimeError: kaput")
+        self.assertEqual(gates["crashy"]["notes"], ["feat: disabled (crashy regressed)"])
+        self.assertEqual(gates["sample"]["status"], "passed")
+        with open(flags, encoding="utf-8") as fh:
+            saved = json.load(fh)
+        self.assertFalse(saved["feat"]["enabled"])
+        self.assertTrue(saved["other"]["enabled"])
+
+    def test_keyboard_interrupt_not_swallowed(self):
+        def stop(rng, config):
+            raise KeyboardInterrupt
+        with self.assertRaises(KeyboardInterrupt):
+            nightly.run_nightly([(_gate("sample", stop), {})])
+
     def test_passed_false_result_regresses(self):
         gate = _gate("sample", lambda rng, config: {"passed": False})
         summary = nightly.run_nightly([(gate, {})])
