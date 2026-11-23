@@ -69,7 +69,8 @@ This is the core of revision 2. The pattern model is built and tested offline on
 - [ ] **SP-01** `[A]` Identify claims that need support: sentences labeled as conclusion or interpretation
 - [ ] **SP-02** `[A]` Fast layer: retrieve candidate evidence within the document and from linked source items (same-level retrieval)
 - [ ] **SP-03** `[A]` Slow layer: entailment check between candidates and the claim
-- [ ] **SP-04** `[A]` Number-and-unit consistency between a claim and its sources — check: unit tests on tolerances and unit variants
+- [x] **SP-04** `[A]` Number-and-unit consistency between a claim and its sources — check: unit tests on tolerances and unit variants
+  - done (R19/A1): `analysis/numbers.py` (Quantity, ConsistencyReport, extract_quantities, check_consistency); deterministic stdlib extraction, canonical unit conversion and dimension-aware tolerance matching. seen: tests/test_numbers.py, `python3 -m unittest tests.test_numbers` → 19 tests OK at base 4a85d410b27d109a442ffec44cf9fbad6414aaf8 + this change. Production caller: unwired by design until SP-05 emits the signal behind the G-07 flag. Memory holds claim quantities and one source's quantities at a time; matching time O(claim quantities × source quantities). Residuals: explicit case-sensitive unit table only; unknown units remain unitless; no entailment, entity alignment, scientific notation, compound units or locale inference; three-digit comma groups mean thousands; years mean 365 days; EUR/USD do not cross-convert; non-finite quantities raise ValueError. Synthetic tests only; no private-corpus/model path exercised.
 - [ ] **SP-05** `[A]` Signals: unsupported claim; evidence never used
 
 ---
