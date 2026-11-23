@@ -66,7 +66,8 @@ This is the core of revision 2. The pattern model is built and tested offline on
 
 ## Support mapping *(G-07)*
 
-- [ ] **SP-01** `[A]` Identify claims that need support: sentences labeled as conclusion or interpretation
+- [x] **SP-01** `[A]` Identify claims that need support: sentences labeled as conclusion or interpretation
+  - done (R20/A2): `analysis/claims.py` (LabelledSentence, Claim, DEFAULT_CLAIM_MOVES, select_claims); validated one-pass selection of conclusion/interpretation sentences (configurable moves, inclusive min_confidence, same-level and unique-id checks). seen: tests/test_claims.py, gate 409 tests OK at head a10d6e1237b0864e405ab732d3f9fb14f1ee2631 (PR #59); combined main 422 OK. Production caller: unwired by design until the move classifier and SP-02 consume it. O(sentences) time, O(claims + ids) memory per document. Residuals: trusts upstream move labels and confidence; genre-specific claim moves are a caller choice; synthetic tests only; no private-corpus/model path exercised.
 - [ ] **SP-02** `[A]` Fast layer: retrieve candidate evidence within the document and from linked source items (same-level retrieval)
 - [ ] **SP-03** `[A]` Slow layer: entailment check between candidates and the claim
 - [x] **SP-04** `[A]` Number-and-unit consistency between a claim and its sources — check: unit tests on tolerances and unit variants
