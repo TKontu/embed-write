@@ -45,7 +45,8 @@ This is the core of revision 2. The pattern model is built and tested offline on
   - done (R28/A1): `analysis/detectors.py` (Finding, Detectors; MISSING/FOREIGN/OUT_OF_ORDER with corpus evidence). seen: tests/test_detectors.py, gate 520 tests OK at head cb20ee87a5d85a929cca6e7202bb7e9ecc9aeb9d (PR #75). Production caller: unwired by design until SQ-04. Residual: full-corpus bound untested.
 - [x] **SQ-04** `[A]` Confidence from corpus support: a pattern seen in 5 reports is not a rule — check: flags below a minimum support count are suppressed
   - done (R29/A1): `analysis/support.py` (support_of, SupportedFindings, filter_supported; min_support default 5, inclusive). seen: tests/test_support.py, gate 541 tests OK at head 1b1ca4731474956c38830434ddedf69fd3278839 (PR #78). Production caller: unwired by design until the sequence-fit overlay (todo-05). Residual: synthetic corpora only.
-- [ ] **SQ-05** `[A]` Perturbation generator for G-05
+- [x] **SQ-05** `[A]` Perturbation generator for G-05
+  - done (R30/A1): `analysis/perturb.py` (Perturbation, delete_move, swap_moves, insert_move, perturb, log_record; seeded, streaming). seen: tests/test_perturb.py, gate 553 tests OK at head f527cd4f8fbd5217fface6ab5fc86f6d22bd001c (PR #80). Production caller: unwired by design until the G-05 runner (todo-01). Residual: synthetic sections only; swap pairs not uniformly likely.
 - [ ] **SQ-06** `[A→H]` Review of the learned patterns per section type: the expert marks any that are corpus accidents
 
 ---
