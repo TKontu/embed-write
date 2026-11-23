@@ -101,6 +101,11 @@ decisions in HANDOFF.md.
   workspace (herdr tab create --workspace "$HERDR_WORKSPACE_ID"); never create a Herdr workspace. Never wait for one to
   finish: carry it in HANDOFF.md and end the round. Probe before starting; never duplicate.
   Never halt, relaunch or take over a carried lane; each continues across rounds until it completes.
+- Executor lanes run on Codex (operator ruling D-001, docs/decisions.md): in the lane tab run
+  codex exec --approve-for-me -C <lane worktree> "<the lane's full task>". This host cannot create
+  user namespaces, so Codex's -s workspace-write sandbox (bwrap) fails every command; never use it,
+  and never --full-auto (removed). Planning, review and merge stay in Claude. Use a Claude lane only
+  when Codex cannot run, and record why in HANDOFF.md.
 - HANDOFF.md must name every carried lane: its tab, owner, what it is doing, how to check it, and
   that it carries over and must not be halted or duplicated.
 - While waiting on CI or subagents, keep a background wake-up armed so the session resumes.
