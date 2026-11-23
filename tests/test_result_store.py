@@ -134,3 +134,22 @@ class ResultStoreTests(unittest.TestCase):
         self.assertEqual(next(rows), record())
         self.assertEqual(len(reads), 1)
         rows.close()
+
+    def test_append_only_api_has_no_delete_update_or_replace(self):
+        from experiments.store import ResultStore
+        public = {name for name in dir(ResultStore) if not name.startswith('_')}
+        for word in ('delete', 'remove', 'update', 'replace', 'drop', 'clear',
+                     'upsert', 'truncate', 'purge', 'edit'):
+            self.assertEqual([n for n in public if word in n.lower()], [], word)
+        self.assertEqual(public, {'add', 'add_many', 'close', 'query'})
+
+    def test_zero_negative_and_crossing_intervals_round_trip(self):
+        rows = [record(value=0, interval=(0, 0)),
+                record(value=0.0, interval=(-0.1, 0.1)),
+                record(value=-0.05, interval=(-0.2, 0.1)),
+                record(value=-0.3, interval=(-0.5, -0.1)),
+                record(value=-2, interval=None)]
+        store = self.store()
+        store.add_many(rows)
+        store.close()
+        self.assertEqual(list(self.store().query(gate='G-00')), rows)

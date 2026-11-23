@@ -35,7 +35,7 @@ class ReportTests(unittest.TestCase):
         template = Path('experiments/results/TEMPLATE.md').read_text()
         self.assertEqual([x for x in template.splitlines() if x.startswith('## ')],
                          [x for x in report.splitlines() if x.startswith('## ')])
-        self.assertIn('accuracy: 0.75 (95% CI 0.5-0.9), n=20', report)
+        self.assertIn('accuracy: 0.75 (95% CI [0.5, 0.9]), n=20', report)
         self.assertNotIn('## Missing intervals', report)
         for text in ('commit: abc123', 'modelVersion: model-v1',
                      'inventoryVersion: inventory-v1', 'recall:'):
@@ -61,7 +61,7 @@ class ReportTests(unittest.TestCase):
                         record(gate='G-02', metric='excluded', interval=None)])
         report = self.render(store, allow_missing_interval=True)
         self.assertEqual(report.count('interval: NOT REPORTED (ST-02 violation)'), 2)
-        self.assertIn('accuracy: 0.75 (95% CI 0.5-0.9), n=20', report)
+        self.assertIn('accuracy: 0.75 (95% CI [0.5, 0.9]), n=20', report)
         missing = report.split('## Missing intervals\n', 1)[1].split('## ', 1)[0]
         self.assertIn('gate: G-01; arm: b; metric: accuracy', missing)
         self.assertIn('gate: G-01; arm: c; metric: recall', missing)
@@ -141,10 +141,29 @@ class ReportTests(unittest.TestCase):
         self.addCleanup(store.close)
         store.add_many([record(), record(arm='b'), record(metric='recall'),
                         record(gate='G-02', metric='excluded')])
-        expected = '# G-01 — Synthetic question\n\n## Hypothesis\n<...>\n\n## Threshold\n<...>\n\n## Method\n<...>\n\n## Numbers\n### a\n- accuracy: 0.75 (95% CI 0.5-0.9), n=20; commit: abc123; modelVersion: model-v1; inventoryVersion: inventory-v1; timestamp: 2026-01-01\n- recall: 0.75 (95% CI 0.5-0.9), n=20; commit: abc123; modelVersion: model-v1; inventoryVersion: inventory-v1; timestamp: 2026-01-01\n\n### b\n- accuracy: 0.75 (95% CI 0.5-0.9), n=20; commit: abc123; modelVersion: model-v1; inventoryVersion: inventory-v1; timestamp: 2026-01-01\n\n## Verdict\n<passed | failed | inconclusive — and who decided>\n\n## Fallback taken\n<none, or the fallback from docs/architecture.md section 6 and its follow-up row>\n'
+        expected = '# G-01 — Synthetic question\n\n## Hypothesis\n<...>\n\n## Threshold\n<...>\n\n## Method\n<...>\n\n## Numbers\n### a\n- accuracy: 0.75 (95% CI [0.5, 0.9]), n=20; commit: abc123; modelVersion: model-v1; inventoryVersion: inventory-v1; timestamp: 2026-01-01\n- recall: 0.75 (95% CI [0.5, 0.9]), n=20; commit: abc123; modelVersion: model-v1; inventoryVersion: inventory-v1; timestamp: 2026-01-01\n\n### b\n- accuracy: 0.75 (95% CI [0.5, 0.9]), n=20; commit: abc123; modelVersion: model-v1; inventoryVersion: inventory-v1; timestamp: 2026-01-01\n\n## Verdict\n<passed | failed | inconclusive — and who decided>\n\n## Fallback taken\n<none, or the fallback from docs/architecture.md section 6 and its follow-up row>\n'
         for options in ({}, {'expected_arms': None, 'allow_missing_arms': True},
                         {'expected_arms': ['a', 'b']}):
             self.assertEqual(self.render(store, **options).encode(), expected.encode())
+
+    def test_negative_interval_renders_bracketed(self):
+        store = ResultStore(':memory:')
+        self.addCleanup(store.close)
+        store.add(record(value=-0.1, interval=(-0.2, 0.1)))
+        self.assertIn('accuracy: -0.1 (95% CI [-0.2, 0.1]), n=20', self.render(store))
+
+    def test_every_row_rendered_including_worse_earlier_and_later(self):
+        store = ResultStore(':memory:')
+        self.addCleanup(store.close)
+        store.add_many([record(value=0.1, interval=(0.0, 0.2), timestamp='2026-01-01'),
+                        record(value=0.8, interval=(0.7, 0.9), timestamp='2026-02-01'),
+                        record(value=-0.3, interval=(-0.5, -0.1), timestamp='2026-03-01')])
+        lines = [line for line in self.render(store).splitlines()
+                 if line.startswith('- accuracy:')]
+        self.assertEqual([line.split(';')[0] for line in lines], [
+            '- accuracy: 0.1 (95% CI [0.0, 0.2]), n=20',
+            '- accuracy: 0.8 (95% CI [0.7, 0.9]), n=20',
+            '- accuracy: -0.3 (95% CI [-0.5, -0.1]), n=20'])
 
     def test_missing_expected_arms_name_gate_and_all_missing_arms(self):
         store = ResultStore(':memory:')

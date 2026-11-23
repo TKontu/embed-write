@@ -49,6 +49,7 @@ def render_comparison(store, gate, metric=None):
     lines = ['| metric | arm | value | n | interval |',
              '| --- | --- | --- | --- | --- |']
     notes = []
+    hidden = 0
     for name, rows in compare_arms(store, gate, metric).items():
         for row in rows:
             interval = row['interval']
@@ -58,8 +59,11 @@ def render_comparison(store, gate, metric=None):
             if row['superseded']:
                 notes.append(f"- {_cell(name)} / {_cell(row['arm'])}: "
                              f"{row['superseded']} superseded rows")
+                hidden += row['superseded']
     if notes:
-        lines.extend(['', *notes])
+        lines.extend(['', *notes, '',
+                      f'{hidden} earlier rows not shown (counts per arm above); '
+                      'they remain in the store and in the full report.'])
     return '\n'.join(lines) + '\n'
 
 
