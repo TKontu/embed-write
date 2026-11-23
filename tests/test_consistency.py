@@ -5,6 +5,7 @@ import os
 import random
 import tempfile
 import unittest
+from unittest import mock
 
 from experiments.blind_session import build_session, consistency_pairs, record_session_choice
 from experiments.consistency import CAUTION, DEGENERATE_NOTE, consistency_report, main, to_store_record
@@ -110,6 +111,22 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(len(lines), 1)
         self.assertIn('no repeated pairs', lines[0])
         self.assertNotIn('Traceback', err.getvalue())
+
+    def test_cli_malformed_line_exits_2(self):
+        with open(self.path, 'w') as fh:
+            fh.write('{not json\n')
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), self.assertRaises(SystemExit) as cm:
+            main([self.path], out=io.StringIO())
+        self.assertEqual(cm.exception.code, 2)
+        self.assertIn('line 1', err.getvalue())
+
+    def test_cli_unexpected_value_error_propagates(self):
+        self.write_session(flip_repeats=0)
+        with mock.patch('experiments.consistency.consistency_report',
+                        side_effect=ValueError('internal bug')):
+            with self.assertRaisesRegex(ValueError, 'internal bug'):
+                main([self.path], out=io.StringIO())
 
 
 if __name__ == '__main__':

@@ -52,7 +52,8 @@ class FlagRegistry:
     def apply_rerun(self, gate: str, passed: bool, reason: str) -> list[str]:
         """Apply a gate re-run outcome to every flag bound to ``gate``; return notes.
 
-        ``passed=False`` disables each bound flag and records ``reason``. ``passed=True`` changes
+        ``passed=False`` disables each bound flag and records ``reason``; a flag that was already
+        disabled keeps its prior reason with the regression appended. ``passed=True`` changes
         nothing; a disabled bound flag yields a note that enabling it is the operator's act.
         Flags bound to other gates are untouched.
         """
@@ -63,7 +64,9 @@ class FlagRegistry:
             if not passed:
                 was = entry["enabled"]
                 entry["enabled"] = False
-                entry["reason"] = f"{gate} re-run regressed: {reason}"
+                note = f"{gate} re-run regressed: {reason}"
+                # An already-disabled flag keeps its history: append, never overwrite.
+                entry["reason"] = note if was or not entry["reason"] else f"{entry['reason']}; {note}"
                 notes.append(f"{name}: {'disabled' if was else 'stays disabled'} ({gate} regressed)")
             elif not entry["enabled"]:
                 notes.append(f"{name}: {gate} re-run passed; enabling is the operator's act")

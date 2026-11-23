@@ -40,8 +40,11 @@ class FlagRegistryTest(unittest.TestCase):
         notes = reg.apply_rerun("G-02", passed=False, reason="modelVersion changed; recall fell")
         data = reg.to_dict()
         self.assertFalse(data["suggest"]["enabled"])
-        self.assertIn("recall fell", data["suggest"]["reason"])
+        self.assertEqual(data["suggest"]["reason"],
+                         "G-02 re-run regressed: modelVersion changed; recall fell")
         self.assertFalse(data["suggest_v2"]["enabled"])
+        self.assertEqual(data["suggest_v2"]["reason"],
+                         "awaiting gate; G-02 re-run regressed: modelVersion changed; recall fell")
         self.assertTrue(any("suggest" in n for n in notes))
 
     def test_pass_never_enables(self):

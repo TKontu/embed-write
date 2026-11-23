@@ -20,13 +20,30 @@ DEGENERATE_NOTE = ('NOTE: the percentile bootstrap interval collapsed to a point
                    'it carries no width information for this n.')
 
 
+class ConsistencyInputError(ValueError):
+    """Bad CLI input: no repeated pairs or a malformed choices line (exit 2)."""
+
+
+def _decoded_lines(lines):
+    for number, line in enumerate(lines, 1):
+        if not line.strip():
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise ConsistencyInputError(f'line {number}: malformed JSON: {exc}') from exc
+        if not isinstance(record, dict):
+            raise ConsistencyInputError(f'line {number}: expected a JSON object')
+        yield record
+
+
 def consistency_report(pairs, *, n_resamples=10000, confidence=0.95, seed=0):
     """Return {n, agreements, rate, interval[, degenerate_interval]}; interval is a seeded percentile
     bootstrap over pairs. Memory O(number of repeated pairs)."""
     # Agree -> 'a', disagree -> 'b': the win rate of 'a' is the agreement rate.
     flags = ['a' if first == repeat else 'b' for _, first, repeat in pairs]
     if not flags:
-        raise ValueError('no repeated pairs: consistency is undefined for n == 0')
+        raise ConsistencyInputError('no repeated pairs: consistency is undefined for n == 0')
     n = len(flags)
     agreements = flags.count('a')
     rate = agreements / n
@@ -58,9 +75,9 @@ def main(argv=None, out=None):
     args = parser.parse_args(argv)
     try:
         with open(args.choices, encoding='utf-8') as lines:
-            report = consistency_report(consistency_pairs(lines), n_resamples=args.n_resamples,
-                                        confidence=args.confidence, seed=args.seed)
-    except ValueError as exc:
+            report = consistency_report(consistency_pairs(_decoded_lines(lines)),
+                                        n_resamples=args.n_resamples, confidence=args.confidence, seed=args.seed)
+    except ConsistencyInputError as exc:
         parser.exit(2, f'{parser.prog}: error: {exc}\n')
     print(json.dumps(dict(report, interval=list(report['interval']))), file=out)
     if report.get('degenerate_interval'):
