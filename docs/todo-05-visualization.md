@@ -18,6 +18,7 @@ Colour is the expert's main channel into the pattern model. Revision 2 replaces 
 - [ ] **LG-03** `[A]` Palette validation: minimum pairwise colour difference, in normal vision and three colour-blind simulations — check: automated, fails the build below threshold
   - partial (R32/A1, PR #84): validator `service/palette.py` (CIEDE2000, Machado CVD sims, CLI exits 1 below threshold) merged; MIN_DELTA_E=20 provisional for the expert under G-09; unwired until LG-02/LG-05; no palette until LG-01 [H], no CI wiring
 - [ ] **LG-04** `[A]` Contrast floor: tinted text stays above a set contrast ratio in light and dark themes — check: automated contrast test
+  - partial (R33/A1, PR #86): check `service/contrast.py` (WCAG luminance/contrast, tint blended over theme background, CLI exits 1 on shortfall) merged; MIN_CONTRAST=4.5 and alpha provisional for the expert under G-09; unwired until RE-04/LG-05; no theme colours until LG-01 [H]/LG-05, no CI wiring
 - [ ] **LG-05** `[A]` Separate dark-theme palette, validated the same way
 - [ ] **LG-06** `[A]` Neutral rendering for `other` and for unlabeled text
 - [ ] **LG-07** `[A]` Legend panel, always reachable, with each move's definition from the genre file
