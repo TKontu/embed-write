@@ -19,7 +19,8 @@ The gates in `todo-01` say what is tested. This file builds the machinery that r
   - partial (R2/A1, PR #7, merge b8ac3d0): SQLite result store merged; unit tests pass. Unwired until EV-03 reads it. Seen when G-01 runs.
 - [~] **EV-03** `[A]` Report generator producing `experiments/results/G-XX.md` from the store
   - partial (R3/A1, PR #17, merge c24d8ba): `experiments/report.py` + CLI merged; synthetic-store tests pass; never writes a verdict. Unwired until the G-01 run. Seen when G-01 runs. Residual: CLI cannot pass question/hypothesis/threshold/method; negative intervals render ambiguously as `lo-hi`.
-- [ ] **EV-04** `[A]` Comparison view across arms with intervals
+- [~] **EV-04** `[A]` Comparison view across arms with intervals
+  - partial (R4/A1, PR #19, merge 17cd9e2): `experiments/compare.py` + CLI merged; all arms listed, `[lo, hi]` intervals, latest row per arm; synthetic-store tests pass. Unwired until G-01 runs. Residual: distinct metric/arm pairs unbounded; malformed stored timestamps raise without context. Seen when G-01 runs.
 - [~] **EV-05** `[A]` Document-level split enforcement: a metric computed on a training document fails the run — check: leak test
   - partial (R2/A3, PR #9, merge 8229f8a): split enforcement + leak test merged. Seen when G-01 runs.
 
@@ -37,7 +38,8 @@ The gates in `todo-01` say what is tested. This file builds the machinery that r
   - partial (R2/A5, PR #11, merge 8baa224): win rate + seeded bootstrap merged; tests pass. Residual: large-n runtime unbenchmarked. Seen when G-01 runs.
 - [~] **MT-05** `[A]` Layer disagreement rate, overall and per move
   - partial (R3/A3, PR #14, merge a48a88c): streaming disagreement overall and per move merged; tests pass. Residual: not benchmarked at corpus scale. Seen when G-01 runs.
-- [ ] **MT-06** `[A]` Correction rate per draft and per move, from the edit log
+- [~] **MT-06** `[A]` Correction rate per draft and per move, from the edit log
+  - partial (R4/A2, PR #20, merge d3aa97a): streaming `correction_rate` over (draft, move, candidate, final) entries merged; exact-string comparison; hand-computed tests pass. Input shape is provisional until the todo-07 edit log exists. Residual: not benchmarked at corpus scale. Seen when G-10 runs.
 - [ ] **MT-07** `[A]` Unit tests for every metric against hand-computed cases
 
 ---
