@@ -38,13 +38,13 @@ class RecordingHandler:
 
 class AnalysisServiceTest(unittest.TestCase):
     def test_health(self):
-        with AnalysisService(echo_handler) as svc:
+        with AnalysisService(echo_handler, contract=False) as svc:
             self.assertEqual(_call(svc, "GET", "/v1/health"), (200, {"status": "ok"}))
 
     def test_batch_in_order_single_handler_call(self):
         handler = RecordingHandler()
         items = [{"id": "a", "text": "x"}, {"id": "b", "text": "y"}, {"id": "c", "text": "z"}]
-        with AnalysisService(handler) as svc:
+        with AnalysisService(handler, contract=False) as svc:
             status, body = _post(svc, {"items": items})
         self.assertEqual(status, 200)
         self.assertEqual(
@@ -54,7 +54,7 @@ class AnalysisServiceTest(unittest.TestCase):
         self.assertEqual(handler.calls, [items])
 
     def test_bad_requests_400(self):
-        with AnalysisService(echo_handler, max_batch=2) as svc:
+        with AnalysisService(echo_handler, max_batch=2, contract=False) as svc:
             cases = [
                 b"{not json",
                 {"items": "nope"},
@@ -73,13 +73,13 @@ class AnalysisServiceTest(unittest.TestCase):
             self.assertEqual(_call(svc, "GET", "/v1/health")[0], 200)
 
     def test_oversize_body_413(self):
-        with AnalysisService(echo_handler, max_body_bytes=64) as svc:
+        with AnalysisService(echo_handler, max_body_bytes=64, contract=False) as svc:
             status, body = _post(svc, {"items": [{"id": "a", "text": "x" * 200}]})
         self.assertEqual(status, 413)
         self.assertIn("error", body)
 
     def test_unknown_path_404(self):
-        with AnalysisService(echo_handler) as svc:
+        with AnalysisService(echo_handler, contract=False) as svc:
             self.assertEqual(_call(svc, "GET", "/nope")[0], 404)
             self.assertEqual(_call(svc, "POST", "/nope", b"{}")[0], 404)
 
@@ -100,7 +100,7 @@ class AnalysisServiceTest(unittest.TestCase):
                 raise
             return [None for _ in items]
 
-        with AnalysisService(leaky, policy=NetworkPolicy()) as svc:
+        with AnalysisService(leaky, policy=NetworkPolicy(), contract=False) as svc:
             status, body = _post(svc, {"items": [{"id": "a", "text": "x"}]})
             self.assertEqual(status, 500)
             self.assertIn("error", body)
@@ -108,7 +108,7 @@ class AnalysisServiceTest(unittest.TestCase):
             self.assertEqual(_call(svc, "GET", "/v1/health")[0], 200)
 
     def test_stop_releases_port(self):
-        svc = AnalysisService(echo_handler)
+        svc = AnalysisService(echo_handler, contract=False)
         svc.start()
         host, port = svc.address
         svc.stop()
