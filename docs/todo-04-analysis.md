@@ -43,7 +43,8 @@ This is the core of revision 2. The pattern model is built and tested offline on
   - done (R27/A1): `analysis/expected_moves.py` (MovePresence, ExpectedMoves, EXPECTED/OPTIONAL/RARE roles); one streaming pass over LabelledSection, presence rate per section type with distinct-document support, inclusive thresholds. seen: tests/test_expected_moves.py, gate 508 tests OK at head 6aab73e1536d0cf7ace430dcb7f883fe2ad61304 (PR #73). Production caller: unwired by design until SQ-03. Residual: full-corpus bound untested.
 - [x] **SQ-03** `[A]` Detectors: missing expected move, move out of order, move foreign to the section — each returns the evidence (how often the pattern occurs in the corpus)
   - done (R28/A1): `analysis/detectors.py` (Finding, Detectors; MISSING/FOREIGN/OUT_OF_ORDER with corpus evidence). seen: tests/test_detectors.py, gate 520 tests OK at head cb20ee87a5d85a929cca6e7202bb7e9ecc9aeb9d (PR #75). Production caller: unwired by design until SQ-04. Residual: full-corpus bound untested.
-- [ ] **SQ-04** `[A]` Confidence from corpus support: a pattern seen in 5 reports is not a rule — check: flags below a minimum support count are suppressed
+- [x] **SQ-04** `[A]` Confidence from corpus support: a pattern seen in 5 reports is not a rule — check: flags below a minimum support count are suppressed
+  - done (R29/A1): `analysis/support.py` (support_of, SupportedFindings, filter_supported; min_support default 5, inclusive). seen: tests/test_support.py, gate 541 tests OK at head 1b1ca4731474956c38830434ddedf69fd3278839 (PR #78). Production caller: unwired by design until the sequence-fit overlay (todo-05). Residual: synthetic corpora only.
 - [ ] **SQ-05** `[A]` Perturbation generator for G-05
 - [ ] **SQ-06** `[A→H]` Review of the learned patterns per section type: the expert marks any that are corpus accidents
 
