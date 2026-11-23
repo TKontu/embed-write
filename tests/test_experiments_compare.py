@@ -1,6 +1,7 @@
 """Offline EV-04 evidence using synthetic SQLite records."""
 import importlib
 import importlib.util
+from itertools import permutations
 from pathlib import Path
 import subprocess
 import sys
@@ -98,3 +99,13 @@ class ComparisonTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stdout, module.render_comparison(
                 self.store, 'G-01', metric='agreement' if extra else None))
+
+    def test_render_keeps_every_arm_regardless_of_value_order(self):
+        for index, values in enumerate(permutations((0.1, 0.5, 0.9))):
+            gate = f'G-{index}'
+            with self.subTest(values=values):
+                self.store.add_many(record(gate=gate, arm=arm, value=value)
+                                    for arm, value in zip(('z', 'a', 'm'), values))
+                report = self.module().render_comparison(self.store, gate)
+                for arm, value in zip(('z', 'a', 'm'), values):
+                    self.assertIn(f'| accuracy | {arm} | {value} |', report)
