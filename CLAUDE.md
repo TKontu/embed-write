@@ -26,7 +26,8 @@ yet, so most keys are `n/a`; commands skip those steps and say so. Update when c
 
 - Round workflow: `/bootstrap`, `/takeoff`, `/plan-round`, `/execute-task`, `/review-round`,
   `/merge-round`, `/reconcile`, `/handoff`, plus `/status` and `/pr-verdict`.
-- Everyday: `/test`, `/lint-fix`, `/review`, `/secrets-check`, `/commit-push-pr`.
+- Everyday: `/test`, `/lint-fix`, `/review`, `/secrets-check`, `/commit-push-pr`, `/stream-audit`
+  (read-only audit of the analysis stream against stored items).
 - Skills: `debug`, `tdd`, `verify`. Loop watcher: `/loop-manager`. Subagents: `review-lens`, `ci-watcher`,
   `quick-fixer`.
 - Unattended loop: `python3 scripts/round_supervisor.py up` from a Herdr pane
