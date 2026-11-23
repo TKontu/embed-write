@@ -13,10 +13,12 @@ Every gate is a notebook or script, not product code. Thresholds below are **pro
 
 ## Infrastructure
 
-- [ ] **X-00** `[A]` `experiments/` package: runner, corpus loader, seed pinning — check: a sample gate runs twice with identical output
+- [~] **X-00** `[A]` `experiments/` package: runner, corpus loader, seed pinning — check: a sample gate runs twice with identical output
+  - partial (R1/A1, PR #3, merge c3c90ce): runner + streaming loader + seed pinning merged; unit tests pass. Not yet seen on a real gate: seen when the first gate (G-01) runs. Residual: the loader holds the sorted path list in memory.
 - [ ] **X-01** `[A]` Gate registry `experiments.config.ts`: `{id, status, threshold, resultDoc, flagsUnlocked[]}` — check: schema test
 - [ ] **X-02** `[A]` CI check failing the build when a flag is on and its gate is not `passed` — check: a deliberately wrong flag fails CI
-- [ ] **X-03** `[A]` Result template: hypothesis, threshold, method, numbers with sample sizes and intervals, verdict, fallback taken — check: template lint
+- [~] **X-03** `[A]` Result template: hypothesis, threshold, method, numbers with sample sizes and intervals, verdict, fallback taken — check: template lint
+  - partial (R1/A2, PR #4, merge 7211c82): `experiments/results/TEMPLATE.md` + `scripts/lint_result.py` merged; lint tests pass. Unwired until X-02 (CI) / EV-03. Residual: lint does not enforce intervals or basis fields.
 - [ ] **X-04** `[A]` Blind-comparison tool: shows two texts in random order, records the expert's choice without revealing the arm — check: arm labels absent from the UI and from the DOM
 
 ---
