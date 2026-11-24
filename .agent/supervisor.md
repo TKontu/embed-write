@@ -28,6 +28,15 @@ The round carries such a lane in `HANDOFF.md` instead of waiting, and the next t
 there and in `.agent-runs/`. Anything long must be a Herdr lane, because the orchestrator's own
 subagents and background commands end with its session.
 
+Finished lanes are released by `scripts/lane_cleanup.py --go`, which `/merge-round` and
+`/reconcile` run (the same pattern as the iknosreview loop's `cleanup` and `close-tabs`). It
+closes a lane tab only when no pane in it is working, the lane is not carried in `HANDOFF.md`
+and its worktree is finished or gone. Then it removes, with plain `git worktree remove`, each
+lane worktree whose newest PR is merged or closed and none is open. It holds and reports what is
+carried, dirty, unpushed, busy or without a PR. Protected tabs (planner, loop, supervisor,
+manager, review server) and tabs outside the lane paths are never closed. Without `--go` it is a
+dry run.
+
 ## The no-endless-wait bound
 
 | Trigger | Default | Response |

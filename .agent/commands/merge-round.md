@@ -21,4 +21,8 @@ its worker has stopped and resource access ended, then record cancellation with 
 python3 scripts/round.py resolve ROUND A1 --outcome cancelled --evidence "Stopped; remaining work recorded in TASK-1"
 ```
 
+Then release finished lanes: `python3 scripts/lane_cleanup.py --go`. It closes the idle Herdr tabs
+of lanes whose PRs are merged or closed, then removes their worktrees; it holds anything carried,
+working, dirty, unpushed, busy or without a PR. Report held items; never force them.
+
 Do not start another round yet. All merged and cancelled outcomes still require reconciliation.

@@ -108,6 +108,9 @@ decisions in HANDOFF.md.
   user namespaces, so Codex's -s workspace-write sandbox (bwrap) fails every command; never use it,
   and never --full-auto (removed). Planning, review and merge stay in Claude. Use a Claude lane only
   when Codex cannot run, and record why in HANDOFF.md.
+- Release finished lanes with python3 scripts/lane_cleanup.py --go after merge-round and before
+  handoff; it closes their idle tabs and removes their worktrees by rule. Never close lane tabs or
+  remove lane worktrees by hand.
 - HANDOFF.md must name every carried lane: its tab, owner, what it is doing, how to check it, and
   that it carries over and must not be halted or duplicated.
 - While waiting on CI or subagents, keep a background wake-up armed so the session resumes.

@@ -17,7 +17,8 @@ decision records with outcomes, evidence, remaining work and next action. The re
 already capture this; do not create a separate report just to close the round. Get any required
 review/merge for the record updates and retain a durable evidence reference.
 After the final default-branch revision is known, run the owed final gate and write
-[the handoff](handoff.md). Close locally:
+[the handoff](handoff.md). Before it, run `python3 scripts/lane_cleanup.py --go` and carry
+every held lane into the handoff with its reason. Close locally:
 
 ```sh
 python3 scripts/round.py close ROUND --main main --reconciliation "<reconciliation-evidence-reference>" --handoff HANDOFF.md --evidence "Final revision check evidence; workers stopped"
