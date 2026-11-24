@@ -67,7 +67,8 @@ Each axis is a separate, separately validated check. They are shown side by side
   - done (R44/A1, PR #108): `editlog/pairs.py` iter_negatives streams a frozen NegativeRecord per reject entry; rejects never become pairs. Unwired by design; G-10 fine-tuning consumes it. seen: tests/test_editlog_pairs.py, gate 676 tests OK at head e4871a96a9d79f39718f7d42b835c810c0206370
 - [x] **EL-06** `[A]` Gap report: which moves and which register features the expert corrects most often
   - done (R45/A1, PR #110): `editlog/gaps.py` gap_report streams iter_entries once into a frozen GapReport: per move and per (section_type, move) accept/edit/reject and `revised` (edit + reject; named so for I8), plus added/removed counts for an injected register-feature callable on edit entries. Unwired by design; the expert-facing view is a later row and no feature extractor exists yet. seen: tests/test_editlog_gaps.py, gate 684 tests OK at head 2b7bf2c489e88e28acc13b17120de7ca7112a978
-- [ ] **EL-07** `[A]` Export and delete controls for the expert
+- [ ] **EL-07a** `[A]` Export control for the expert: whole edit log to JSON Lines (`python3 -m editlog.export DB_PATH OUT_PATH [--force]`; atomic, 0600, no overwrite without --force) — check: tests/test_editlog_export.py
+- [ ] **EL-07b** `[A]` Delete control for the expert — blocked on operator ruling EL-07-delete (delete semantics vs. the append-only store)
 
 ---
 
