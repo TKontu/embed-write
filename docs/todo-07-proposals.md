@@ -43,6 +43,7 @@ Each axis is a separate, separately validated check. They are shown side by side
 - [ ] **VF-10** `[A]` No aggregate score anywhere — check: lint for score-combining code in this module
   - partial (R49/A2, PR #117): `scripts/lint_no_aggregate.py` flags aggregate-score names (function, argument, variable, attribute, dict key) and sum/mean/fmean/average calls over two or more distinct `*score`/`*_result` names in service/support_check.py, length_delta.py, number_check.py by default; no operator/dataflow detection; unwired until CI wiring (residual)
 - [ ] **VF-11** `[A]` Method text stating why an LLM is not the final judge of candidate quality (position, verbosity and self-preference bias)
+  - partial (R49/A3, PR pending): docs/methods/llm-not-final-judge.md; unwired until VF-07 links it (residual)
 
 ---
 
