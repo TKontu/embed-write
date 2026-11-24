@@ -136,5 +136,44 @@ class ErrorTests(unittest.TestCase):
             Transform.from_dict(bad)
 
 
+
+class HardeningTests(unittest.TestCase):
+    def test_jacobi_raises_when_sweeps_exhausted(self):
+        from experiments.arms.whitening import _jacobi
+        a = [[4.0, 1.0, 2.0], [1.0, 3.0, 0.5], [2.0, 0.5, 1.0]]
+        with self.assertRaises(WhiteningError):
+            _jacobi(a, max_sweeps=1)
+        values, _ = _jacobi(a)
+        self.assertEqual(len(values), 3)
+
+    def test_covariance_overflow_raises(self):
+        data = [[1e300, 0.0], [-1e300, 1.0], [1e300, 2.0]]
+        with self.assertRaises(WhiteningError):
+            fit_whitening(data, Level.SENTENCE)
+        with self.assertRaises(WhiteningError):
+            fit_abtt(data, Level.SENTENCE, n_components=1)
+
+    def test_collinear_input_is_eps_regularized(self):
+        rng = random.Random(3)
+        data = []
+        for _ in range(50):
+            a, b = rng.gauss(0, 1), rng.gauss(0, 1)
+            data.append([a, b, a + b])  # rank 2 in 3 dims
+        t = fit_whitening(data, Level.SENTENCE)
+        self.assertTrue(all(math.isfinite(x) for row in t.matrix for x in row))
+        self.assertTrue(all(math.isfinite(x) for x in t.apply(data[0])))
+
+    def test_collinear_input_without_eps_raises(self):
+        data = [[float(i), 2.0 * i, -float(i)] for i in range(10)]
+        with self.assertRaisesRegex(WhiteningError, 'degenerate'):
+            fit_whitening(data, Level.SENTENCE, eps=0.0)
+
+    def test_abtt_rejects_bool_n_components(self):
+        data = synthetic(n=20)
+        for flag in (True, False):
+            with self.assertRaises(WhiteningError):
+                fit_abtt(data, Level.SENTENCE, n_components=flag)
+
+
 if __name__ == '__main__':
     unittest.main()
