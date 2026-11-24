@@ -5,13 +5,14 @@ Do not duplicate its rules here.
 
 ## Project Commands
 
-Every command in `.claude/commands/` resolves its tooling from this table. No product stack exists
-yet, so most keys are `n/a`; commands skip those steps and say so. Update when code lands.
+Every command in `.claude/commands/` resolves its tooling from this table. Install pinned Python
+dependencies into the checkout’s `.venv`; runtime stays offline. Keys marked `n/a` are not yet
+configured; commands skip those steps and say so.
 
 <!-- claude:commands -->
 | Key       | Command |
 | --------- | ------- |
-| install   | n/a |
+| install   | python3 -m venv .venv && .venv/bin/pip install -r requirements.txt |
 | test      | python3 -m unittest discover -s tests |
 | test-one  | python3 -m unittest {arg} |
 | lint      | n/a |
