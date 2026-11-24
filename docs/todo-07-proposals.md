@@ -41,6 +41,7 @@ Each axis is a separate, separately validated check. They are shown side by side
 - [ ] **VF-09** `[A]` Critic rerank for generation: candidates ordered by move and register fit, subject to the filters. The ordering is a default, not a verdict
 - [ ] **VF-10** `[A]` No aggregate score anywhere — check: lint for score-combining code in this module
 - [ ] **VF-11** `[A]` Method text stating why an LLM is not the final judge of candidate quality (position, verbosity and self-preference bias)
+  - partial (R49/A3, PR pending): docs/methods/llm-not-final-judge.md; unwired until VF-07 links it (residual)
 
 ---
 
