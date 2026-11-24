@@ -131,6 +131,7 @@ Needs no editor. Can run before the classifier exists by using the LLM as critic
 - [ ] **G-08.2** `[A]` Arms: bidirectional entailment; AlignScore; number-and-unit consistency; combined
   - partial (R37/A1, PR #94): offline scorer `experiments/metrics/meaning.py` (RewritePair, number-and-unit arm on service/support_check, score with balanced accuracy/TPR/TNR and Wilson 95% intervals, calibrate for the silent-filter threshold, weighted combine) merged; also covers the G-08.3 computation; synthetic LLM-built pairs only; unwired until the G-08 gate runner; residuals: entailment and AlignScore arms need local models, real pairs wait for G-08.1/AN-06 [A→H]
 - [ ] **G-08.3** `[A]` Balanced accuracy; calibrate the silent-filter threshold
+  - partial (R38/A1, PR #96): gate runner `experiments/gates/g08.py` (separate required calibration split, calibrated threshold or disabled filter, tpr/tnr/balanced-accuracy/flagged-precision rows with n and intervals) merged; synthetic LLM-built tests only; not run: real pairs wait for G-08.1/AN-06 [A→H] and the g08 preregistration [H]
 - [ ] **G-08.4** `[A→H]` Verdict
 
 **Proposed threshold:** agreement ≥ 0.6; silent filter only at ≥ 0.95 precision.
