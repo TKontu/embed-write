@@ -56,9 +56,11 @@ Each axis is a separate, separately validated check. They are shown side by side
 
 ## Edit log
 
-- [ ] **EL-01** `[A]` Schema: genre, section type, move, original text, candidate, final text, action (accept, reject, edit), panel values, generation run ID, timestamp — check: schema validation
+- [x] **EL-01** `[A]` Schema: genre, section type, move, original text, candidate, final text, action (accept, reject, edit), panel values, generation run ID, timestamp — check: schema validation
+  - done (R43/A1, PR #106): `editlog/schema.py` EditLogEntry + validate_entry. Unwired by design until EL-02. seen: tests/test_editlog_schema.py, gate 671 tests OK at head 59d5da846a50f421af04866fcd9c6ddbf77dc7b0
 - [ ] **EL-02** `[A]` Capture on accept, reject and any later manual edit of machine text (invariant I7) — check: provenance change without a log entry fails a test
-- [ ] **EL-03** `[A]` Local SQLite store; nothing leaves the machine
+- [x] **EL-03** `[A]` Local SQLite store; nothing leaves the machine
+  - done (R43/A1, PR #106): `editlog/store.py` EditLogStore, append-only, one transaction per append, streaming iter_entries, rejects URI/network paths. Unwired by design until EL-02. Residual: tuples in panel_values round-trip as lists. seen: tests/test_editlog_store.py, gate 671 tests OK at head 59d5da846a50f421af04866fcd9c6ddbf77dc7b0
 - [ ] **EL-04** `[A]` Pair extraction for training: machine text before, expert text after, with context
 - [ ] **EL-05** `[A]` Rejections kept as negatives
 - [ ] **EL-06** `[A]` Gap report: which moves and which register features the expert corrects most often
