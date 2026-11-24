@@ -35,6 +35,7 @@ Each axis is a separate, separately validated check. They are shown side by side
 - [ ] **VF-04** `[A]` **Register fit:** distance to the genre profile before and after *(G-06)*
 - [ ] **VF-05** `[A]` **Grammar:** grammar-correction model
 - [ ] **VF-06** `[A]` **Length delta:** reported, not judged
+  - partial (R47/A1, PR #PRNUM): `service/length_delta.py` reports word counts (regex `\w+(?:[-'’]\w+)*`), stripped character counts, signed deltas and candidate/original ratios (None for an empty original); no threshold or verdict; unwired until VF-07
 - [ ] **VF-07** `[A]` Panel: each axis with value, confidence and method link
 - [ ] **VF-08** `[A]` Filter: only candidates failing meaning preservation at the G-08 threshold are hidden; a counter shows how many, and they can be viewed
 - [ ] **VF-09** `[A]` Critic rerank for generation: candidates ordered by move and register fit, subject to the filters. The ordering is a default, not a verdict
