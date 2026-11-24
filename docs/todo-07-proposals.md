@@ -73,7 +73,8 @@ Each axis is a separate, separately validated check. They are shown side by side
   - done (R45/A1, PR #110): `editlog/gaps.py` gap_report streams iter_entries once into a frozen GapReport: per move and per (section_type, move) accept/edit/reject and `revised` (edit + reject; named so for I8), plus added/removed counts for an injected register-feature callable on edit entries. Unwired by design; the expert-facing view is a later row and no feature extractor exists yet. seen: tests/test_editlog_gaps.py, gate 684 tests OK at head 2b7bf2c489e88e28acc13b17120de7ca7112a978
 - [x] **EL-07a** `[A]` Export control for the expert: whole edit log to JSON Lines (`python3 -m editlog.export DB_PATH OUT_PATH [--force]`; atomic, 0600, no overwrite without --force) — check: tests/test_editlog_export.py
   - done (R46/A1, PR #112): `editlog/export.py` export_jsonl streams iter_entries into a 0600 temp file, published atomically (os.link no-clobber, os.replace with --force); CLI `python3 -m editlog.export`. Residual: no-clobber publish needs hard-link support on the destination filesystem. seen: tests/test_editlog_export.py, gate 692 tests OK at head b30a9b949aae9cc8f4018c217cc471001d9ea748
-- [ ] **EL-07b** `[A]` Delete control for the expert — permanent whole-log delete after offering the EL-07a export (D-004); no per-entry delete, no tombstones
+- [x] **EL-07b** `[A]` Delete control for the expert — permanent whole-log delete after offering the EL-07a export (D-004); no per-entry delete, no tombstones
+  - done (R51/A1, PR/head recorded in the R51/A1 submission): `editlog/delete.py` delete_log + CLI per D-004. seen: tests/test_editlog_delete.py, gate 759 tests OK on the submitted tree. Exact PR/head are recorded externally to preserve the single executor commit.
 
 ---
 
