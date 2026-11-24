@@ -1,0 +1,25 @@
+{
+  "_note": "LLM-built synthetic fixture. Invented moves and colours for tests only; not the expert inventory (MV-03/MV-04 [H]). No corpus text.",
+  "genre": "synthetic-test-genre",
+  "version": 1,
+  "moves": [
+    {
+      "id": "alpha",
+      "name": "Alpha move",
+      "definition": "The writer opens with an invented placeholder statement.",
+      "positive_examples": ["Placeholder alpha example one.", "Placeholder alpha example two."],
+      "near_miss": "Placeholder sentence that resembles alpha but is not."
+    },
+    {
+      "id": "beta",
+      "name": "Beta move",
+      "definition": "The writer follows with an invented placeholder elaboration.",
+      "positive_examples": ["Placeholder beta example one.", "Placeholder beta example two."],
+      "near_miss": "Placeholder sentence that resembles beta but is not."
+    }
+  ],
+  "legend": {
+    "colors": {"alpha": "#1f77b4", "beta": "#ff7f0e"},
+    "other": "#9e9e9e"
+  }
+}
