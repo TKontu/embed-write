@@ -29,7 +29,7 @@ The service embeds sentences and blocks, caches by content hash, and hosts the f
 
 - [ ] **CK-01** `[A]` Structural chunking from the document model hierarchy; no re-derivation of structure
 - [x] **CK-02** `[A]` Sentence segmentation with PySBD or spaCy — check: test set with abbreviations, decimals, units, quotations, inline code, footnote markers
-  - done (R51/A2, PR: task/ck02-segment → main): service/segment.py segment_sentences on pysbd 0.3.4. seen: tests/test_segment.py run under .venv, 13 tests OK at head of the single R51/A2 executor commit (exact SHA and PR number recorded in its PR and submitted result). Production caller: SegmentationCache (CK-03), unwired until CK-01. Residuals: single-backtick code and numeric footnotes; PySBD internal runtime is not guaranteed linear; 100 000-word bound untested.
+  - done (R51/A2, PR #129): service/segment.py segment_sentences on pysbd 0.3.4. seen: tests/test_segment.py run under .venv, 13 tests OK at head 016ce05fdd1e3cf9efe0f0c139bc1cdfb9e799f3. Production caller: SegmentationCache (CK-03), unwired until CK-01. Residuals: single-backtick code and numeric footnotes; PySBD internal runtime is not guaranteed linear; 100 000-word bound untested.
 - [x] **CK-03** `[A]` Segmentation cache keyed by block hash
   - done (R24/A1): `service/segcache.py` (SegmentationCache, CacheStats); LRU keyed by (segmenter id, key_version, node_hash), segmenter called only on miss, immutable tuples, TypeError on bad output with nothing cached. seen: tests/test_segcache.py, gate 474 tests OK at head 0439426e230bdaca74dd1a16034acb5f6172112b (PR #67). Production caller: unwired by design until CK-02. Residuals: per-entry bytes unbounded; 100 000-word bound untested; not thread-safe.
 - [ ] **CK-04** `[A]` Late chunking (embed the section once, pool per sentence), as an arm for G-03
@@ -56,7 +56,7 @@ The service embeds sentences and blocks, caches by content hash, and hosts the f
 ## Cache
 
 - [x] **CA-01** `[A]` LMDB store keyed `(modelId, modelVersion, level, contentHash, dims)`
-  - done (R51/A3): service/vector_store.py VectorStore/VectorKey on lmdb 3.0.0. seen: tests/test_vector_store.py run under .venv, 10 tests OK at base cb75edd454fbdb73d2acd01ecfc90231fde31eed + this single executor commit; exact head and PR are recorded in the R51/A3 PR and submitted/A3-1.json (avoids a self-referential commit SHA). Unwired by design until SV-02/CA-02. One write transaction per put; O(dims) vector memory per call. Residuals: LMDB key-size/map-size limits apply; append-only policy, eviction, broader corruption handling and benchmarks deferred to CA-02–CA-05.
+  - done (R51/A3, PR #128): service/vector_store.py VectorStore/VectorKey on lmdb 3.0.0. seen: tests/test_vector_store.py run under .venv, 10 tests OK at head 6a8df5d4edeb9d1e22972cd72469240f16556749. Unwired by design until SV-02/CA-02. One write transaction per put; O(dims) vector memory per call. Residuals: LMDB key-size/map-size limits apply; append-only policy, eviction, broader corruption handling and benchmarks deferred to CA-02–CA-05.
 - [ ] **CA-02** `[A]` Append-only entries; a new model version is a new keyspace
 - [ ] **CA-03** `[A]` Size-capped eviction — check: test at the cap
 - [ ] **CA-04** `[A]` Corruption handling: a bad entry fails loudly — check: fault-injection test
