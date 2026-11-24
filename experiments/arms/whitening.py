@@ -66,18 +66,28 @@ def _moments(vectors: Iterable, level: Level):
     if n < 2:
         raise WhiteningError(f'need at least 2 vectors to fit, got {n}')
     cov = [[(m2[i][j] + m2[j][i]) / (2 * (n - 1)) for j in range(dims)] for i in range(dims)]
+    if not (all(math.isfinite(m) for m in mean)
+            and all(math.isfinite(x) for row in cov for x in row)):
+        raise WhiteningError('mean or covariance overflowed to a non-finite value')
     return n, dims, tuple(mean), cov
 
 
 def _jacobi(a: list[list[float]], tol: float = 1e-12, max_sweeps: int = 100):
-    """Eigen-decompose symmetric a; return (eigenvalues, eigenvectors) descending."""
+    """Eigen-decompose symmetric a; return (eigenvalues, eigenvectors) descending.
+
+    Raises WhiteningError if max_sweeps pass without the off-diagonal norm
+    reaching tol * scale.
+    """
     d = len(a)
     a = [row[:] for row in a]
     v = [[1.0 if i == j else 0.0 for j in range(d)] for i in range(d)]
     scale = max((abs(x) for row in a for x in row), default=0.0) or 1.0
-    for _ in range(max_sweeps):
+    def converged():
         off = math.sqrt(sum(a[i][j] ** 2 for i in range(d) for j in range(d) if i != j))
-        if off <= tol * scale:
+        return off <= tol * scale
+
+    for _ in range(max_sweeps):
+        if converged():
             break
         for p in range(d - 1):
             for q in range(p + 1, d):
@@ -100,6 +110,9 @@ def _jacobi(a: list[list[float]], tol: float = 1e-12, max_sweeps: int = 100):
                     vkp, vkq = v[k][p], v[k][q]
                     v[k][p] = c * vkp - s * vkq
                     v[k][q] = s * vkp + c * vkq
+    else:
+        if not converged():
+            raise WhiteningError(f'Jacobi did not converge in {max_sweeps} sweeps')
     order = sorted(range(d), key=lambda i: -a[i][i])
     values = [a[i][i] for i in order]
     vectors = [[v[k][i] for k in range(d)] for i in order]  # rows are eigenvectors
@@ -178,11 +191,20 @@ class Transform:
 
 
 def fit_whitening(vectors: Iterable, level: Level, eps: float = 1e-6) -> Transform:
-    """Fit ZCA whitening W = E diag(1/sqrt(lambda + eps)) E^T on one level."""
+    """Fit ZCA whitening W = E diag(1/sqrt(lambda + eps)) E^T on one level.
+
+    A degenerate (rank-deficient, e.g. collinear) covariance is regularized by
+    eps > 0 and yields a finite transform. With eps == 0 it cannot be
+    regularized: any eigenvalue <= 1e-12 * max(|lambda|) raises WhiteningError.
+    """
     if not (math.isfinite(eps) and eps >= 0):
         raise WhiteningError('eps must be finite and non-negative')
     n, dims, mean, cov = _moments(vectors, level)
     values, vecs = _jacobi(cov)
+    floor = 1e-12 * max((abs(lam) for lam in values), default=0.0)
+    if eps == 0 and min(values) <= floor:
+        raise WhiteningError('degenerate covariance (rank-deficient) and eps=0 cannot '
+                             'regularize it; use eps > 0')
     inv = [1 / math.sqrt(max(lam, 0.0) + eps) if max(lam, 0.0) + eps > 0 else 0.0
            for lam in values]
     matrix = [[math.fsum(vecs[k][i] * inv[k] * vecs[k][j] for k in range(dims))
@@ -192,7 +214,8 @@ def fit_whitening(vectors: Iterable, level: Level, eps: float = 1e-6) -> Transfo
 
 def fit_abtt(vectors: Iterable, level: Level, n_components: int = 2) -> Transform:
     """Fit all-but-the-top (Mu & Viswanath 2018): remove mean and top-D directions."""
-    if not isinstance(n_components, int) or n_components < 0:
+    if (isinstance(n_components, bool) or not isinstance(n_components, int)
+            or n_components < 0):
         raise WhiteningError('n_components must be a non-negative int')
     n, dims, mean, cov = _moments(vectors, level)
     if n_components >= dims:
