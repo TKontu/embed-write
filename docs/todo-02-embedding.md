@@ -68,6 +68,7 @@ Reduced in revision 2. L2 normalization is the default. Whitening is an arm of G
 - [x] **NM-01** `[A]` L2 normalization
   - done (R16/A2): `service/normalize.py` (NormalizationError, l2_normalize, l2_normalize_batch); stdlib-only, scale-before-squaring normalization rejects empty, zero and non-finite vectors. Batch yields lazily with O(1) batch overhead and O(d) current output memory. seen: tests/test_normalize.py (13 tests OK), full offline gate 330 tests OK at base 622356bca33b46224938d097feba88d734da8e01 + this change. Unwired by design until EM-01 embedder calls it. Residuals: no local-model path exercised; level typing remains EM-03; components below floating-point range may underflow to zero.
 - [ ] **NM-02** `[A]` Whitening and all-but-the-top as experiment arms, fitted per level on the corpus
+  - partial (R39/A1, PR #98): `experiments/arms/whitening.py` (stdlib streaming fit, ZCA whitening and all-but-the-top, exact dict round-trip) merged; synthetic LLM-built tests only; unwired by design until G-03 wiring; residuals: pure-Python Jacobi O(d^3)/sweep untested at d=768, no non-convergence error, covariance overflow not checked; not run: fit on corpus in G-03
 - [ ] **NM-03** `[A]` If adopted: persist the fitted transform with the genre so results are reproducible — check: reload gives identical vectors
 
 ---
