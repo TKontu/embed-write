@@ -61,8 +61,10 @@ Each axis is a separate, separately validated check. They are shown side by side
 - [ ] **EL-02** `[A]` Capture on accept, reject and any later manual edit of machine text (invariant I7) — check: provenance change without a log entry fails a test
 - [x] **EL-03** `[A]` Local SQLite store; nothing leaves the machine
   - done (R43/A1, PR #106): `editlog/store.py` EditLogStore, append-only, one transaction per append, streaming iter_entries, rejects URI/network paths. Unwired by design until EL-02. Residual: tuples in panel_values round-trip as lists. seen: tests/test_editlog_store.py, gate 671 tests OK at head 59d5da846a50f421af04866fcd9c6ddbf77dc7b0
-- [ ] **EL-04** `[A]` Pair extraction for training: machine text before, expert text after, with context
-- [ ] **EL-05** `[A]` Rejections kept as negatives
+- [x] **EL-04** `[A]` Pair extraction for training: machine text before, expert text after, with context
+  - done (R44/A1, PR #108): `editlog/pairs.py` iter_training_pairs streams a frozen TrainingPair per accept/edit entry (candidate → final_text plus context and entry id). Unwired by design; G-10 fine-tuning consumes it. seen: tests/test_editlog_pairs.py, gate 676 tests OK at head e4871a96a9d79f39718f7d42b835c810c0206370
+- [x] **EL-05** `[A]` Rejections kept as negatives
+  - done (R44/A1, PR #108): `editlog/pairs.py` iter_negatives streams a frozen NegativeRecord per reject entry; rejects never become pairs. Unwired by design; G-10 fine-tuning consumes it. seen: tests/test_editlog_pairs.py, gate 676 tests OK at head e4871a96a9d79f39718f7d42b835c810c0206370
 - [ ] **EL-06** `[A]` Gap report: which moves and which register features the expert corrects most often
 - [ ] **EL-07** `[A]` Export and delete controls for the expert
 
