@@ -32,3 +32,47 @@ Append-only record of operator rulings and architecture decisions.
   planner's merges were refused. Planners merge only through `scripts/merge_guard.py`, which is
   allowed. It checks the reviewed head, mergeability, the base branch and the operator-owned paths
   above, then merges with `--match-head-commit` and confirms the merge.
+
+## D-003 — R49/A1 resolves as merged; planners never push to a reported lane (2026-11-24, operator)
+
+- **Ruling:** R49/A1 (PR #116) is `merged` at merge commit `beb7be7`. The merged head `8d5050d`
+  is a planner docs commit on top of the executor's result head `8c06b6d`; the lane's own work is
+  `8c06b6d` and it merged unchanged. Record that, with this decision as the evidence, and close R49.
+- **Rule from now on:** once a lane has reported its result head, planners do not push to that
+  lane's branch. A review fix becomes a new lane head that is reviewed again, or a separate PR.
+- **Why:** the extra commit made `round.py` refuse `merged`, `cancelled` would misstate a merge,
+  and the open R49 halted the loop (2026-11-24 02:47).
+
+## D-004 — EL-07b delete is a permanent whole-log delete (2026-11-24, operator)
+
+- **Ruling:** the expert's delete control permanently deletes the whole edit log, after offering
+  the EL-07a export. No per-entry delete and no tombstones for now.
+- **Why:** the store stays append-only while it exists, and the expert's private data is truly
+  erased; a tombstone would leave it on disk.
+- **Unblocks:** EL-07b.
+
+## D-005 — Dependencies install into a local, pinned venv (2026-11-24, operator)
+
+- **Ruling:** Python dependencies (PySBD/spaCy, LMDB and later ones) are pinned in
+  `requirements.txt` and installed into the checkout's `.venv` with
+  `python3 -m venv .venv && .venv/bin/pip install -r requirements.txt`. That command becomes the
+  `install` key in CLAUDE.md's Project Commands. Packages are fetched once at install; everything
+  at run time stays offline and local (invariant I9). A lane worktree runs the same install.
+- **Unblocks:** CK-02, CA-01.
+
+## D-006 — CK-06 policy for tables, code, figures and captions (2026-11-24, operator)
+
+- **Ruling:** code blocks are skipped (not embedded). A figure is embedded as its caption only. A
+  table is embedded as its caption plus its header row. Text that is only a caption is embedded as
+  that caption.
+- **Why:** the simplest rule that gives each type one tested path, which is CK-06's check.
+
+## D-007 — App shell is Tauri (2026-11-24, operator)
+
+- **Ruling:** the app shell is Tauri. It resolves "Tauri or Electron" in `docs/architecture.md`.
+  The editor stays Milkdown on ProseMirror, in Tauri's system webview, and the local Python
+  analysis service runs as a Tauri sidecar.
+- **Why:** small binaries and low memory, and a tight permission model for a local-only app with
+  private data.
+- **Unblocks:** the TS stack (editor, app shell, and the document-model and visualization rows).
+  Needs a Rust toolchain and Node for the frontend build; installs follow D-005's pattern.
