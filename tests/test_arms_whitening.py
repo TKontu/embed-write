@@ -136,9 +136,6 @@ class ErrorTests(unittest.TestCase):
             Transform.from_dict(bad)
 
 
-if __name__ == '__main__':
-    unittest.main()
-
 
 class HardeningTests(unittest.TestCase):
     def test_jacobi_raises_when_sweeps_exhausted(self):
@@ -176,3 +173,7 @@ class HardeningTests(unittest.TestCase):
         for flag in (True, False):
             with self.assertRaises(WhiteningError):
                 fit_abtt(data, Level.SENTENCE, n_components=flag)
+
+
+if __name__ == '__main__':
+    unittest.main()
