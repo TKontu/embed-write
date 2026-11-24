@@ -34,6 +34,7 @@ The service embeds sentences and blocks, caches by content hash, and hosts the f
 - [ ] **CK-04** `[A]` Late chunking (embed the section once, pool per sentence), as an arm for G-03
 - [ ] **CK-05** `[A]` Contextual-prefix arm for G-03
 - [ ] **CK-06** `[A]` Policy for tables, code, figures and captions: skipped, embedded as caption, or summarized — check: each type has a tested path
+  - partial (R50/A2, PR #124): service/block_policy.py embed_text_for per D-006; unwired until CK-01 (residual). seen: tests/test_block_policy.py (synthetic offline policy checks); per-block O(block size).
 
 ---
 
