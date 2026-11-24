@@ -81,6 +81,7 @@ Each axis is a separate, separately validated check. They are shown side by side
 - [ ] **AD-03** `[A]` Per-move generation with exemplars and the selected source items
 - [ ] **AD-04** `[A]` Grounding check: every generated sentence with a factual claim links to a source item; unlinked sentences are flagged, never silently kept — check: test with a deliberately unsupported sentence
 - [ ] **AD-05** `[A]` Number check: every number and unit in the draft matches a source item — check: unit tests
+  - partial (R48/A1, PR #115): `service/number_check.py` maps each draft `num:` token (via `extract_support`) to the ids of source items containing it and lists unmatched tokens; presence semantics, URL digits ignored, literal value+unit match; reporting only; unwired until AD-04/AD-06
 - [ ] **AD-06** `[A]` Assembly into a Markdown document with provenance `machine` on every block
 - [ ] **AD-07** `[A]` Draft status: `draft` until the expert marks it reviewed (invariant I5) — check: no code path sets `reviewed` without a user action
 - [ ] **AD-08** `[A]` Review flow: the editor opens the draft with overlays on and the open-issues list sorted by severity
