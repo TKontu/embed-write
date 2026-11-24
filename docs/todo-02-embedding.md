@@ -57,7 +57,8 @@ The service embeds sentences and blocks, caches by content hash, and hosts the f
 
 - [x] **CA-01** `[A]` LMDB store keyed `(modelId, modelVersion, level, contentHash, dims)`
   - done (R51/A3, PR #128): service/vector_store.py VectorStore/VectorKey on lmdb 3.0.0. seen: tests/test_vector_store.py run under .venv, 10 tests OK at head 6a8df5d4edeb9d1e22972cd72469240f16556749. Unwired by design until SV-02/CA-02. One write transaction per put; O(dims) vector memory per call. Residuals: LMDB key-size/map-size limits apply; append-only policy, eviction, broader corruption handling and benchmarks deferred to CA-02–CA-05.
-- [ ] **CA-02** `[A]` Append-only entries; a new model version is a new keyspace
+- [x] **CA-02** `[A]` Append-only entries; a new model version is a new keyspace
+  - done (R52/A2, PR and exact head recorded in the R52/A2 submitted result and PR body): identical encoded vectors are a no-op; conflicts raise AppendOnlyError without overwriting; length-prefixed model/version keyspaces stream through VectorStore.keys. seen: tests/test_vector_store.py run under .venv, 13 tests OK at head task/ca02-append (immutable candidate SHA recorded in PR). Unwired by design until SV-02. One write transaction per put; keys() holds one cursor and O(1) keys. Residuals: vector identity is byte-exact float64 (signed zeros differ); exhaust or close iterators before closing the store; LMDB key/map limits apply; eviction, broader corruption handling and benchmarks remain CA-03–CA-05.
 - [ ] **CA-03** `[A]` Size-capped eviction — check: test at the cap
 - [ ] **CA-04** `[A]` Corruption handling: a bad entry fails loudly — check: fault-injection test
 - [ ] **CA-05** `[A]` Benchmark: cold analysis of a 100 000-word document; record the number
