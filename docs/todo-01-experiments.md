@@ -89,6 +89,7 @@ Needs no editor. Can run before the classifier exists by using the LLM as critic
 ## G-05 — Sequence fit
 
 - [ ] **G-05.1** `[A]` Perturb held-out good reports: delete a move, swap two, insert a foreign one — check: perturbation log with ground truth
+  - partial (R36/A1, PR #92): gate runner `experiments/gates/g05.py` (perturb → detectors → sequence_fit, Wilson/bootstrap intervals, perturbation log) merged; synthetic tests only; run_gate refuses until g05 preregistration [H]; residuals: reference sections default to the held-out set (G-05.2 run must pass a separate reference split), held-out sections held in memory untested at corpus scale
 - [ ] **G-05.2** `[A]` Detection precision and recall on perturbations; false flags on unperturbed reports
   - partial (R31/A1, PR #82): offline scorer `experiments/metrics/sequence_fit.py` merged; unwired until the G-05 runner; shown only by the G-05 gate run on the held-out split
 - [ ] **G-05.3** `[H]` Review 20 flags raised on real drafts
