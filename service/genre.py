@@ -110,7 +110,7 @@ def validate_genre(obj):
     if not isinstance(colors, dict):
         _fail('legend.colors', 'must be an object')
     for mid in colors:
-        if mid not in ids:
+        if not mid.startswith('_') and mid not in ids:
             _fail(f'legend.colors.{mid}', 'legend entry for unknown move')
     for mid in ids:
         if mid not in colors:

@@ -64,6 +64,11 @@ class ValidationTests(unittest.TestCase):
         obj = base(); obj['legend']['colors']['gamma'] = '#000000'
         self.assertFails(obj, 'legend.colors.gamma')
 
+    def test_legend_comment_key_ignored(self):
+        obj = base(); obj['legend']['colors']['_note'] = 'x'
+        g.validate_genre(obj)
+        self.assertEqual(g.content_hash(obj), g.content_hash(base()))
+
     def test_move_missing_from_legend(self):
         obj = base(); del obj['legend']['colors']['beta']
         self.assertFails(obj, 'legend.colors.beta')
