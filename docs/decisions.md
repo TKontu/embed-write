@@ -66,3 +66,13 @@ Append-only record of operator rulings and architecture decisions.
   table is embedded as its caption plus its header row. Text that is only a caption is embedded as
   that caption.
 - **Why:** the simplest rule that gives each type one tested path, which is CK-06's check.
+
+## D-007 — App shell is Tauri (2026-11-24, operator)
+
+- **Ruling:** the app shell is Tauri. It resolves "Tauri or Electron" in `docs/architecture.md`.
+  The editor stays Milkdown on ProseMirror, in Tauri's system webview, and the local Python
+  analysis service runs as a Tauri sidecar.
+- **Why:** small binaries and low memory, and a tight permission model for a local-only app with
+  private data.
+- **Unblocks:** the TS stack (editor, app shell, and the document-model and visualization rows).
+  Needs a Rust toolchain and Node for the frontend build; installs follow D-005's pattern.
