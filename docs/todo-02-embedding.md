@@ -28,8 +28,8 @@ The service embeds sentences and blocks, caches by content hash, and hosts the f
 ## Chunking
 
 - [ ] **CK-01** `[A]` Structural chunking from the document model hierarchy; no re-derivation of structure
-- [ ] **CK-02** `[A]` Sentence segmentation with PySBD or spaCy — check: test set with abbreviations, decimals, units, quotations, inline code, footnote markers
-  - unblocked (R50/A3, PR #125): pysbd==0.3.4 pinned in requirements.txt; install per CLAUDE.md `install` key (D-005)
+- [x] **CK-02** `[A]` Sentence segmentation with PySBD or spaCy — check: test set with abbreviations, decimals, units, quotations, inline code, footnote markers
+  - done (R51/A2, PR: task/ck02-segment → main): service/segment.py segment_sentences on pysbd 0.3.4. seen: tests/test_segment.py run under .venv, 13 tests OK at head of the single R51/A2 executor commit (exact SHA and PR number recorded in its PR and submitted result). Production caller: SegmentationCache (CK-03), unwired until CK-01. Residuals: single-backtick code and numeric footnotes; PySBD internal runtime is not guaranteed linear; 100 000-word bound untested.
 - [x] **CK-03** `[A]` Segmentation cache keyed by block hash
   - done (R24/A1): `service/segcache.py` (SegmentationCache, CacheStats); LRU keyed by (segmenter id, key_version, node_hash), segmenter called only on miss, immutable tuples, TypeError on bad output with nothing cached. seen: tests/test_segcache.py, gate 474 tests OK at head 0439426e230bdaca74dd1a16034acb5f6172112b (PR #67). Production caller: unwired by design until CK-02. Residuals: per-entry bytes unbounded; 100 000-word bound untested; not thread-safe.
 - [ ] **CK-04** `[A]` Late chunking (embed the section once, pool per sentence), as an arm for G-03
