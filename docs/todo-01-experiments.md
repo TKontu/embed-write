@@ -129,6 +129,7 @@ Needs no editor. Can run before the classifier exists by using the LLM as critic
 
 - [ ] **G-08.1** `[A→H]` Build ~200 rewrite pairs, some preserving meaning and some subtly not; expert labels them (`todo-09` AN-06)
 - [ ] **G-08.2** `[A]` Arms: bidirectional entailment; AlignScore; number-and-unit consistency; combined
+  - partial (R37/A1, PR #94): offline scorer `experiments/metrics/meaning.py` (RewritePair, number-and-unit arm on service/support_check, score with balanced accuracy/TPR/TNR and Wilson 95% intervals, calibrate for the silent-filter threshold, weighted combine) merged; also covers the G-08.3 computation; synthetic LLM-built pairs only; unwired until the G-08 gate runner; residuals: entailment and AlignScore arms need local models, real pairs wait for G-08.1/AN-06 [A→H]
 - [ ] **G-08.3** `[A]` Balanced accuracy; calibrate the silent-filter threshold
 - [ ] **G-08.4** `[A→H]` Verdict
 
