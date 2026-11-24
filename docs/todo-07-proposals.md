@@ -21,6 +21,7 @@ Stage 1 proposes rewrites and logs what the expert does with them. Stage 2 draft
 - [ ] **GE-04** `[A]` Local LLM through an OpenAI-compatible endpoint; remote models only with explicit per-session opt-in (invariant I9)
 - [ ] **GE-05** `[A]` Streaming and cancellation
 - [ ] **GE-06** `[A]` Generation run records: prompt, exemplars used, model version, candidates — check: every candidate is reproducible from its record
+  - partial (R49/A1, PR #116): `generation/run_record.py` GenerationRunRecord (prompt, ordered exemplar ids, model, per-candidate SamplingParams with seed, candidates), validate_record, canonical to_json/from_json, run_id = sha256 of inputs, replay(record, generate_fn) checked with a deterministic fake; unwired until GE-03/GE-04 produce records and EL-02 references run_id; real-model reproducibility not yet seen
 
 ---
 
