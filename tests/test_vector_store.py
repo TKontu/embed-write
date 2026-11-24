@@ -1,4 +1,4 @@
-"""Synthetic, offline CA-01 acceptance checks."""
+"""Synthetic, offline CA-01/CA-02 acceptance checks."""
 from dataclasses import replace
 import importlib.util
 import struct
@@ -30,6 +30,48 @@ class VectorStoreTests(unittest.TestCase):
         with self.VectorStore(self.path) as store:
             store.put(self.key, self.vector)
             self.assertEqual(store.get(self.key), self.vector)
+
+    def test_identical_put_is_noop(self):
+        with self.VectorStore(self.path) as store:
+            store.put(self.key, self.vector)
+            before = store._env.info()['last_txnid']
+            store.put(self.key, self.vector)
+            self.assertEqual(store._env.info()['last_txnid'], before)
+            self.assertEqual(store.get(self.key), self.vector)
+
+    def test_conflicting_put_preserves_original_after_reopen(self):
+        import service.vector_store as module
+        with self.VectorStore(self.path) as store:
+            store.put(self.key, self.vector)
+            with self.assertRaises(Exception) as caught:
+                store.put(self.key, LevelVector(self.key.level, (9, 8)))
+            self.assertIs(type(caught.exception), module.AppendOnlyError)
+        with self.VectorStore(self.path) as store:
+            self.assertEqual(store.get(self.key), self.vector)
+
+    def test_keys_streams_exact_disjoint_keyspaces(self):
+        identities = [('model', 'v1'), ('model', 'v2'), ('model', 'v10'),
+                      ('modelx', 'v1'), ('a|b', 'c'), ('a', 'b|c'),
+                      ('a\x00b', 'c'), ('a', 'b\x00c'), ('', ''),
+                      ('é', '版本'), ('["a",', '"b"]')]
+        with self.VectorStore(self.path) as store:
+            self.assertTrue(callable(getattr(store, 'keys', None)),
+                            'keyspace iteration must be available')
+            for model_id, version in identities:
+                for suffix in ('hash', 'hash2'):
+                    key = replace(self.key, model_id=model_id,
+                                  model_version=version, content_hash=suffix)
+                    store.put(key, self.vector)
+            for model_id, version in identities:
+                expected = {replace(self.key, model_id=model_id,
+                                    model_version=version, content_hash=suffix)
+                            for suffix in ('hash', 'hash2')}
+                iterator = store.keys(model_id, version)
+                self.assertIs(iter(iterator), iterator)
+                self.assertEqual(set(iterator), expected)
+                for key in expected:
+                    self.assertEqual(store.get(key), self.vector)
+            self.assertEqual(list(store.keys('missing', 'v1')), [])
 
     def test_missing_key(self):
         with self.VectorStore(self.path) as store:
