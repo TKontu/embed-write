@@ -31,7 +31,8 @@ The corpus defines what "good" means for a genre. The selection is the single mo
 - [ ] **MV-02** `[A]` Discovery support: cluster sentence embeddings per section type; LLM proposes a name and definition per cluster — check: cluster report with example sentences
 - [ ] **MV-03** `[H]` Finalize the inventory: ten moves or fewer, each with a one-sentence definition, two positive examples and one near-miss
 - [ ] **MV-04** `[H]` Assign a colour to each move (the legend, invariant I3)
-- [ ] **MV-05** `[A]` Store inventory, definitions and legend as a versioned genre file — check: schema validation; a change bumps the version and invalidates dependent labels
+- [x] **MV-05** `[A]` Store inventory, definitions and legend as a versioned genre file — check: schema validation; a change bumps the version and invalidates dependent labels
+  - done (R41/A1, PR #102): `service/genre.py` (GenreFileError, validate_genre, load_genre, content_hash, check_version_bump, version_key, labels_valid_for); stdlib-only; synthetic LLM-built fixture. seen: tests/test_genre.py (21 tests), gate 657 tests OK at head db7c7d01828c6b1fc3b41d7f2b4bb402d7e982ed. Unwired by design until LG-02 and AN-01/G-01.4. Residuals: schema provisional until MV-03/MV-04 [H]; `_`-prefixed keys inside legend.colors fail validation as unknown moves (docstring says comments are ignored).
 
 ---
 
