@@ -55,8 +55,8 @@ The service embeds sentences and blocks, caches by content hash, and hosts the f
 
 ## Cache
 
-- [ ] **CA-01** `[A]` LMDB store keyed `(modelId, modelVersion, level, contentHash, dims)`
-  - unblocked (R50/A3, PR #125): lmdb==3.0.0 pinned in requirements.txt; install per CLAUDE.md `install` key (D-005)
+- [x] **CA-01** `[A]` LMDB store keyed `(modelId, modelVersion, level, contentHash, dims)`
+  - done (R51/A3): service/vector_store.py VectorStore/VectorKey on lmdb 3.0.0. seen: tests/test_vector_store.py run under .venv, 10 tests OK at base cb75edd454fbdb73d2acd01ecfc90231fde31eed + this single executor commit; exact head and PR are recorded in the R51/A3 PR and submitted/A3-1.json (avoids a self-referential commit SHA). Unwired by design until SV-02/CA-02. One write transaction per put; O(dims) vector memory per call. Residuals: LMDB key-size/map-size limits apply; append-only policy, eviction, broader corruption handling and benchmarks deferred to CA-02–CA-05.
 - [ ] **CA-02** `[A]` Append-only entries; a new model version is a new keyspace
 - [ ] **CA-03** `[A]` Size-capped eviction — check: test at the cap
 - [ ] **CA-04** `[A]` Corruption handling: a bad entry fails loudly — check: fault-injection test
