@@ -40,6 +40,7 @@ Each axis is a separate, separately validated check. They are shown side by side
 - [ ] **VF-08** `[A]` Filter: only candidates failing meaning preservation at the G-08 threshold are hidden; a counter shows how many, and they can be viewed
 - [ ] **VF-09** `[A]` Critic rerank for generation: candidates ordered by move and register fit, subject to the filters. The ordering is a default, not a verdict
 - [ ] **VF-10** `[A]` No aggregate score anywhere — check: lint for score-combining code in this module
+  - partial (R49/A2, PR pending): `scripts/lint_no_aggregate.py` flags aggregate-score names (function, argument, variable, attribute, dict key) and sum/mean/fmean/average calls over two or more distinct `*score`/`*_result` names in service/support_check.py, length_delta.py, number_check.py by default; no operator/dataflow detection; unwired until CI wiring (residual)
 - [ ] **VF-11** `[A]` Method text stating why an LLM is not the final judge of candidate quality (position, verbosity and self-preference bias)
 
 ---
