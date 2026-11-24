@@ -16,7 +16,7 @@ per-file AST check reports:
 Not detected: combining via operators (a_score + b_score), via other
 functions or loops, through aliases or renamed imports, names built at run
 time, or any dataflow (a combined value held under a neutral name). A single
-axis name such as `support_score` is not flagged. CI wiring is deferred.
+axis name such as `support_score` is not flagged. Run nightly by .github/workflows/nightly.yml.
 """
 
 import argparse
