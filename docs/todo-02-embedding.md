@@ -27,15 +27,16 @@ The service embeds sentences and blocks, caches by content hash, and hosts the f
 
 ## Chunking
 
-- [ ] **CK-01** `[A]` Structural chunking from the document model hierarchy; no re-derivation of structure
+- [x] **CK-01** `[A]` Structural chunking from the document model hierarchy; no re-derivation of structure
+  - done (R52/A1; PR and final head recorded in the assignment PR/result): service/chunk.py chunk_blocks streams policy-selected blocks and cached prose sentences; hierarchy_for projects NodeRefs for caller-supplied sections. seen: tests/test_chunk.py, 13 tests OK at base 29b54a740ed916785a5b891fb290b52d845ad360 + this commit. Production caller: unwired by design until IR-01/SV-02 call it; wires CK-02/CK-03/CK-06. Residuals: 100 000-word bound untested; cache bounded by entries, not bytes; hierarchy_for materializes O(chunks) references; document-model ids must avoid generated sentence-id collisions.
 - [x] **CK-02** `[A]` Sentence segmentation with PySBD or spaCy — check: test set with abbreviations, decimals, units, quotations, inline code, footnote markers
-  - done (R51/A2, PR #129): service/segment.py segment_sentences on pysbd 0.3.4. seen: tests/test_segment.py run under .venv, 13 tests OK at head 016ce05fdd1e3cf9efe0f0c139bc1cdfb9e799f3. Production caller: SegmentationCache (CK-03), unwired until CK-01. Residuals: single-backtick code and numeric footnotes; PySBD internal runtime is not guaranteed linear; 100 000-word bound untested.
+  - done (R51/A2, PR #129): service/segment.py segment_sentences on pysbd 0.3.4. seen: tests/test_segment.py run under .venv, 13 tests OK at head 016ce05fdd1e3cf9efe0f0c139bc1cdfb9e799f3. Production caller: SegmentationCache (CK-03), now called by service/chunk.py with caller-configured segment_sentences (exercised in tests/test_chunk.py). Residuals: single-backtick code and numeric footnotes; PySBD internal runtime is not guaranteed linear; 100 000-word bound untested.
 - [x] **CK-03** `[A]` Segmentation cache keyed by block hash
   - done (R24/A1): `service/segcache.py` (SegmentationCache, CacheStats); LRU keyed by (segmenter id, key_version, node_hash), segmenter called only on miss, immutable tuples, TypeError on bad output with nothing cached. seen: tests/test_segcache.py, gate 474 tests OK at head 0439426e230bdaca74dd1a16034acb5f6172112b (PR #67). Production caller: unwired by design until CK-02. Residuals: per-entry bytes unbounded; 100 000-word bound untested; not thread-safe.
 - [ ] **CK-04** `[A]` Late chunking (embed the section once, pool per sentence), as an arm for G-03
 - [ ] **CK-05** `[A]` Contextual-prefix arm for G-03
 - [ ] **CK-06** `[A]` Policy for tables, code, figures and captions: skipped, embedded as caption, or summarized — check: each type has a tested path
-  - partial (R50/A2, PR #124): service/block_policy.py embed_text_for per D-006; unwired until CK-01 (residual). seen: tests/test_block_policy.py (synthetic offline policy checks); per-block O(block size).
+  - partial (R50/A2, PR #124): service/block_policy.py embed_text_for per D-006; now called by service/chunk.py (R52/A1, exercised in tests/test_chunk.py). seen: tests/test_block_policy.py (synthetic offline policy checks); per-block O(block size).
 
 ---
 
