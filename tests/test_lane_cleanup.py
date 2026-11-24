@@ -177,6 +177,19 @@ class TabTests(unittest.TestCase):
         clean(fake, handoff="## Carried\n- live-repo-r9-a1 carries over\n")
         self.assertEqual(fake.done, [])
 
+    def test_keeps_a_tab_in_a_sibling_dir_that_is_not_a_worktree(self):
+        meta, pane = tab("t1", "live-repo-r1-a1", "/work/repo-results")
+        fake = Fake({}, {}, tabs=[meta], panes=[pane])
+        clean(fake)
+        self.assertEqual(fake.done, [])
+
+    def test_keeps_a_tab_whose_pane_is_blocked_or_in_any_unknown_state(self):
+        for status in ("blocked", "waiting", "busy"):
+            meta, pane = tab("t1", "live-repo-r1-a1", f"{LANES}/r1-a1 (deleted)", status=status)
+            fake = Fake({}, {}, tabs=[meta], panes=[pane])
+            clean(fake)
+            self.assertEqual(fake.done, [], status)
+
     def test_no_carried_lanes_line_does_not_carry_anything(self):
         meta, pane = tab("t1", "live-repo-r49-a1", f"{LANES}/r49-a1 (deleted)")
         fake = Fake({}, {}, tabs=[meta], panes=[pane])

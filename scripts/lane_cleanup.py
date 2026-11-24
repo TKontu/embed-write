@@ -10,7 +10,7 @@ uncertain is held and reported, never forced: `no-pr`, `open-pr`, `dirty`, `unpu
 (commits on no remote), `busy` (a process has its cwd inside), `carried` (HANDOFF.md names it).
 
 Tabs: a tab labelled <lane prefix><lane> is closed with `herdr tab close <id>` only when its
-worktree is gone (or was removed in this run), no pane in it is working, it is not carried, and
+worktree is gone (or was removed in this run), every pane is idle, done or unknown, it is not carried, and
 its label does not mark a planner, loop, supervisor, manager or review server. A tab whose pane is
 in the main checkout or outside the lane paths is held as `foreign`.
 
@@ -31,6 +31,7 @@ from typing import Callable, Iterable, Sequence
 ROOT = Path(__file__).resolve().parents[1]
 PROTECTED = re.compile(r"round[-_ ]?loop|review[-_ ]?server|planner|supervisor|manager", re.I)
 DELETED = " (deleted)"
+SETTLED = {"idle", "done", "unknown", None}  # any other pane state keeps the tab
 Run = Callable[[Sequence[str]], tuple[int, str]]
 
 
@@ -166,13 +167,18 @@ def cleanup(
         if not label.startswith(prefix) or PROTECTED.search(label):
             continue
         mine = [p for p in panes if p.get("tab_id") == tab_id]
-        paths = {str(p.get("cwd") or "").removesuffix(DELETED) for p in mine}
-        if any(p.get("agent_status") == "working" for p in mine):
-            hold = "working"
+        raw = [str(p.get("cwd") or "") for p in mine]
+        paths = {c.removesuffix(DELETED) for c in raw}
+        statuses = {p.get("agent_status") for p in mine}
+        if statuses - SETTLED:
+            hold = "active: " + ",".join(sorted(str(x) for x in statuses - SETTLED))
         elif _is_carried([label, *paths], carried):
             hold = "carried"
-        elif not paths or not all(_is_lane_path(p, root) for p in paths):
-            hold = "foreign"
+        elif not paths or not all(
+            _is_lane_path(c.removesuffix(DELETED), root) and (c.endswith(DELETED) or c in trees)
+            for c in raw
+        ):
+            hold = "foreign"  # only a registered lane worktree, or one already deleted
         elif any(p in trees and holds.get(p) for p in paths):
             hold = "worktree-kept"
         else:
