@@ -159,10 +159,6 @@ class PrelabelTests(unittest.TestCase):
         self.assertIsNone(prelabel.parse_reply('banana', valid))
 
 
-if __name__ == '__main__':
-    unittest.main()
-
-
 class ResumeTruncationTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -402,3 +398,6 @@ class ModelErrorTests(unittest.TestCase):
                           sleep=self.sleeps.append)
         self.assertEqual(self.sleeps, [])
 
+
+if __name__ == '__main__':
+    unittest.main()
