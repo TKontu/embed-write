@@ -5,7 +5,9 @@ import { setupDom } from './dom.js';
 
 setupDom();
 import { readFileSync } from 'node:fs';
-const { createEditor, signalDecorations, signalDecorationsPlugin, DEFAULT_WEAK_BELOW } = await import('../src/index.js');
+const { createEditor, signalDecorations, signalDecorationsPlugin, DEFAULT_WEAK_BELOW, signalOverlayKey,
+  toggleSignalOverlay, isSignalOverlayOn, DEFAULT_OFF_SHORTCUT } = await import('../src/index.js');
+const { EditorState } = await import('@milkdown/prose/state');
 const { parseMarkdown, assignIds } = await import('docmodel');
 
 const doc = assignIds(parseMarkdown('# Title\n\nFirst para.\n\nSecond para.\n'));
@@ -103,4 +105,56 @@ test('signals.css is opacity-only, weak lower than strong', () => {
     return Number(v[1]);
   };
   assert.ok(op('signal-weak') < op('signal-strong'));
+});
+
+// RE-11: off as a first-class state with a single shortcut.
+const mkState = (opts) => EditorState.create({ doc,
+  plugins: [signalDecorationsPlugin(() => [sig(blocks[1].id)], opts)] });
+const decoCount = (st) => signalOverlayKey.get(st).props.decorations.call(signalOverlayKey.get(st), st).find().length;
+const toggled = (st) => { let out = st; assert.equal(toggleSignalOverlay(st, (tr) => { out = st.apply(tr); }), true); return out; };
+
+test('overlay defaults on; toggle off empties; toggle again restores', () => {
+  let st = mkState();
+  assert.equal(isSignalOverlayOn(st), true);
+  assert.equal(decoCount(st), 1);
+  st = toggled(st);
+  assert.equal(isSignalOverlayOn(st), false);
+  assert.equal(decoCount(st), 0);
+  st = toggled(st);
+  assert.equal(isSignalOverlayOn(st), true);
+  assert.equal(decoCount(st), 1);
+});
+
+test('initiallyOn false starts empty; bad initiallyOn throws', () => {
+  const st = mkState({ initiallyOn: false });
+  assert.equal(isSignalOverlayOn(st), false);
+  assert.equal(decoCount(st), 0);
+  for (const v of [0, 1, 'true', null]) assert.throws(() => signalDecorationsPlugin(() => [], { initiallyOn: v }), String(v));
+});
+
+test('default shortcut is Mod-Shift-o, distinct from Mod-Shift-p', () => {
+  assert.equal(DEFAULT_OFF_SHORTCUT, 'Mod-Shift-o');
+  assert.notEqual(DEFAULT_OFF_SHORTCUT.toLowerCase(), 'mod-shift-p');
+  assert.throws(() => signalDecorationsPlugin(() => [], { offShortcut: 'Mod-Shift-p' }));
+});
+
+test('toggle and shortcut remove and restore data-signal-* in a view', async () => {
+  const ed = await createEditor({ root: document.body.appendChild(document.createElement('div')),
+    markdown: '# Title\n\nFirst para.\n\nSecond para.\n' });
+  try {
+    ed.view.dispatch(ed.view.state.tr.setMeta('touch', true));
+    let target = null;
+    ed.view.state.doc.descendants((n) => { if (!target && n.textContent === 'Second para.' && n.attrs.id) target = n.attrs.id; });
+    const plugin = signalDecorationsPlugin(() => [sig(target)]);
+    ed.view.updateState(ed.view.state.reconfigure({ plugins: [...ed.view.state.plugins, plugin] }));
+    const n = () => ed.view.dom.querySelectorAll('[data-signal-kind]').length;
+    assert.equal(n(), 1);
+    assert.equal(toggleSignalOverlay(ed.view.state, ed.view.dispatch), true);
+    assert.equal(n(), 0);
+    assert.equal(ed.view.dom.querySelectorAll('[data-signal-layer],[data-signal-strength]').length, 0);
+    const ev = new window.KeyboardEvent('keydown', { key: 'O', code: 'KeyO', keyCode: 79, ctrlKey: true, metaKey: false, shiftKey: true, bubbles: true, cancelable: true });
+    assert.equal(ed.view.someProp('handleKeyDown', (f) => f(ed.view, ev)), true);
+    assert.equal(isSignalOverlayOn(ed.view.state), true);
+    assert.equal(n(), 1);
+  } finally { await ed.destroy(); }
 });
