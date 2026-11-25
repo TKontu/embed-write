@@ -40,7 +40,8 @@ No research risk and total structural risk. If node IDs are not stable, the cach
 
 ## Hierarchy
 
-- [ ] **HI-01** `[A]` Section tree from headings, tolerating skipped levels and documents without headings
+- [x] **HI-01** `[A]` Section tree from headings, tolerating skipped levels and documents without headings
+  - done (R78/A3, PR #202, merge 52024b5): `sectionTree(doc)` in docmodel/src/sections.js, exported from index.js; derived nested tree (root level 0; sections hold heading text and top-level index, block indices, children); skipped levels nest under the nearest lower level; only top-level headings count; pure, nothing stored in the doc. Ran on Claude (D-008, Codex at usage limit). seen: docmodel/test/sections.test.js 11 pass, docmodel 108/108 and Python gate 1127 OK at reviewed head 87ee88a151b3c10dc2f5486e5b9c766c3fa66e84 and on main. Unwired by design; HI-02/ED-01 wire it. Residual: indices are positional, so they shift on edits until node IDs (NI-01) exist.
 - [ ] **HI-02** `[A]` Block layer: paragraphs, list items, tables, figures, code, quotes
 - [ ] **HI-03** `[A]` Sentence layer: lazy, cached by block hash, not stored in the ProseMirror doc
 - [ ] **HI-04** `[A]` Section type mapping: map a heading to a section type of the genre ("Findings", "Conclusions"), using the genre file — check: mapping test on corpus headings; unmapped headings reported
