@@ -101,4 +101,5 @@ export { showProposal } from './proposal.js';
 export { proposalRequestKeymap } from './request.js';
 export { signalDecorations, signalDecorationsPlugin, DEFAULT_WEAK_BELOW, DEFAULT_OFF_SHORTCUT,
   signalOverlayKey, toggleSignalOverlay, isSignalOverlayOn, OVERLAYS, DEFAULT_OVERLAY, setSignalOverlay,
-  selectedSignalOverlay } from './decorations.js';
+  selectedSignalOverlay, GRANULARITIES, DEFAULT_GRANULARITY, setSignalGranularity,
+  selectedSignalGranularity } from './decorations.js';

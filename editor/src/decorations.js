@@ -13,6 +13,14 @@ export const DEFAULT_WEAK_BELOW = 0.5;
 // RE-10: overlay selector; one overlay at a time. A signal without `overlay` belongs to 'moves'.
 export const OVERLAYS = Object.freeze(['moves', 'register', 'support', 'redundancy', 'topic']);
 export const DEFAULT_OVERLAY = 'moves';
+// RE-09: granularity toggle; one level at a time. A signal without `level` is 'paragraph'.
+export const GRANULARITIES = Object.freeze(['section', 'paragraph', 'sentence']);
+export const DEFAULT_GRANULARITY = 'paragraph';
+/** @param {unknown} name @param {string} what @returns {string} */
+const checkGranularity = (name, what) => {
+  if (typeof name !== 'string' || !GRANULARITIES.includes(name)) throw new Error(`${what} must be one of ${GRANULARITIES.join(', ')}: ${name}`);
+  return name;
+};
 /** @param {unknown} name @param {string} what @returns {string} */
 const checkOverlay = (name, what) => {
   if (typeof name !== 'string' || !OVERLAYS.includes(name)) throw new Error(`${what} must be one of ${OVERLAYS.join(', ')}: ${name}`);
@@ -20,10 +28,11 @@ const checkOverlay = (name, what) => {
 };
 
 /**
- * @typedef {{ node_id: string, kind: string, confidence: number, layer: string, overlay?: string }} Signal
+ * @typedef {{ node_id: string, kind: string, confidence: number, layer: string, overlay?: string, level?: string }} Signal
  * @param {import('prosemirror-model').Node} doc
  * @param {Signal[]} signals
- * @param {{ weakBelow?: number, overlay?: string }} [opts] overlay: decorate only that overlay's signals (all when absent)
+ * @param {{ weakBelow?: number, overlay?: string, granularity?: string }} [opts] overlay / granularity: decorate only
+ *   that overlay's / level's signals (all when absent)
  * @returns {DecorationSet}
  */
 export function signalDecorations(doc, signals, opts = {}) {
@@ -32,6 +41,7 @@ export function signalDecorations(doc, signals, opts = {}) {
     throw new Error(`weakBelow must be a finite number in [0,1]: ${weakBelow}`);
   }
   const only = opts.overlay === undefined ? undefined : checkOverlay(opts.overlay, 'overlay');
+  const onlyLevel = opts.granularity === undefined ? undefined : checkGranularity(opts.granularity, 'granularity');
   /** @type {Map<string, { pos: number, size: number }>} */
   const byId = new Map();
   doc.descendants((node, pos) => {
@@ -47,6 +57,8 @@ export function signalDecorations(doc, signals, opts = {}) {
     }
     const overlay = checkOverlay(s.overlay === undefined ? DEFAULT_OVERLAY : s.overlay, 'signal overlay');
     if (only !== undefined && overlay !== only) continue;
+    const level = checkGranularity(s.level === undefined ? DEFAULT_GRANULARITY : s.level, 'signal level');
+    if (onlyLevel !== undefined && level !== onlyLevel) continue;
     const hit = byId.get(s.node_id);
     if (!hit) continue;
     const strength = c < weakBelow ? 'weak' : 'strong';
@@ -56,6 +68,7 @@ export function signalDecorations(doc, signals, opts = {}) {
       'data-signal-confidence': String(c),
       'data-signal-strength': strength,
       'data-signal-overlay': overlay,
+      'data-signal-level': level,
       class: `signal signal-${s.layer} signal-${strength}`,
     }));
   }
@@ -66,7 +79,7 @@ export function signalDecorations(doc, signals, opts = {}) {
 // RE-10 / the app shell installs signalDecorationsPlugin.
 export const DEFAULT_OFF_SHORTCUT = 'Mod-Shift-o';
 const RESERVED = new Set(['mod-shift-p']); // UX-03 proposal request (request.js)
-/** @type {PluginKey<{ on: boolean, overlay: string }>} */
+/** @type {PluginKey<{ on: boolean, overlay: string, granularity: string }>} */
 export const signalOverlayKey = new PluginKey('signalOverlay');
 
 /** @param {import('prosemirror-state').EditorState} state @returns {boolean} */
@@ -96,6 +109,28 @@ export function setSignalOverlay(name) {
   };
 }
 
+/** @param {import('prosemirror-state').EditorState} state @returns {string | undefined} */
+export function selectedSignalGranularity(state) {
+  const s = signalOverlayKey.getState(state);
+  return s ? s.granularity : undefined;
+}
+
+/**
+ * RE-09: build a ProseMirror command selecting granularity `name` (throws on an unknown name).
+ * Preserves on/off and the selected overlay.
+ * @param {string} name
+ * @returns {(state: import('prosemirror-state').EditorState, dispatch?: (tr: import('prosemirror-state').Transaction) => void) => boolean}
+ */
+export function setSignalGranularity(name) {
+  const granularity = checkGranularity(name, 'granularity');
+  return (state, dispatch) => {
+    const s = signalOverlayKey.getState(state);
+    if (!s) return false;
+    if (dispatch) dispatch(state.tr.setMeta(signalOverlayKey, { ...s, granularity }));
+    return true;
+  };
+}
+
 /**
  * ProseMirror command: flip the overlay on/off.
  * @param {import('prosemirror-state').EditorState} state
@@ -111,7 +146,7 @@ export function toggleSignalOverlay(state, dispatch) {
 
 /**
  * @param {() => Signal[]} getSignals
- * @param {{ weakBelow?: number, initiallyOn?: boolean, offShortcut?: string, initialOverlay?: string }} [opts]
+ * @param {{ weakBelow?: number, initiallyOn?: boolean, offShortcut?: string, initialOverlay?: string, initialGranularity?: string }} [opts]
  * @returns {Plugin}
  */
 export function signalDecorationsPlugin(getSignals, opts = {}) {
@@ -122,16 +157,19 @@ export function signalDecorationsPlugin(getSignals, opts = {}) {
     throw new Error(`offShortcut must be a non-empty string other than Mod-Shift-p: ${shortcut}`);
   }
   const initialOverlay = checkOverlay(opts.initialOverlay === undefined ? DEFAULT_OVERLAY : opts.initialOverlay, 'initialOverlay');
+  const initialGranularity = checkGranularity(
+    opts.initialGranularity === undefined ? DEFAULT_GRANULARITY : opts.initialGranularity, 'initialGranularity');
   const { weakBelow } = opts;
   return new Plugin({
     key: signalOverlayKey,
     state: {
-      init: () => ({ on: initiallyOn, overlay: initialOverlay }),
+      init: () => ({ on: initiallyOn, overlay: initialOverlay, granularity: initialGranularity }),
       apply: (tr, prev) => tr.getMeta(signalOverlayKey) || prev,
     },
     props: {
       decorations: (state) => (isSignalOverlayOn(state)
-        ? signalDecorations(state.doc, getSignals(), { weakBelow, overlay: selectedSignalOverlay(state) })
+        ? signalDecorations(state.doc, getSignals(), { weakBelow, overlay: selectedSignalOverlay(state),
+          granularity: selectedSignalGranularity(state) })
         : DecorationSet.empty),
       handleKeyDown: keydownHandler({ [shortcut]: toggleSignalOverlay }),
     },
