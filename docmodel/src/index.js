@@ -12,3 +12,5 @@ export { openMarkdown } from './open.js';
 export { sectionTree } from './sections.js';
 // blockLayer (HI-02) is unwired by design; HI-03/ED-01 wire it.
 export { blockLayer } from './blocks.js';
+// normalizeText/nodeHash/hashText (HS-01) are unwired by design; NI-02/HI-03/PM-02 wire them.
+export { normalizeText, nodeHash, hashText } from './hash.js';
