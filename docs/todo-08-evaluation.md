@@ -49,6 +49,7 @@ The gates in `todo-01` say what is tested. This file builds the machinery that r
 
 - [~] **BJ-01** `[A]` Blind-pair tool (`todo-01` X-04): random order, arm hidden, choice plus optional reason
   - partial (R6/A1, PR #26, merge e9d37cf): `experiments/blind_pair.py` (make_pair, render_html, record_choice, to_preference_choices); tests show no arm label or key in the rendered HTML across 100 seeds; synthetic texts only. Unwired by design until BJ-02. Residuals: to_preference_choices counts any non-arm_a winner as 'b'; no write locking; session binding left to BJ-02. Seen when G-02 runs.
+  - R104/A1: production front end `experiments/blind_ui.py` (X-04) serves render_html with a server-side nonce.
 - [~] **BJ-02** `[A]` Session design: pairs interleaved across arms, with repeated pairs to measure the expert's consistency
   - partial (R7/A1, PR #29, merge b191ce2): `experiments/blind_session.py` (build_session, save_session, load_session, record_session_choice, consistency_pairs) wires blind_pair; originals interleaved with no adjacent same comparison, ceil(fraction·total) repeats ≥ min_gap after their original with re-randomised order, repeat links server-side only; synthetic tests pass (sweep 0/900 adjacent clashes after the review fix). Unwired until a G-02 session runs (BJ-03 [H]). Residuals: after 200 placement attempts the fewest-clash session is kept silently; session JSON holds keys and arms (private storage); no write locking. Seen when G-02 runs.
 - [ ] **BJ-03** `[H]` The judgments themselves
