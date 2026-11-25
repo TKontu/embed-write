@@ -67,6 +67,7 @@ Each axis is a separate, separately validated check. They are shown side by side
 - [x] **UX-04** `[A]` Undo restores the original exactly — check: document hash equal after accept and undo
   - done (R115/A1, PR #296): `editor/src/index.js` acceptProposal + undo (ProseMirror history, one step per accept). Unwired by design until UX-02. Residual: block ids change after undo (idPlugin reassigns; hash unaffected). seen: editor/test/undo.test.js, npm test 18/18 and gate OK at head 0f510196c5dd0e7a5ac5a3e57433bf5d3860a4aa
 - [ ] **UX-05** `[A]` Acceptance statistics shown to the expert, locally
+  - partial (R119/A1, PR #306, merge dc15039): library + CLI half: `editlog/stats.py` acceptance_stats(store) -> frozen AcceptanceStats(total, accept, edit, reject, by_genre GenreStats sorted by genre), one streaming pass over iter_entries (memory bounded by distinct genres); format_stats gives counts and each action's share (one decimal, "n/a" at total 0), no combined score (I8); `python3 -m editlog.stats DB_PATH`, missing DB exits 2 and creates nothing. seen: tests/test_editlog_stats.py 6 tests, gate 1430 OK at head 1abbf83319e5bdc64cf95083604dd99578d47818 (rerun by planner, node_modules linked into the worktree). Stays partial: unwired by design until the app shell shows it to the expert (todo-06).
 - [ ] **UX-06** `[H]` Review of the proposal flow after a week of real use
 
 ---
