@@ -22,6 +22,7 @@ The corpus defines what "good" means for a genre. The selection is the single mo
 - [ ] **CO-08** `[A]` Train / dev / test split **by document**, fixed and versioned — check: no report appears in two splits
 - [ ] **CO-09** `[A]` Corpus statistics: section headings in use, section lengths, sentence counts — check: report generated
 - [x] **CO-10** `[A]` Network guard: corpus processing fails closed if a remote endpoint is configured without explicit opt-in (invariant I9) — check: test with a remote URL fails — seen: tests/test_corpus_network_guard.py (prelabel, g02_generate, AnalysisClient); gate 1282 OK
+  - done (R105/A1, PR #275, merge b82df4d, reviewed head 06eaf64): test-only; existing guards already covered prelabel.local_model, g02_generate (via local_model) and service.client.AnalysisClient, so no product code changed. Residual: none new.
 
 ---
 
