@@ -8,3 +8,5 @@ export { UnsupportedNodeError } from './errors.js';
 export { openMarkdown } from './open.js';
 // sectionTree (HI-01) is unwired by design; HI-02/ED-01 wire it.
 export { sectionTree } from './sections.js';
+// blockLayer (HI-02) is unwired by design; HI-03/ED-01 wire it.
+export { blockLayer } from './blocks.js';
