@@ -90,3 +90,27 @@ Append-only record of operator rulings and architecture decisions.
 - **Why:** on 2026-11-24 the planner waited out a Codex limit, ran three empty rounds and halted
   ("main unchanged across 3 rounds").
 - **Record:** HANDOFF.md names the harness each lane ran on.
+
+## D-009 — Early feedback first: Phase 0 and a thin demo before later phases (2026-11-25, operator)
+
+- **Ruling:** the backlog is prioritised for the earliest real feedback. Until G-01 and G-02 have
+  result files from actual runs, lanes take work in this order:
+  1. **Gate enablers for G-01 and G-02:** corpus ingestion of the expert's reports, a move-inventory
+     draft for the expert to correct, the annotation tool, LLM pre-labels for the expert to confirm
+     or overturn, the G-01 κ harness, the G-02 blind-pair runner, and preregistration files with
+     proposed thresholds for the expert to confirm.
+  2. **Thin vertical demo:** a Tauri shell (D-007) with the Milkdown editor that opens one real
+     report, round-trips it, and shows its move labels as a provisional overlay with a legend.
+     It is the smallest thing the expert can look at and react to.
+  3. **Anything that cuts the expert's effort per judgment:** batching, pre-filled forms, one-key
+     confirm/overturn.
+  
+  Rows from later phases (proposals, generation, fine-tuning, two-layer distillation, extra
+  signals) wait unless they are a direct dependency of 1–3.
+- **Why:** after 240 merged PRs no gate had run. Every result came from synthetic or LLM-built
+  data, and G-01 is the fatal gate (§9, §10 of the architecture). Building later phases first
+  risks sunk cost if G-01 or G-02 fails.
+- **Re-evaluation trigger:** G-01 κ < 0.6 or G-02 preference < 70 % reopens the target and the
+  vision; nothing else does until those results exist.
+- **Planner duty:** re-rank `docs/todo.md`'s critical path to this order in the next reconcile,
+  and report each round which item of 1–3 it advanced.
