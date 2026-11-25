@@ -17,7 +17,11 @@ appended to the ``AnnotationStore`` immediately. On start it skips items this
 annotator already labelled in this pass under the current version key.
 
 Passes: ``first`` (AN-03, all entries) and ``repeat`` (AN-04, manifest
-``repeat`` ids). Records carry ``pass`` so the two never supersede each other.
+``repeat`` ids). Records carry ``pass``; this module's readers (``export``,
+``labels_for_pass``, session resume) keep passes and annotators apart.
+``AnnotationStore.read()`` does not: it keeps one latest record per sentence
+across passes and annotators, so a repeat label hides the first-pass one
+there. Consumers needing a pass use ``labels_for_pass`` or ``export``.
 """
 from __future__ import annotations
 
@@ -98,6 +102,17 @@ def _labelled(store, genre, pass_name, annotator=None):
                 and (annotator is None or obj.get('annotator') == annotator)):
             latest[(obj['sentence_id'], obj['annotator'])] = obj
     return latest
+
+
+def labels_for_pass(store, genre, pass_name, annotator=None):
+    """Current-version label records of one pass, latest per (sentence, annotator), write order.
+
+    Unlike ``AnnotationStore.read()`` a repeat-pass label never hides a first-pass one.
+    Needs no manifest. Production caller: G-01.6 (expert labels for g01); unwired until then.
+    """
+    if pass_name not in PASSES:
+        raise AnnotateError(f'unknown pass {pass_name!r}; expected one of {PASSES}')
+    return list(_labelled(store, genre, pass_name, annotator).values())
 
 
 def _now():

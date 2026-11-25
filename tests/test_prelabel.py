@@ -145,3 +145,116 @@ class PrelabelTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ResumeTruncationTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.out = os.path.join(self.tmp.name, 'labels.jsonl')
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_truncated_last_line_relabels_only_missing(self):
+        prelabel.prelabel(items(4), GENRE, FakeModel({}), out_path=self.out)
+        with open(self.out, encoding='utf-8') as fh:
+            lines = fh.readlines()
+        with open(self.out, 'w', encoding='utf-8') as fh:
+            fh.writelines(lines[:3])
+            fh.write(lines[3][:len(lines[3]) // 2])  # torn tail, no newline
+        model = FakeModel({})
+        new = prelabel.prelabel(items(6), GENRE, model, out_path=self.out)
+        self.assertEqual([r['sentence_id'] for r in new], ['s3', 's4', 's5'])
+        self.assertEqual(len(model.prompts), 3)
+        with open(self.out, encoding='utf-8') as fh:
+            raw = fh.read().splitlines()
+        good = []
+        for line in raw:
+            try:
+                good.append(json.loads(line))
+            except ValueError:
+                continue
+        self.assertEqual(len(raw) - len(good), 1)  # only the torn line is invalid
+        self.assertEqual(sorted(r['sentence_id'] for r in good),
+                         [f's{i}' for i in range(6)])
+
+
+class CliTests(unittest.TestCase):
+    def setUp(self):
+        from experiments import annotation_sample as samp
+        from experiments.splits import DocumentSplit
+        self.tmp = tempfile.TemporaryDirectory()
+        root = self.tmp.name
+        self.genre_path = os.path.join(os.path.dirname(__file__), 'fixtures',
+                                       'genre_synthetic_sections.json')
+        genre = load_genre(self.genre_path)
+        self.docs_dir = os.path.join(root, 'docs')
+        os.mkdir(self.docs_dir)
+        docs = []
+        for i in range(2):
+            text = (f'Preamble {i} zero.\n\n## Findings\n\nInvented finding {i} ash. '
+                    f'Invented finding {i} birch.\n')
+            docs.append((f'r{i}.md', text))
+            with open(os.path.join(self.docs_dir, f'r{i}.md'), 'w', encoding='utf-8') as fh:
+                fh.write(text)
+        manifest = samp.build_manifest(iter(docs), DocumentSplit(['t.md'], [d for d, _ in docs]),
+                                       genre, n=3, repeat_fraction=0.5, seed=1)
+        self.manifest = manifest
+        self.manifest_path = os.path.join(root, 'manifest.json')
+        with open(self.manifest_path, 'w', encoding='utf-8') as fh:
+            json.dump(manifest, fh)
+        self.out = os.path.join(root, 'out.jsonl')
+        self.genre = genre
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def run_cli(self, *extra):
+        from unittest import mock
+        model = lambda prompt: 'other'  # noqa: E731
+        model.model_id = 'fake-cli'
+        with mock.patch.object(prelabel, 'local_model', return_value=model), \
+                mock.patch('builtins.print'):
+            return prelabel.main(['--genre', self.genre_path, '--model-url',
+                                  'http://127.0.0.1:1/v1', '--out', self.out, *extra])
+
+    def test_manifest_documents_labels_exactly_manifest_ids(self):
+        rc = self.run_cli('--manifest', self.manifest_path, '--documents', self.docs_dir)
+        self.assertEqual(rc, 0)
+        want = sorted(e['sentence_id'] for e in self.manifest['entries'])
+        self.assertTrue(want)
+        self.assertEqual(sorted(r['sentence_id'] for r in read(self.out)), want)
+
+    def test_manifest_repeat_pass(self):
+        rc = self.run_cli('--manifest', self.manifest_path, '--documents', self.docs_dir,
+                          '--pass', 'repeat')
+        self.assertEqual(rc, 0)
+        self.assertEqual(sorted(r['sentence_id'] for r in read(self.out)),
+                         sorted(self.manifest['repeat']))
+
+    def test_items_jsonl_still_works(self):
+        path = os.path.join(self.tmp.name, 'items.jsonl')
+        with open(path, 'w', encoding='utf-8') as fh:
+            for it in items(3):
+                fh.write(json.dumps(it) + '\n')
+        self.assertEqual(self.run_cli('--items', path), 0)
+        self.assertEqual(len(read(self.out)), 3)
+
+    def test_items_and_manifest_exclusive(self):
+        with self.assertRaises(SystemExit), mock_stderr():
+            self.run_cli('--items', 'x', '--manifest', self.manifest_path,
+                         '--documents', self.docs_dir)
+
+    def test_dict_context_rendered_readably(self):
+        it = {'sentence_id': 'x', 'doc_id': 'd', 'section_type': 'findings', 'text': 'T.',
+              'context': {'heading': 'Findings', 'previous': 'Before.', 'next': None}}
+        p = prelabel.build_prompt(it, GENRE)
+        self.assertIn('Findings', p)
+        self.assertIn('Before.', p)
+        self.assertNotIn("{'heading'", p)
+
+
+def mock_stderr():
+    import contextlib
+    import io
+    return contextlib.redirect_stderr(io.StringIO())
