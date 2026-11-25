@@ -101,6 +101,7 @@ Each axis is a separate, separately validated check. They are shown side by side
 - [ ] **AD-08** `[A]` Review flow: the editor opens the draft with overlays on and the open-issues list sorted by severity
 - [ ] **AD-09** `[H]` Blind review of drafts against reference reports for the same source material
 - [ ] **AD-10** `[A]` Correction metrics per draft: share of sentences edited, by move
+  - partial (R70/A1, PR #179): library `service/correction_metrics.py` `correction_metrics(blocks, final_texts)` -> `DraftCorrection` with per-move `MoveCorrection` (first-appearance order); a machine sentence counts edited when its whitespace-normalized form is absent (multiset) from the block's final text; deleted block counts all edited; length mismatch raises ValueError. seen: tests/test_correction_metrics.py, gate OK at head c5eaf742bcae9be4cb04bff74d12a23df3efa058 (executor 1084 tests; reviewer rerun OK). Unwired by design until AD-08. Residuals: a line break inside a sentence is a sentence boundary, so a pure re-wrap counts as an edit; no block alignment.
 
 ---
 
