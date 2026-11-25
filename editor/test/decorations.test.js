@@ -6,7 +6,8 @@ import { setupDom } from './dom.js';
 setupDom();
 import { readFileSync } from 'node:fs';
 const { createEditor, signalDecorations, signalDecorationsPlugin, DEFAULT_WEAK_BELOW, signalOverlayKey,
-  toggleSignalOverlay, isSignalOverlayOn, DEFAULT_OFF_SHORTCUT } = await import('../src/index.js');
+  toggleSignalOverlay, isSignalOverlayOn, DEFAULT_OFF_SHORTCUT, OVERLAYS, DEFAULT_OVERLAY, setSignalOverlay,
+  selectedSignalOverlay } = await import('../src/index.js');
 const { EditorState } = await import('@milkdown/prose/state');
 const { parseMarkdown, assignIds } = await import('docmodel');
 
@@ -24,7 +25,7 @@ test('decoration lands on the matching node with data attributes and class', () 
   assert.equal(d.from, b.pos);
   assert.equal(d.to, b.pos + b.node.nodeSize);
   assert.deepEqual(d.type.attrs, { 'data-signal-kind': 'readability', 'data-signal-layer': 'provisional',
-    'data-signal-confidence': '0.5', 'data-signal-strength': 'strong',
+    'data-signal-confidence': '0.5', 'data-signal-strength': 'strong', 'data-signal-overlay': 'moves',
     class: 'signal signal-provisional signal-strong' });
 });
 
@@ -157,4 +158,56 @@ test('toggle and shortcut remove and restore data-signal-* in a view', async () 
     assert.equal(isSignalOverlayOn(ed.view.state), true);
     assert.equal(n(), 1);
   } finally { await ed.destroy(); }
+});
+
+// RE-10: overlay selector, one overlay at a time.
+const mixed = () => [sig(blocks[1].id), sig(blocks[2].id, { overlay: 'register' }),
+  sig(blocks[0].id, { overlay: 'support' })];
+const mkSel = (opts) => EditorState.create({ doc, plugins: [signalDecorationsPlugin(mixed, opts)] });
+const decos = (st) => signalOverlayKey.get(st).props.decorations.call(signalOverlayKey.get(st), st).find();
+const run = (st, cmd) => { let out = st; assert.equal(cmd(st, (tr) => { out = st.apply(tr); }), true); return out; };
+
+test('OVERLAYS frozen list with moves default', () => {
+  assert.deepEqual([...OVERLAYS], ['moves', 'register', 'support', 'redundancy', 'topic']);
+  assert.ok(Object.isFrozen(OVERLAYS));
+  assert.equal(DEFAULT_OVERLAY, 'moves');
+});
+
+test('default overlay moves decorates only moves signals (absent overlay = moves)', () => {
+  const st = mkSel();
+  assert.equal(selectedSignalOverlay(st), 'moves');
+  const d = decos(st);
+  assert.equal(d.length, 1);
+  assert.equal(d[0].from, blocks[1].pos);
+  assert.equal(d[0].type.attrs['data-signal-overlay'], 'moves');
+});
+
+test('setSignalOverlay switches which signals show; toggle preserves overlay', () => {
+  let st = run(mkSel(), setSignalOverlay('register'));
+  assert.equal(selectedSignalOverlay(st), 'register');
+  let d = decos(st);
+  assert.equal(d.length, 1);
+  assert.equal(d[0].from, blocks[2].pos);
+  assert.equal(d[0].type.attrs['data-signal-overlay'], 'register');
+  st = run(st, toggleSignalOverlay);
+  assert.equal(isSignalOverlayOn(st), false);
+  assert.equal(decos(st).length, 0);
+  assert.equal(selectedSignalOverlay(st), 'register');
+  st = run(st, toggleSignalOverlay);
+  assert.equal(isSignalOverlayOn(st), true);
+  assert.equal(selectedSignalOverlay(st), 'register');
+  assert.equal(decos(st)[0].from, blocks[2].pos);
+  st = run(st, setSignalOverlay('topic'));
+  assert.equal(decos(st).length, 0);
+});
+
+test('initialOverlay honoured; bad names throw', () => {
+  const st = mkSel({ initialOverlay: 'support' });
+  assert.equal(selectedSignalOverlay(st), 'support');
+  assert.equal(decos(st)[0].from, blocks[0].pos);
+  for (const v of ['bogus', '', null, 1]) {
+    assert.throws(() => signalDecorationsPlugin(() => [], { initialOverlay: v }), String(v));
+    assert.throws(() => setSignalOverlay(v), String(v));
+  }
+  assert.throws(() => signalDecorations(doc, [sig(blocks[1].id, { overlay: 'bogus' })]));
 });
