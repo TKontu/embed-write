@@ -63,6 +63,11 @@ class LLMClient:
         self._model = model
         self._transport = transport
 
+    @property
+    def model(self) -> str:
+        """The model identifier sent with every request (read-only)."""
+        return self._model
+
     def complete(self, prompt: str, sampling: SamplingParams) -> str:
         """Return first assistant content; malformed/oversized responses raise ValueError.
 
