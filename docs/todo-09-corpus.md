@@ -41,6 +41,7 @@ The corpus defines what "good" means for a genre. The selection is the single mo
 
 - [ ] **AN-01** `[A]` Annotation tool: one sentence at a time with its section context, keyboard-driven, move or `other` — check: export matches the label schema; session resumable
 - [ ] **AN-02** `[A]` Sampling: stratified over reports and section types, from held-out documents — check: sample manifest
+  - partial (R95/A2, PR #250, merge 934e507): `experiments/annotation_sample.py` `build_manifest`/`write_manifest` + CLI `python -m experiments.annotation_sample`: streams test-split docs only (SplitLeakError otherwise), section type from nearest ATX heading via genre section_types (`unknown` counted), one seat per non-empty type then largest-remainder proportional allocation over (report, section type), seeded repeat subset for AN-04; manifest holds ids/counts only, no text. Ran on Claude (D-008). seen: tests/test_annotation_sample.py 11 pass (synthetic); real-corpus run skipped (private), done when run before AN-03. Residuals: fenced `#` lines and setext headings mis-typed; unmapped sub-heading resets to `unknown`; sentence ids are manifest-local (doc_id + text hash), join with AN-01/store unconfirmed; CLI decodes train docs before filtering; manifest stays private (doc paths).
 - [ ] **AN-03** `[H]` Annotate ~300 sentences with moves (feeds G-01)
 - [ ] **AN-04** `[H]` Re-annotate a 10 % sample after a week (self-agreement)
 - [ ] **AN-05** `[H]` For ~50 conclusions, mark supporting passages and source items (feeds G-07)
