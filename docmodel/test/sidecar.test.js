@@ -134,3 +134,30 @@ test('genreBindingStatus distinguishes unbound, match, stale and other', () => {
   assert.equal(model.genreBindingStatus(bound, { ...binding, genre_hash: 'b'.repeat(64) }), 'stale');
   assert.equal(model.genreBindingStatus(bound, { ...binding, genre: 'another-genre' }), 'other');
 });
+
+test('SL-02: valid links round-trip canonically with sorted sources', () => {
+  const value = { version: 1, nodes: [], links: [
+    { sources: ['b', 'a'], to: 9, from: 2, node: 'n1' },
+    { node: 'n2', from: 0, to: 1, sources: ['x'] },
+  ] };
+  const text = model.serializeSidecar(value);
+  const parsed = model.parseSidecar(text);
+  assert.deepEqual(parsed.links, [
+    { node: 'n1', from: 2, to: 9, sources: ['a', 'b'] },
+    { node: 'n2', from: 0, to: 1, sources: ['x'] },
+  ]);
+  assert.deepEqual(Object.keys(parsed.links[0]), ['node', 'from', 'to', 'sources']);
+  assert.equal(model.serializeSidecar(parsed), text);
+});
+
+test('SL-02: invalid link shapes are rejected with sidecar: links errors', () => {
+  const ok = { node: 'n', from: 0, to: 2, sources: ['s'] };
+  const bad = [null, [], 'x', { ...ok, extra: 1 }, { ...ok, node: '' }, { ...ok, node: 3 },
+    { ...ok, from: -1 }, { ...ok, from: 0.5 }, { ...ok, to: 0 }, { ...ok, from: 2, to: 2 },
+    { ...ok, to: '2' }, { ...ok, sources: [] }, { ...ok, sources: 's' }, { ...ok, sources: [''] },
+    { ...ok, sources: ['s', 's'] }, { ...ok, sources: [1] }, { node: 'n', from: 0, to: 2 }];
+  for (const entry of bad) {
+    assert.throws(() => model.parseSidecar(JSON.stringify({ version: 1, nodes: [], links: [ok, entry] })),
+      /^Error: sidecar: links\[1\]/, JSON.stringify(entry));
+  }
+});

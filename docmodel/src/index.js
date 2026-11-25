@@ -36,3 +36,5 @@ export { createSentenceLayer } from './sentences.js';
 export { sentenceIndex, resolveSentenceKey, parseSentenceKey } from './sentencekeys.js';
 // normalizeHeading/mapSectionTypes (HI-04) are unwired by design; BH-06/EX-01/ED-01 wire them.
 export { normalizeHeading, mapSectionTypes } from './sectiontypes.js';
+// linksPlugin/linksKey/currentLinks/resolveLinks (SL-02) are unwired by design; ED-01 wires the plugin and sidecar save/open, BH-06/generation write sources.
+export { linksPlugin, linksKey, currentLinks, resolveLinks } from './links.js';

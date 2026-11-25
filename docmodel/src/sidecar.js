@@ -5,8 +5,9 @@ import { nodeHash } from './hash.js';
 
 /**
  * @typedef {{id: string, path: number[], hash: string, type: string}} SidecarNode
+ * @typedef {{node: string, from: number, to: number, sources: string[]}} SidecarLink
  * @typedef {{genre: string, genre_version: number, genre_hash: string}} GenreBinding
- * @typedef {{version: number, nodes: SidecarNode[], genre?: GenreBinding | null, links?: unknown[]}} Sidecar
+ * @typedef {{version: number, nodes: SidecarNode[], genre?: GenreBinding | null, links?: SidecarLink[]}} Sidecar
  */
 
 /** @param {import('prosemirror-model').Node} doc */
@@ -51,8 +52,31 @@ function canonicalBinding(value) {
   return { genre: value.genre, genre_version: value.genre_version, genre_hash: value.genre_hash };
 }
 
+const LINK_KEYS = ['node', 'from', 'to', 'sources'];
+
+/** SL-02: one span-to-source link; from/to are character offsets in the node's text content.
+ * Rebuilt in canonical key order with sources sorted.
+ * @param {any} value @param {number} index @returns {SidecarLink}
+ */
+function canonicalLink(value, index) {
+  const at = `sidecar: links[${index}]`;
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${at} must be an object`);
+  for (const key of Object.keys(value)) {
+    if (!LINK_KEYS.includes(key)) throw new Error(`${at} has unknown key ${key}`);
+  }
+  if (typeof value.node !== 'string' || value.node.length === 0) throw new Error(`${at}.node must be a non-empty string`);
+  if (!Number.isSafeInteger(value.from) || value.from < 0) throw new Error(`${at}.from must be an integer >= 0`);
+  if (!Number.isSafeInteger(value.to) || value.to <= value.from) throw new Error(`${at}.to must be an integer > from`);
+  const sources = value.sources;
+  if (!Array.isArray(sources) || sources.length === 0 ||
+      !sources.every(s => typeof s === 'string' && s.length > 0) || new Set(sources).size !== sources.length) {
+    throw new Error(`${at}.sources must be a non-empty array of unique non-empty strings`);
+  }
+  return { node: value.node, from: value.from, to: value.to, sources: [...sources].sort() };
+}
+
 /** Validate the version-1 boundary and rebuild keys in their canonical order.
- * `links` has no semantics until SL-02.
+ * `links` entries are SL-02 span-to-source links (see canonicalLink).
  * @param {any} value
  * @returns {Sidecar}
  */
@@ -80,7 +104,7 @@ function canonicalSidecar(value) {
   }
   if (Object.hasOwn(value, 'links')) {
     if (!Array.isArray(value.links)) throw new Error('sidecar: links must be an array');
-    result.links = value.links;
+    result.links = value.links.map(canonicalLink);
   }
   return result;
 }
