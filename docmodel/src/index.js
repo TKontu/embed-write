@@ -22,3 +22,5 @@ export { buildSidecar, serializeSidecar, parseSidecar, sidecarPath } from './sid
 export { createCoalescer } from './coalesce.js';
 // reattachIds (NI-03) is unwired by design; ED-01 wires document open.
 export { reattachIds } from './reattach.js';
+// idPlugin/fixIds (NI-04) are unwired by design; ED-01 wires the plugin into the editor.
+export { idPlugin, fixIds } from './idplugin.js';
