@@ -31,6 +31,7 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.request
 from collections import Counter
 from typing import Callable, Iterable, Iterator, TypedDict
@@ -123,8 +124,25 @@ def _parsed_lines(path) -> Iterator[dict]:
                     continue
 
 
+BACKOFF_DELAYS = (0.5, 1.0, 2.0, 4.0)
+
+
+def _call_with_backoff(model: Model, prompt: str, max_retries: int, sleep) -> str:
+    """Call ``model``; on exception retry up to ``max_retries`` times with bounded backoff."""
+    for attempt in range(max_retries + 1):
+        try:
+            return model(prompt)
+        except Exception:
+            if attempt >= max_retries:
+                raise
+            sleep(BACKOFF_DELAYS[min(attempt, len(BACKOFF_DELAYS) - 1)])
+    raise AssertionError('unreachable')
+
+
 def iter_prelabel(items: Iterable[PrelabelItem], genre, model: Model, *, out_path,
-                  max_retries: int = 2) -> Iterator[dict]:
+                  max_retries: int = 2, sleep=time.sleep) -> Iterator[dict]:
+    """Records are flushed one by one, so a model error re-raised after its retries leaves
+    every earlier record on disk and a resumed run continues after them."""
     key = version_key(genre)
     model_id = getattr(model, 'model_id', 'unknown')
     labels = valid_labels(genre)
@@ -139,7 +157,7 @@ def iter_prelabel(items: Iterable[PrelabelItem], genre, model: Model, *, out_pat
             label, attempts = None, 0
             while label is None and attempts <= max_retries:
                 attempts += 1
-                label = parse_reply(model(prompt), labels)
+                label = parse_reply(_call_with_backoff(model, prompt, max_retries, sleep), labels)
             rec = {'sentence_id': sid, 'doc_id': item.get('doc_id'),
                    'label': label or OTHER, 'invalid_reply': label is None,
                    'attempts': attempts, 'model': model_id,
@@ -150,9 +168,10 @@ def iter_prelabel(items: Iterable[PrelabelItem], genre, model: Model, *, out_pat
             yield rec
 
 
-def prelabel(items, genre, model, *, out_path, max_retries: int = 2) -> list:
+def prelabel(items, genre, model, *, out_path, max_retries: int = 2, sleep=time.sleep) -> list:
     """Label every new item; returns the records written by this call."""
-    return list(iter_prelabel(items, genre, model, out_path=out_path, max_retries=max_retries))
+    return list(iter_prelabel(items, genre, model, out_path=out_path, max_retries=max_retries,
+                              sleep=sleep))
 
 
 def llm_labels(records) -> dict:
@@ -207,7 +226,7 @@ def _manifest_items(manifest_path, documents, genre, pass_name):
     root = Path(documents)
     if not root.is_dir():
         raise annotate.AnnotateError(f'document root not found: {root}')
-    return annotate.resolve_items(manifest, annotate._documents(root, manifest), genre,
+    return annotate.resolve_items(manifest, annotate.load_documents(root, manifest), genre,
                                   only=annotate.pass_ids(manifest, pass_name))
 
 

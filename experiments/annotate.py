@@ -188,7 +188,8 @@ def export(store, genre, manifest, pass_name, annotator=None):
     return sorted(recs, key=lambda r: (order[r['sentence_id']], r['annotator']))
 
 
-def _documents(root, manifest):
+def load_documents(root, manifest):
+    """Yield ``(doc_id, text)`` for each manifest document under ``root``, in manifest order."""
     seen = []
     for e in manifest['entries']:
         if not seen or seen[-1] != e['doc_id']:
@@ -198,6 +199,9 @@ def _documents(root, manifest):
         if not path.is_file():
             raise AnnotateError(f'document {doc_id!r} not in corpus')
         yield doc_id, path.read_text(encoding='utf-8')
+
+
+_documents = load_documents  # backwards-compatible alias
 
 
 def main(argv=None) -> int:
@@ -224,7 +228,7 @@ def main(argv=None) -> int:
         root = Path(args.corpus)
         if not root.is_dir():
             p.error(f'corpus directory not found: {root}')
-        items = resolve_items(manifest, _documents(root, manifest), genre,
+        items = resolve_items(manifest, load_documents(root, manifest), genre,
                               only=pass_ids(manifest, args.pass_name))
         AnnotationSession(list(items), store, genre, args.annotator, args.pass_name).run()
     except AnnotateError as exc:
