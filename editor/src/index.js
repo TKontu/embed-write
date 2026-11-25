@@ -11,6 +11,7 @@ import { createTimer } from '@milkdown/ctx';
 import { schema, parseMarkdown, serializeMarkdown, overlayPlugin, idPlugin } from 'docmodel';
 import { history, undo as pmUndo, closeHistory } from '@milkdown/prose/history';
 import { views } from './render.js';
+import { proposalRequestKeymap } from './request.js';
 
 const DocmodelSchemaReady = createTimer('DocmodelSchemaReady');
 
@@ -37,10 +38,11 @@ const entries = (om) => { /** @type {[string, any][]} */ const out = []; om.forE
 /**
  * Build a Milkdown editor in `root` holding `markdown`, parsed by docmodel.
  * One document in memory; no corpus loop.
- * @param {{ root: HTMLElement, markdown: string }} opts
+ * UX-03: when `onRequest` is given, Mod-Shift-p on a selection calls it (proposalRequestKeymap).
+ * @param {{ root: HTMLElement, markdown: string, onRequest?: (req: { from: number, to: number, text: string }) => void }} opts
  * @returns {Promise<{ editor: Editor, view: import('prosemirror-view').EditorView, getMarkdown: () => string, destroy: () => Promise<void> }>}
  */
-export async function createEditor({ root, markdown }) {
+export async function createEditor({ root, markdown, onRequest }) {
   const doc = parseMarkdown(markdown);
   const { nodeViews, markViews } = views(root.ownerDocument);
   const editor = await Editor.make()
@@ -52,7 +54,10 @@ export async function createEditor({ root, markdown }) {
         ctx.update(t, (xs) => [...xs, DocmodelSchemaReady]);
       }
       ctx.set(defaultValueCtx, { type: 'json', value: doc.toJSON() });
-      ctx.update(prosePluginsCtx, (xs) => [...xs, history(), overlayPlugin(), idPlugin()]);
+      ctx.update(prosePluginsCtx, (xs) => [
+        ...xs, history(), overlayPlugin(), idPlugin(),
+        ...(onRequest ? [proposalRequestKeymap({ onRequest })] : []),
+      ]);
       ctx.update(nodeViewCtx, (xs) => [...xs, .../** @type {any[]} */ (nodeViews)]);
       ctx.update(markViewCtx, (xs) => [...xs, .../** @type {any[]} */ (markViews)]);
     })
@@ -93,3 +98,4 @@ export function undo({ view }) {
 }
 export { renderDiff } from './diff.js';
 export { showProposal } from './proposal.js';
+export { proposalRequestKeymap } from './request.js';

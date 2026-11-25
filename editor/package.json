@@ -12,7 +12,7 @@
     "node": ">=22.22.2"
   },
   "scripts": {
-    "test": "node --test test/editor.test.js test/undo.test.js test/diff.test.js test/proposal.test.js"
+    "test": "node --test test/editor.test.js test/undo.test.js test/diff.test.js test/proposal.test.js test/request.test.js"
   },
   "dependencies": {
     "@milkdown/core": "7.23.0",
