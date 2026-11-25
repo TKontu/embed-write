@@ -18,6 +18,11 @@ Degenerate resamples (both raters use one and the same label, kappa 0/0 which co
 maps to 1.0) are excluded from the percentile interval and counted per row in
 "degenerate_resamples"; if every resample is degenerate the interval is None.
 
+Degenerate full sample: when both raters of a kappa row use one and the same label across the
+whole paired sample (expected agreement 1, kappa undefined), the row reports value None,
+interval None, verdict_hint "n/a", "degenerate": true and "degenerate_reason":
+"single_label_expected_agreement_1". Non-degenerate rows carry neither key.
+
 The other share per rater ("other_share_expert" / "other_share_llm") is computed over the
 expert-vs-LLM paired id set; "value_all_labelled" / "n_all_labelled" keep the share over
 every sentence that rater labelled.
@@ -134,9 +139,16 @@ def run(rng: random.Random, config: Mapping[str, Any]) -> dict:
 
     def kappa_row(name, value, x, y):
         interval, degenerate = _bootstrap_kappa(x, y, rng, n_resamples)
-        return {"metric": name, "value": _r(value), "n": len(x), "interval": interval,
-                "method": method, "degenerate_resamples": degenerate,
-                "verdict_hint": _hint(value, th.get(name), True)}
+        single = len(set(x) | set(y)) == 1  # p_e = 1: kappa undefined, not 1.0
+        if single:
+            value = interval = None
+        row = {"metric": name, "value": _r(value), "n": len(x), "interval": interval,
+               "method": method, "degenerate_resamples": degenerate,
+               "verdict_hint": _hint(value, th.get(name), True)}
+        if single:
+            row["degenerate"] = True
+            row["degenerate_reason"] = "single_label_expected_agreement_1"
+        return row
 
     _, e, l, c = _pair(expert, llm)
     pairing = {"expert_llm": {"paired": c["paired"], "only_expert": c["only_a"],

@@ -146,6 +146,25 @@ class G01Tests(unittest.TestCase):
         self.assertGreater(r['degenerate_resamples'], 0)
         self.assertEqual(r['interval'], [0.0, 0.0])
 
+    def test_full_sample_single_class_kappa_is_degenerate(self):
+        # Every rater uses only 'claim': p_e = 1, kappa undefined (not 1.0 / meets).
+        same = {f's{i}': 'claim' for i in range(8)}
+        out = g01.run(random.Random(0), dict(CONFIG, expert=same, llm=same,
+                                             expert_repeat=same, n_resamples=50))
+        for name in ('kappa_expert_llm', 'kappa_expert_self'):
+            r = rows(out)[name]
+            self.assertIsNone(r['value'], name)
+            self.assertIs(r['degenerate'], True, name)
+            self.assertEqual(r['degenerate_reason'], 'single_label_expected_agreement_1')
+            self.assertIsNone(r['interval'], name)
+            self.assertEqual(r['verdict_hint'], 'n/a', name)
+            self.assertEqual(r['n'], 8)
+
+    def test_non_degenerate_row_has_no_degenerate_marker(self):
+        r = rows(g01.run(random.Random(1), CONFIG))['kappa_expert_llm']
+        self.assertNotIn('degenerate', r)
+        self.assertNotIn('degenerate_reason', r)
+
     def test_interval_percentiles_bracket_estimate(self):
         r = rows(g01.run(random.Random(1), CONFIG))['kappa_expert_llm']
         lo, hi = r['interval']
