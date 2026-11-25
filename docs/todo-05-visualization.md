@@ -36,6 +36,7 @@ Colour is the expert's main channel into the pattern model. Revision 2 replaces 
 - [ ] **RE-06** `[A]` Provisional vs confirmed: fast-layer results lighter or outlined, confirmed results solid — check: visual regression test for both states
 - [ ] **RE-07** `[A]` Transition from provisional to confirmed without layout shift or flicker — check: no reflow on state change
 - [ ] **RE-08** `[A]` Low-confidence signals rendered weaker than high-confidence ones
+  - partial (R121/A1, PR #310, merge 850c532): editor library half: signalDecorations(doc, signals, {weakBelow}) adds data-signal-strength weak|strong and class signal-weak|signal-strong (DEFAULT_WEAK_BELOW 0.5; bad weakBelow throws); plugin passes opts; `editor/src/signals.css` opacity-only (weak 0.55 < strong 1, no colour, I3). seen: editor/test/decorations.test.js, npm test 47/47 and gate 1430 OK at head 0a9c34176c366a978574e5da8630b6b6bf4be37e (rerun by planner, node_modules linked). Stays partial: unwired by design until RE-10 / app shell installs the plugin and links signals.css.
 - [ ] **RE-09** `[A]` Granularity toggle: section, paragraph, sentence
 - [ ] **RE-10** `[A]` Overlay selector: moves (default), register, support, redundancy, topic (optional). One at a time
 - [ ] **RE-11** `[A]` Off as a first-class state with a single shortcut
