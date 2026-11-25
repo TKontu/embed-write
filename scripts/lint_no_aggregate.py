@@ -32,6 +32,34 @@ NAME_RE = re.compile(r'(aggregate|overall|combined|composite|total)_?score'
 COMBINERS = {'sum', 'mean', 'fmean', 'average'}
 
 
+def panel_implementations(path='service/verify_panel.py'):
+    """Return, in source order and unique, every `implementation="....py"`
+    keyword literal in the panel file (parsed, not imported); () if missing."""
+    try:
+        source = Path(path).read_text(encoding='utf-8')
+    except FileNotFoundError:
+        return ()
+    found = []
+    for node in ast.walk(ast.parse(source, filename=str(path))):
+        if isinstance(node, ast.Call):
+            for kw in node.keywords:
+                value = kw.value
+                if (kw.arg == 'implementation' and isinstance(value, ast.Constant)
+                        and isinstance(value.value, str) and value.value.endswith('.py')):
+                    found.append((value.lineno, value.col_offset, value.value))
+    ordered = []
+    for _, _, value in sorted(found):
+        if value not in ordered:
+            ordered.append(value)
+    return tuple(ordered)
+
+
+def default_targets(panel='service/verify_panel.py'):
+    """DEFAULT_TARGETS followed by panel implementations not already in it."""
+    return DEFAULT_TARGETS + tuple(p for p in panel_implementations(panel)
+                                   if p not in DEFAULT_TARGETS)
+
+
 def _name(node):
     if isinstance(node, ast.Name):
         return node.id
@@ -74,7 +102,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('paths', nargs='*', type=Path,
-                        default=[Path(p) for p in DEFAULT_TARGETS])
+                        default=[Path(p) for p in default_targets()])
     args = parser.parse_args()
     failed = False
     for path in args.paths:

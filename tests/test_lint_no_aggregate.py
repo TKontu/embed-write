@@ -1,3 +1,4 @@
+import importlib.util
 import subprocess
 import sys
 import tempfile
@@ -7,6 +8,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / 'scripts' / 'lint_no_aggregate.py'
+
+
+_spec = importlib.util.spec_from_file_location('lint_no_aggregate', SCRIPT)
+lint = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(lint)
 
 
 def run(*paths):
@@ -75,6 +81,27 @@ class LintNoAggregateTest(unittest.TestCase):
     def test_default_targets_pass(self):
         result = run()
         self.assertEqual((result.returncode, result.stdout), (0, ''))
+
+    def test_panel_implementations_synthetic(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            panel = Path(tmp) / 'panel.py'
+            panel.write_text(textwrap.dedent('''
+                A = AxisEntry(name="a", implementation="service/a.py")
+                N = AxisEntry(name="n", implementation=None)
+                R = AxisEntry(name="r", implementation="service/a.py")
+                B = AxisEntry(name="b", implementation="service/b.py")
+            '''), encoding='utf-8')
+            self.assertEqual(lint.panel_implementations(panel),
+                             ('service/a.py', 'service/b.py'))
+            self.assertEqual(lint.panel_implementations(Path(tmp) / 'missing.py'), ())
+
+    def test_default_targets_follow_panel(self):
+        targets = lint.default_targets(ROOT / 'service' / 'verify_panel.py')
+        self.assertEqual(len(targets), len(set(targets)))
+        self.assertEqual(targets[:4], lint.DEFAULT_TARGETS)
+        real = lint.panel_implementations(ROOT / 'service' / 'verify_panel.py')
+        self.assertTrue(real)
+        self.assertTrue(set(real) <= set(targets))
 
 
 if __name__ == '__main__':
