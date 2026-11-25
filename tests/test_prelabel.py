@@ -232,6 +232,15 @@ class CliTests(unittest.TestCase):
         self.assertEqual(sorted(r['sentence_id'] for r in read(self.out)),
                          sorted(self.manifest['repeat']))
 
+    def test_cli_manifest_path_uses_public_load_documents(self):
+        from unittest import mock
+        from experiments import annotate
+        with mock.patch.object(annotate, 'load_documents',
+                               wraps=annotate.load_documents) as spy:
+            rc = self.run_cli('--manifest', self.manifest_path, '--documents', self.docs_dir)
+        self.assertEqual(rc, 0)
+        self.assertTrue(spy.called)
+
     def test_items_jsonl_still_works(self):
         path = os.path.join(self.tmp.name, 'items.jsonl')
         with open(path, 'w', encoding='utf-8') as fh:
@@ -258,3 +267,60 @@ def mock_stderr():
     import contextlib
     import io
     return contextlib.redirect_stderr(io.StringIO())
+
+
+class FlakyModel:
+    """Raises for scripted sentence indices; ``fail_times`` None means always."""
+    model_id = FakeModel.model_id  # same id so resume applies
+
+    def __init__(self, fail, fail_times=None):
+        self.fail, self.fail_times, self.calls = set(fail), fail_times, {}
+
+    def __call__(self, prompt):
+        for i in self.fail:
+            if f'Synthetic sentence number {i}.' in prompt:
+                n = self.calls[i] = self.calls.get(i, 0) + 1
+                if self.fail_times is None or n <= self.fail_times:
+                    raise OSError(f'model down for {i}')
+        return MOVE_IDS[0]
+
+
+class ModelErrorTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.out = os.path.join(self.tmp.name, 'labels.jsonl')
+        self.sleeps = []
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_raise_once_then_succeed_yields_normal_record(self):
+        model = FlakyModel({1}, fail_times=1)
+        recs = prelabel.prelabel(items(3), GENRE, model, out_path=self.out,
+                                 sleep=self.sleeps.append)
+        self.assertEqual([r['sentence_id'] for r in recs], ['s0', 's1', 's2'])
+        self.assertEqual(recs[1]['label'], MOVE_IDS[0])
+        self.assertFalse(recs[1]['invalid_reply'])
+        self.assertEqual(len(self.sleeps), 1)
+        self.assertGreater(self.sleeps[0], 0)
+
+    def test_always_raising_reraises_after_flush_and_resume_skips(self):
+        model = FlakyModel({2})
+        with self.assertRaises(OSError):
+            prelabel.prelabel(items(4), GENRE, model, out_path=self.out, max_retries=2,
+                              sleep=self.sleeps.append)
+        self.assertEqual(model.calls[2], 3)  # max_retries + 1 attempts
+        self.assertEqual(len(self.sleeps), 2)
+        self.assertEqual(self.sleeps, sorted(self.sleeps))  # non-decreasing backoff
+        self.assertEqual([r['sentence_id'] for r in read(self.out)], ['s0', 's1'])
+        ok = FakeModel({})
+        recs = prelabel.prelabel(items(4), GENRE, ok, out_path=self.out)
+        self.assertEqual([r['sentence_id'] for r in recs], ['s2', 's3'])
+        self.assertEqual(len(ok.prompts), 2)
+        self.assertTrue(prelabel.summarize(items(4), read(self.out))['exactly_one_label_each'])
+
+    def test_well_behaved_model_never_sleeps(self):
+        prelabel.prelabel(items(3), GENRE, FakeModel({}), out_path=self.out,
+                          sleep=self.sleeps.append)
+        self.assertEqual(self.sleeps, [])
+

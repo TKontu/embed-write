@@ -88,6 +88,18 @@ class ResolveTests(unittest.TestCase):
         with self.assertRaisesRegex(an.AnnotateError, 'r2.md'):
             list(an.resolve_items(MANIFEST, iter(DOCS[:2]), GENRE))
 
+    def test_load_documents_public(self):
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as d:
+            for doc_id, text in DOCS:
+                Path(d, doc_id).write_text(text, encoding='utf-8')
+            got = list(an.load_documents(Path(d), MANIFEST))
+            want = [(i, t) for i, t in DOCS if any(e['doc_id'] == i for e in MANIFEST['entries'])]
+            self.assertEqual(got, want)
+            Path(d, DOCS[0][0]).unlink()
+            with self.assertRaisesRegex(an.AnnotateError, 'not in corpus'):
+                list(an.load_documents(Path(d), MANIFEST))
+
     def test_repeat_only(self):
         got = items(only=an.pass_ids(MANIFEST, 'repeat'))
         self.assertEqual(sorted(g['sentence_id'] for g in got), MANIFEST['repeat'])
