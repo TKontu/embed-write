@@ -1,10 +1,12 @@
 // @ts-check
 // NI-02: pure sidecar construction; NI-03 and ED-01 wire persistence/reattachment.
+// SL-01: `genre` binds the document to one genre file content+version (its version key).
 import { nodeHash } from './hash.js';
 
 /**
  * @typedef {{id: string, path: number[], hash: string, type: string}} SidecarNode
- * @typedef {{version: number, nodes: SidecarNode[], genre?: null, links?: unknown[]}} Sidecar
+ * @typedef {{genre: string, genre_version: number, genre_hash: string}} GenreBinding
+ * @typedef {{version: number, nodes: SidecarNode[], genre?: GenreBinding | null, links?: unknown[]}} Sidecar
  */
 
 /** @param {import('prosemirror-model').Node} doc */
@@ -23,8 +25,34 @@ export function buildSidecar(doc) {
   return { version: 1, nodes };
 }
 
+const BINDING_KEYS = ['genre', 'genre_version', 'genre_hash'];
+
+/** Validate a genre binding and rebuild it in canonical key order; null stays null.
+ * @param {any} value
+ * @returns {GenreBinding | null}
+ */
+function canonicalBinding(value) {
+  if (value === null) return null;
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('sidecar: genre must be null or an object');
+  }
+  for (const key of Object.keys(value)) {
+    if (!BINDING_KEYS.includes(key)) throw new Error(`sidecar: genre has unknown key ${key}`);
+  }
+  if (typeof value.genre !== 'string' || value.genre.length === 0) {
+    throw new Error('sidecar: genre.genre must be a non-empty string');
+  }
+  if (!Number.isSafeInteger(value.genre_version) || value.genre_version < 1) {
+    throw new Error('sidecar: genre.genre_version must be an integer >= 1');
+  }
+  if (typeof value.genre_hash !== 'string' || !/^[0-9a-f]{64}$/.test(value.genre_hash)) {
+    throw new Error('sidecar: genre.genre_hash must be 64 lowercase hex');
+  }
+  return { genre: value.genre, genre_version: value.genre_version, genre_hash: value.genre_hash };
+}
+
 /** Validate the version-1 boundary and rebuild keys in their canonical order.
- * Reserved fields have no binding/link semantics until SL-01/SL-02.
+ * `links` has no semantics until SL-02.
  * @param {any} value
  * @returns {Sidecar}
  */
@@ -48,8 +76,7 @@ function canonicalSidecar(value) {
   /** @type {Sidecar} */
   const result = { version: 1, nodes };
   if (Object.hasOwn(value, 'genre')) {
-    if (value.genre !== null) throw new Error('sidecar: reserved genre must be null');
-    result.genre = null;
+    result.genre = canonicalBinding(value.genre);
   }
   if (Object.hasOwn(value, 'links')) {
     if (!Array.isArray(value.links)) throw new Error('sidecar: links must be an array');
@@ -77,4 +104,25 @@ export function parseSidecar(text) {
 /** @param {string} docPath @returns {string} */
 export function sidecarPath(docPath) {
   return `${docPath}.stw.json`;
+}
+
+/** New sidecar with `binding` validated in place of `genre` (null unbinds); input untouched.
+ * Unwired by design: ED-01 (open/save) and BH-06 wire it.
+ * @param {Sidecar} sidecar @param {GenreBinding | null} binding @returns {Sidecar}
+ */
+export function bindGenre(sidecar, binding) {
+  return canonicalSidecar({ ...sidecar, genre: binding });
+}
+
+/** Compare a sidecar's binding with a genre version key {genre, genre_version, genre_hash}.
+ * Unwired by design: ED-01 (open/save) and BH-06 wire it.
+ * @param {Sidecar} sidecar @param {GenreBinding} versionKey
+ * @returns {'unbound' | 'match' | 'stale' | 'other'}
+ */
+export function genreBindingStatus(sidecar, versionKey) {
+  const bound = sidecar.genre;
+  if (bound == null) return 'unbound';
+  if (bound.genre !== versionKey.genre) return 'other';
+  return bound.genre_version === versionKey.genre_version && bound.genre_hash === versionKey.genre_hash
+    ? 'match' : 'stale';
 }

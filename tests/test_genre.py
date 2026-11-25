@@ -6,6 +6,8 @@ import unittest
 
 from service import genre as g
 
+BINDING_FIXTURE = os.path.join(os.path.dirname(__file__), '..', 'docmodel', 'test',
+                               'fixtures', 'genre-binding.json')
 FIXTURE = os.path.join(os.path.dirname(__file__), 'fixtures', 'genre_synthetic.json')
 
 
@@ -170,6 +172,16 @@ class LabelValidityTests(unittest.TestCase):
         self.assertFalse(g.labels_valid_for(base(), {}))
 
 
+class SidecarGenreBindingParityTests(unittest.TestCase):
+    """SL-01: the JS sidecar binding fixture equals the Python version key."""
+
+    def test_binding_fixture_matches_version_key(self):
+        obj = g.load_genre(FIXTURE)
+        with open(BINDING_FIXTURE, encoding='utf-8') as fh:
+            binding = json.load(fh)
+        self.assertEqual(binding, {'genre': obj['genre'], **g.version_key(obj)})
+
+
 if __name__ == '__main__':
     unittest.main()
 
@@ -258,3 +270,4 @@ class NormalizeHeadingParityTests(unittest.TestCase):
         for case in cases:
             with self.subTest(input=case['input']):
                 self.assertEqual(g.normalize_heading(case['input']), case['expected'])
+
