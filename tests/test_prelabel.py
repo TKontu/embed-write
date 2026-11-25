@@ -136,6 +136,22 @@ class PrelabelTests(unittest.TestCase):
         m = prelabel.local_model('http://127.0.0.1:9/v1', model='x')
         self.assertEqual(m.model_id, 'x')
 
+    def test_local_model_sends_temperature(self):
+        import io
+        from unittest import mock
+        sent = []
+
+        def fake_open(req, timeout):
+            sent.append(json.loads(req.data))
+            return io.BytesIO(json.dumps({'choices': [{'message': {'content': 'ok'}}]}).encode())
+
+        call = prelabel.local_model('http://127.0.0.1:8080/v1', model='m')
+        with mock.patch('urllib.request.urlopen', fake_open):
+            self.assertEqual(call('p'), 'ok')
+            self.assertEqual(call('p', temperature=0.9), 'ok')
+        self.assertEqual([b['temperature'] for b in sent], [0, 0.9])
+        self.assertEqual(call.model_id, 'm')
+
     def test_parse_reply(self):
         valid = MOVE_IDS + ['other']
         self.assertEqual(prelabel.parse_reply(f' {MOVE_IDS[0]}.\n', valid), MOVE_IDS[0])

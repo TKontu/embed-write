@@ -35,7 +35,7 @@ Memory: the exemplar pool and the done keys; sections stream one at a time.
 Sampling: ``temperature`` (CLI ``--temperature``) is passed as ``model(prompt, temperature=t)``
 for arm C candidates only, so the k drafts can differ; arms A and B, and the default
 ``temperature=None``, call ``model(prompt)`` unchanged. Arm C records carry ``temperature`` when set.
-``local_sampling_model`` is the loopback client that honours it (default 0, as ``local_model``).
+``local_model`` (experiments.prelabel) honours it (default 0).
 
 ``summarize(..., model=, prompt_version=)`` counts only the records of that run, so stale-version
 records in a reused ``out_path`` neither duplicate nor complete the current run; the CLI passes both.
@@ -51,13 +51,11 @@ import json
 import os
 import re
 import sys
-import urllib.request
 from collections import Counter
 from functools import partial
 from typing import Callable, Iterable, Iterator, Sequence, TypedDict
 
 from experiments.prelabel import local_model
-from service.network_guard import NetworkPolicy, check_url
 
 ARMS = ('A', 'B', 'C')
 PROMPT_VERSION = 'g02.3-v1'
@@ -188,25 +186,6 @@ def _done_pairs(out_path, model_id, prompt_version) -> set:
     return done
 
 
-def local_sampling_model(base_url: str, *, model: str = 'local', timeout: float = 120.0,
-                         policy: NetworkPolicy = NetworkPolicy()) -> Model:
-    """Loopback /chat/completions client accepting a per-call ``temperature`` (default 0)."""
-    url = base_url.rstrip('/') + '/chat/completions'
-    check_url(url, policy)
-
-    def call(prompt: str, temperature: float | None = None) -> str:
-        body = json.dumps({'model': model, 'temperature': 0 if temperature is None else temperature,
-                           'messages': [{'role': 'user', 'content': prompt}]}).encode()
-        req = urllib.request.Request(url, data=body,
-                                     headers={'Content-Type': 'application/json'})
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = json.load(resp)
-        return data['choices'][0]['message']['content']
-
-    call.model_id = model
-    return call
-
-
 def _choose(critic: Critic, candidates: Sequence[str], context: str) -> tuple:
     scores = [float(critic(text, context)) for text in candidates]
     best = max(range(len(scores)), key=lambda i: (scores[i], -i))
@@ -326,8 +305,7 @@ def main(argv=None, *, model: Model | None = None, critic: Critic | None = None)
     if model is None:
         if not a.model_url:
             ap.error('--model-url is required unless a model is injected')
-        model = (local_model(a.model_url, model=a.model_name) if a.temperature is None
-                 else local_sampling_model(a.model_url, model=a.model_name))
+        model = local_model(a.model_url, model=a.model_name)
     if critic is None:
         critic = model_critic(model)
     records = generate(read_jsonl(a.notes), list(read_jsonl(a.pool)), model, out_path=a.out,
