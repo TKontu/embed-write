@@ -1,0 +1,128 @@
+"""AN-02 annotation sampling. LLM-built synthetic fixtures; no corpus text."""
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import unittest
+
+from experiments import annotation_sample as a
+from experiments.splits import DocumentSplit, SplitLeakError
+from service.genre import load_genre
+
+GENRE_PATH = os.path.join(os.path.dirname(__file__), 'fixtures', 'genre_synthetic_sections.json')
+GENRE = load_genre(GENRE_PATH)
+
+
+def doc(i, findings=4, conclusions=2, other=1):
+    parts = [f'Preamble sentence {i} zero.']
+    parts.append('## 1. Findings')
+    parts.append(' '.join(f'Invented finding {i} number {k}.' for k in range(findings)))
+    parts.append('## Odd heading')
+    parts.append(' '.join(f'Invented aside {i} number {k}.' for k in range(other)))
+    parts.append('## Conclusions:')
+    parts.append(' '.join(f'Invented conclusion {i} number {k}.' for k in range(conclusions)))
+    return '\n\n'.join(parts) + '\n'
+
+
+DOCS = [(f'r{i}.md', doc(i, findings=3 + i, conclusions=1 + (i % 2))) for i in range(5)]
+SPLIT = DocumentSplit(['train.md'], [d for d, _ in DOCS])
+
+
+class ManifestTests(unittest.TestCase):
+    def build(self, **kw):
+        kw.setdefault('n', 10)
+        return a.build_manifest(iter(DOCS), SPLIT, GENRE, **kw)
+
+    def test_deterministic_per_seed(self):
+        self.assertEqual(self.build(seed=3), self.build(seed=3))
+        self.assertNotEqual(self.build(seed=3)['entries'], self.build(seed=4)['entries'])
+
+    def test_refuses_non_test_doc(self):
+        with self.assertRaises(SplitLeakError):
+            a.build_manifest(iter(DOCS + [('train.md', doc(9))]), SPLIT, GENRE, n=5)
+        with self.assertRaises(SplitLeakError):
+            a.build_manifest(iter([('stray.md', doc(9))]), SPLIT, GENRE, n=5)
+
+    def test_every_section_type_represented(self):
+        for seed in range(10):
+            m = self.build(n=3, seed=seed)
+            self.assertEqual({e['section_type'] for e in m['entries']},
+                             {'findings', 'conclusions', 'unknown'})
+
+    def test_total_is_min_n_candidates(self):
+        total = sum(c for c in self.build()['candidates_per_stratum'].values())
+        self.assertEqual(self.build(n=17)['n_drawn'], 17)
+        m = self.build(n=10_000)
+        self.assertEqual(m['n_drawn'], total)
+        self.assertEqual(m['n_requested'], 10_000)
+        self.assertEqual(len(m['entries']), total)
+        ids = [e['sentence_id'] for e in m['entries']]
+        self.assertEqual(len(set(ids)), len(ids))
+
+    def test_unknown_counted_and_strata(self):
+        m = self.build(n=10_000)
+        # preamble + one aside per doc are unknown
+        self.assertEqual(m['unknown_sentences'], 10)
+        self.assertEqual(m['candidates_per_stratum']['r0.md|findings'], 3)
+        self.assertEqual(sum(m['drawn_per_stratum'].values()), m['n_drawn'])
+
+    def test_proportional(self):
+        m = self.build(n=20, seed=1)
+        drawn = m['drawn_per_stratum']
+        self.assertGreaterEqual(drawn['r4.md|findings'], drawn['r0.md|findings'])
+
+    def test_repeat_subset(self):
+        for n in (3, 10, 17):
+            m = self.build(n=n, repeat_fraction=0.1, seed=2)
+            self.assertEqual(len(m['repeat']), round(0.1 * m['n_drawn']))
+            self.assertLessEqual(set(m['repeat']), {e['sentence_id'] for e in m['entries']})
+
+    def test_no_sentence_text(self):
+        blob = json.dumps(self.build(n=10_000))
+        self.assertNotIn('Invented', blob)
+        self.assertNotIn('Preamble', blob)
+
+    def test_manifest_header(self):
+        m = self.build()
+        self.assertEqual(m['schema_version'], a.SCHEMA_VERSION)
+        self.assertEqual(m['seed'], 0)
+        self.assertEqual(m['genre'], {'genre_version': 1, 'genre_hash': m['genre']['genre_hash']})
+        self.assertEqual(len(m['split_test_ids_sha256']), 64)
+        self.assertIn('memory_bound', m)
+
+    def test_write_manifest_canonical(self):
+        m = self.build()
+        with tempfile.TemporaryDirectory() as tmp:
+            p = os.path.join(tmp, 'm.json')
+            a.write_manifest(p, m)
+            with open(p, encoding='utf-8') as fh:
+                text = fh.read()
+        self.assertEqual(json.loads(text), m)
+        self.assertEqual(text, json.dumps(m, sort_keys=True, indent=2) + '\n')
+
+
+class CliTests(unittest.TestCase):
+    def test_cli_writes_manifest(self):
+        root = os.path.join(os.path.dirname(__file__), '..')
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = os.path.join(tmp, 'corpus')
+            os.makedirs(os.path.join(corpus, 'sub'))
+            for i in range(6):
+                with open(os.path.join(corpus, 'sub' if i % 2 else '', f'd{i}.md'), 'w',
+                          encoding='utf-8') as fh:
+                    fh.write(doc(i))
+            out = os.path.join(tmp, 'out.json')
+            subprocess.run([sys.executable, '-m', 'experiments.annotation_sample',
+                            '--corpus', corpus, '--genre', GENRE_PATH, '--split-seed', '1',
+                            '--test-fraction', '0.5', '--n', '5', '--out', out],
+                           cwd=root, check=True, capture_output=True)
+            with open(out, encoding='utf-8') as fh:
+                m = json.load(fh)
+        self.assertEqual(m['n_drawn'], 5)
+        self.assertEqual(len({e['doc_id'] for e in m['entries']} - {
+            'd0.md', 'sub/d1.md', 'd2.md', 'sub/d3.md', 'd4.md', 'sub/d5.md'}), 0)
+
+
+if __name__ == '__main__':
+    unittest.main()
