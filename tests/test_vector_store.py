@@ -1,6 +1,8 @@
 """Synthetic, offline CA-01/CA-02 acceptance checks."""
 from dataclasses import replace
 import importlib.util
+import inspect
+import json
 import struct
 import tempfile
 import unittest
@@ -25,6 +27,93 @@ class VectorStoreTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.path = self.tmp.name
+
+    def capped_store(self, cap):
+        self.assertIn('max_bytes', inspect.signature(self.VectorStore).parameters,
+                      'CA-03 requires an optional byte cap')
+        return self.VectorStore(self.path, max_bytes=cap)
+
+    def entry_size(self, key):
+        header = json.dumps([key.level.value, key.dims], separators=(',', ':'))
+        return len(key.encode()) + len(header.encode('ascii')) + 1 + 8 * key.dims
+
+    def test_cap_boundary_evicts_oldest_across_keyspaces(self):
+        newer = replace(self.key, model_version='v2')
+        newest = replace(self.key, model_version='v3')
+        size = self.entry_size(self.key)
+        with self.capped_store(2 * size) as store:
+            self.assertEqual((len(store), store.size_bytes()), (0, 0))
+            store.put(self.key, self.vector)
+            store.put(newer, self.vector)
+            self.assertEqual((len(store), store.size_bytes()), (2, 2 * size))
+            self.assertEqual(store.get(self.key), self.vector)
+            store.put(newest, self.vector)
+            self.assertIsNone(store.get(self.key))
+            self.assertEqual(list(store.keys('model', 'v1')), [])
+            self.assertEqual(store.get(newer), self.vector)
+            self.assertEqual(store.get(newest), self.vector)
+            self.assertEqual((len(store), store.size_bytes()), (2, 2 * size))
+
+    def test_oversized_entry_preserves_store_and_order(self):
+        import service.vector_store as module
+        size = self.entry_size(self.key)
+        with self.capped_store(size) as store:
+            store.put(self.key, self.vector)
+            before = store._env.info()['last_txnid']
+            large = replace(self.key, dims=100)
+            with self.assertRaises(module.CapacityError):
+                store.put(large, LevelVector(large.level, (1,) * large.dims))
+            self.assertEqual(store._env.info()['last_txnid'], before)
+            self.assertEqual((len(store), store.size_bytes()), (1, size))
+            self.assertEqual(list(store.keys('model', 'v1')), [self.key])
+            self.assertEqual(store.get(self.key), self.vector)
+            self.assertIsNone(store.get(large))
+
+    def test_identical_reput_and_reads_do_not_refresh_fifo_after_reopen(self):
+        newer = replace(self.key, content_hash='new1')
+        newest = replace(self.key, content_hash='new2')
+        size = self.entry_size(self.key)
+        with self.capped_store(2 * size) as store:
+            store.put(self.key, self.vector)
+            store.put(newer, self.vector)
+            before = store._env.info()['last_txnid']
+            store.put(self.key, self.vector)
+            store.get(self.key)
+            self.assertEqual(store._env.info()['last_txnid'], before)
+            self.assertEqual(store.size_bytes(), 2 * size)
+        with self.capped_store(2 * size) as store:
+            self.assertEqual((len(store), store.size_bytes()), (2, 2 * size))
+            store.put(newest, self.vector)
+            self.assertIsNone(store.get(self.key))
+            self.assertEqual(store.get(newer), self.vector)
+            # An evicted key can be inserted with a different value.
+            changed = LevelVector(self.key.level, (8, 9))
+            store.put(self.key, changed)
+            self.assertIsNone(store.get(newer))
+            self.assertEqual(store.get(self.key), changed)
+            self.assertEqual(set(store.keys('model', 'v1')), {self.key, newest})
+
+    def test_large_insert_evicts_multiple_entries(self):
+        size = self.entry_size(self.key)
+        large = replace(self.key, dims=10)
+        with self.capped_store(3 * size) as store:
+            for suffix in ('hash', 'new1', 'new2'):
+                store.put(replace(self.key, content_hash=suffix), self.vector)
+            store.put(large, LevelVector(large.level, (1,) * large.dims))
+            self.assertIsNone(store.get(self.key))
+            self.assertIsNone(store.get(replace(self.key, content_hash='new1')))
+            self.assertEqual(len(store), 2)
+            self.assertEqual(store.size_bytes(), size + self.entry_size(large))
+
+    def test_zero_cap_and_invalid_caps(self):
+        import service.vector_store as module
+        with self.capped_store(0) as store:
+            with self.assertRaises(module.CapacityError):
+                store.put(self.key, self.vector)
+            self.assertEqual((len(store), store.size_bytes()), (0, 0))
+        for cap in (-1, 1.5, True):
+            with self.assertRaises(ValueError):
+                self.VectorStore(self.path, max_bytes=cap)
 
     def test_round_trip(self):
         with self.VectorStore(self.path) as store:
