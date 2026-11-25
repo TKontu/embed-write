@@ -7,7 +7,8 @@ setupDom();
 import { readFileSync } from 'node:fs';
 const { createEditor, signalDecorations, signalDecorationsPlugin, DEFAULT_WEAK_BELOW, signalOverlayKey,
   toggleSignalOverlay, isSignalOverlayOn, DEFAULT_OFF_SHORTCUT, OVERLAYS, DEFAULT_OVERLAY, setSignalOverlay,
-  selectedSignalOverlay } = await import('../src/index.js');
+  selectedSignalOverlay, GRANULARITIES, DEFAULT_GRANULARITY, setSignalGranularity,
+  selectedSignalGranularity } = await import('../src/index.js');
 const { EditorState } = await import('@milkdown/prose/state');
 const { parseMarkdown, assignIds } = await import('docmodel');
 
@@ -26,6 +27,7 @@ test('decoration lands on the matching node with data attributes and class', () 
   assert.equal(d.to, b.pos + b.node.nodeSize);
   assert.deepEqual(d.type.attrs, { 'data-signal-kind': 'readability', 'data-signal-layer': 'provisional',
     'data-signal-confidence': '0.5', 'data-signal-strength': 'strong', 'data-signal-overlay': 'moves',
+    'data-signal-level': 'paragraph',
     class: 'signal signal-provisional signal-strong' });
 });
 
@@ -210,4 +212,59 @@ test('initialOverlay honoured; bad names throw', () => {
     assert.throws(() => setSignalOverlay(v), String(v));
   }
   assert.throws(() => signalDecorations(doc, [sig(blocks[1].id, { overlay: 'bogus' })]));
+});
+
+// RE-09: granularity toggle (section, paragraph, sentence); one level at a time.
+const leveled = () => [sig(blocks[1].id), sig(blocks[0].id, { level: 'section' }),
+  sig(blocks[2].id, { level: 'sentence' }), { ...sig(blocks[2].id), level: undefined }];
+const mkGran = (opts) => EditorState.create({ doc, plugins: [signalDecorationsPlugin(leveled, opts)] });
+
+test('GRANULARITIES frozen list with paragraph default', () => {
+  assert.deepEqual([...GRANULARITIES], ['section', 'paragraph', 'sentence']);
+  assert.ok(Object.isFrozen(GRANULARITIES));
+  assert.equal(DEFAULT_GRANULARITY, 'paragraph');
+});
+
+test('default granularity paragraph; other levels not decorated (absent level = paragraph)', () => {
+  const st = mkGran();
+  assert.equal(selectedSignalGranularity(st), 'paragraph');
+  const d = decos(st);
+  assert.deepEqual(d.map((x) => x.from).sort((a, b) => a - b), [blocks[1].pos, blocks[2].pos]);
+  for (const x of d) assert.equal(x.type.attrs['data-signal-level'], 'paragraph');
+  assert.equal(signalDecorations(doc, leveled()).find().length, 4);
+  assert.equal(signalDecorations(doc, leveled(), { granularity: 'section' }).find().length, 1);
+});
+
+test('setSignalGranularity switches signals; toggle and setSignalOverlay preserve granularity', () => {
+  let st = run(mkGran(), setSignalGranularity('sentence'));
+  assert.equal(selectedSignalGranularity(st), 'sentence');
+  let d = decos(st);
+  assert.equal(d.length, 1);
+  assert.equal(d[0].from, blocks[2].pos);
+  assert.equal(d[0].type.attrs['data-signal-level'], 'sentence');
+  st = run(st, toggleSignalOverlay);
+  assert.equal(isSignalOverlayOn(st), false);
+  assert.equal(selectedSignalGranularity(st), 'sentence');
+  st = run(st, toggleSignalOverlay);
+  st = run(st, setSignalOverlay('register'));
+  assert.equal(selectedSignalGranularity(st), 'sentence');
+  assert.equal(decos(st).length, 0);
+  st = run(st, setSignalOverlay('moves'));
+  assert.equal(decos(st)[0].from, blocks[2].pos);
+  st = run(run(st, toggleSignalOverlay), setSignalGranularity('section'));
+  assert.equal(isSignalOverlayOn(st), false);
+  assert.equal(selectedSignalOverlay(st), 'moves');
+  st = run(st, toggleSignalOverlay);
+  assert.equal(decos(st)[0].from, blocks[0].pos);
+  assert.equal(setSignalGranularity('section')(EditorState.create({ doc })), false);
+});
+
+test('initialGranularity honoured; bad granularity names and signal levels throw', () => {
+  assert.equal(decos(mkGran({ initialGranularity: 'section' }))[0].from, blocks[0].pos);
+  for (const v of ['bogus', '', null, 1, 'Paragraph']) {
+    assert.throws(() => signalDecorationsPlugin(() => [], { initialGranularity: v }), String(v));
+    assert.throws(() => setSignalGranularity(v), String(v));
+    assert.throws(() => signalDecorations(doc, [], { granularity: v }), String(v));
+  }
+  assert.throws(() => signalDecorations(doc, [sig(blocks[1].id, { level: 'word' })]));
 });
