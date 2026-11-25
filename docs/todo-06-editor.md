@@ -66,7 +66,8 @@ A native writing surface over Markdown: the expert sees formatted text, shortcut
 
 ## App shell
 
-- [ ] **AP-01** `[A]` Tauri or Electron shell; choose by whether the model runtime integrates cleanly — check: both analysed in a short decision record
+- [x] **AP-01** `[A]` Tauri or Electron shell; choose by whether the model runtime integrates cleanly — check: both analysed in a short decision record
+  - done R114 (PR #294): `docs/ap01-shell.md` analyses both; recommends keeping Tauri (D-007). seen: docs/ap01-shell.md. Owed to operator: its open questions, first approving a Rust toolchain + WebKitGTK dev libs install (D-005 pattern), which the shell scaffold needs.
 - [ ] **AP-02** `[A]` Open, save, recent files, detection of external changes
 - [ ] **AP-03** `[A]` Genre selection per document; genre files loaded from a local folder
 - [ ] **AP-04** `[A]` Settings: models, overlay defaults, theme, performance tier, remote-model opt-in
