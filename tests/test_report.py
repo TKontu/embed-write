@@ -101,6 +101,12 @@ class ReportTests(unittest.TestCase):
                              threshold='Synthetic threshold', method='Synthetic method')
         verdict = report.split('## Verdict\n', 1)[1].split('## Fallback taken', 1)[0].strip()
         self.assertEqual(verdict, '<passed | failed | inconclusive — and who decided>')
+        basis_problem = [p for p in lint(report) if 'basis' in p]
+        self.assertEqual(len(basis_problem), 1)  # renderer leaves basis to the owner
+        self.assertFalse([p for p in lint(report) if '95% CI' in p])  # rendered interval passes
+        basis = ('Basis: population: synthetic rows; metric: accuracy; '
+                 'reference: synthetic labels; built by: LLM\n')
+        report = report.replace('\n\n## Verdict', '\n' + basis + '\n## Verdict')
         self.assertEqual(lint(report), ['placeholder left in section: Verdict',
                                         'placeholder left in section: Fallback taken'])
         filled = report.replace('<none, or the fallback from docs/architecture.md section 6 and its follow-up row>', 'None')

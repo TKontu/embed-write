@@ -22,8 +22,9 @@ AUC >= 0.8, fixed before the run.
 Held-out synthetic pairs; LLM-built labels; scored by script.
 
 ## Numbers
-AUC 0.84 (95% CI 0.79-0.88), n=200 pairs; population: synthetic pairs;
-metric: AUC; reference: LLM-built labels; built by: LLM.
+AUC 0.84 (95% CI [0.79, 0.88]), n=200 pairs.
+Basis: population: synthetic pairs; metric: AUC; reference: LLM-built labels; built by: LLM
+
 
 ## Verdict
 passed
@@ -82,6 +83,38 @@ class LintResultTests(unittest.TestCase):
         result = self.lint(self.write("G-99.md", text))
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("n=", result.stdout)
+
+    def test_numbers_without_interval_fails(self):
+        text = COMPLETE.replace("(95% CI [0.79, 0.88])", "(0.79-0.88)")
+        result = self.lint(self.write("G-99.md", text))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Numbers", result.stdout)
+        self.assertIn("95% CI [lo, hi]", result.stdout)
+
+    def test_numbers_without_basis_fails(self):
+        text = COMPLETE.replace(
+            "Basis: population: synthetic pairs; metric: AUC; reference: LLM-built labels; built by: LLM\n", "")
+        result = self.lint(self.write("G-99.md", text))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("basis", result.stdout)
+
+    def test_basis_missing_one_field_names_it(self):
+        text = COMPLETE.replace("; reference: LLM-built labels", "")
+        result = self.lint(self.write("G-99.md", text))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("basis", result.stdout)
+        self.assertIn("reference", result.stdout)
+
+    def test_basis_empty_field_fails(self):
+        text = COMPLETE.replace("built by: LLM", "built by: ")
+        result = self.lint(self.write("G-99.md", text))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("built by", result.stdout)
+
+    def test_template_mode_skips_interval_and_basis(self):
+        text = COMPLETE.replace("(95% CI [0.79, 0.88])", "").replace("Basis:", "Notes:")
+        result = self.lint("--template", self.write("T.md", text))
+        self.assertEqual(result.returncode, 0, result.stdout)
 
     def test_template_mode_still_requires_sections(self):
         text = COMPLETE.replace("## Fallback taken\nnone\n", "")
