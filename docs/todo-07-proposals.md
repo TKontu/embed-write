@@ -57,6 +57,7 @@ Each axis is a separate, separately validated check. They are shown side by side
 ## Interaction
 
 - [ ] **UX-01** `[A]` Diff-first: word-level diff visible before any accept
+  - partial (R64/A1, PR #167, merge 3ae2ec2): `service/word_diff.py` word_diff(original, candidate) -> frozen DiffOp(kind, original_text, candidate_text) rows (equal/delete/insert/replace) over word-plus-trailing-whitespace tokens, difflib.SequenceMatcher(autojunk=False); both sides reconstruct exactly; proposal_diffs maps it over Proposal.candidates. Library half only; ran by OpenCode (D-008). seen: tests/test_word_diff.py 20 tests OK (gate 998 OK, rerun by planner) at head 36e566ff4f4b891ccadf05554eea3cac67714130. Unwired by design until the UX-01 UI (needs the TS stack, todo-06). Residuals: no length cap (quadratic worst case); whitespace-only changes attach to the neighbouring word.
 - [ ] **UX-02** `[A]` Accept, reject, or edit then accept; reject is one keystroke
 - [ ] **UX-03** `[A]` Proposals on request only; no unprompted ghost text
 - [ ] **UX-04** `[A]` Undo restores the original exactly — check: document hash equal after accept and undo
