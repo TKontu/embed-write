@@ -1,0 +1,14 @@
+id: n-001
+type: observation
+locator: p. 3
+recorded_at: 2026-04-10
+
+Surface rust on the north flange.
+Second line kept verbatim.
+---
+id: n-002
+type: measurement
+units: mm; m
+source: field-notebook
+
+Gap 12 mm over a 3 m span.

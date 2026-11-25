@@ -1,0 +1,4 @@
+id,type,content,units,locator,recorded_at,source,_note
+m-001,measurement,Beam deflection at midspan 4.2 mm,mm,sheet1!B2,2026-03-01,,synthetic
+t-002,test_result,"Tensile test passed, 410 kPa",kPa,sheet1!B3,2026-03-02T10:15:00,lab-log.csv,
+o-003,observation,Hairline crack near support,,,,,
