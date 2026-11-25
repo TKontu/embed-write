@@ -29,7 +29,8 @@ No research risk and total structural risk. If node IDs are not stable, the cach
 
 ## Node identity
 
-- [ ] **NI-01** `[A]` ULID per block node in node attributes
+- [x] **NI-01** `[A]` ULID per block node in node attributes
+  - done (R79/A2, PR #206, merge f03ed3e): `id` attr (default null) on every block-group node plus list_item, table_row, table_cell in docmodel/src/schema.js; docmodel/src/ids.js exports `ulid(now?, rand?)` (Crockford base32, monotonic within one ms, injectable clock/random, no dependency) and `assignIds(doc, opts?)` (new doc, existing ids kept, duplicates first-wins); parseMarkdown leaves ids null; serialize output byte-identical with ids on all round-trip fixtures. parse.test.js json helper strips null ids (scope deviation accepted in review; no assertions changed). Ran on Claude (D-008, Codex at usage limit). seen: docmodel/test/ids.test.js, docmodel 135/135 combined with HI-02 at reviewed head 547b76974263a446840e25b2a5bb6a08fb54443b and on main, Python gate 1127 OK. Unwired by design; NI-02/ED-01 wire it. Residuals: ulid monotonic state is module-global; RangeError on random overflow within one ms.
 - [ ] **NI-02** `[A]` Sidecar file `<doc>.stw.json`: node IDs, structural paths, content hashes
 - [ ] **NI-03** `[A]` Reattachment after an external edit: match by hash, then path, then fuzzy content; unmatched nodes get new IDs — check: test matrix of external changes
 - [ ] **NI-04** `[A]` Split: the first half keeps the ID. Merge: the first node's ID survives. Move: all descendant IDs survive — check: tests for each, including undo
@@ -42,7 +43,8 @@ No research risk and total structural risk. If node IDs are not stable, the cach
 
 - [x] **HI-01** `[A]` Section tree from headings, tolerating skipped levels and documents without headings
   - done (R78/A3, PR #202, merge 52024b5): `sectionTree(doc)` in docmodel/src/sections.js, exported from index.js; derived nested tree (root level 0; sections hold heading text and top-level index, block indices, children); skipped levels nest under the nearest lower level; only top-level headings count; pure, nothing stored in the doc. Ran on Claude (D-008, Codex at usage limit). seen: docmodel/test/sections.test.js 11 pass, docmodel 108/108 and Python gate 1127 OK at reviewed head 87ee88a151b3c10dc2f5486e5b9c766c3fa66e84 and on main. Unwired by design; HI-02/ED-01 wire it. Residual: indices are positional, so they shift on edits until node IDs (NI-01) exist.
-- [ ] **HI-02** `[A]` Block layer: paragraphs, list items, tables, figures, code, quotes
+- [x] **HI-02** `[A]` Block layer: paragraphs, list items, tables, figures, code, quotes
+  - done (R79/A1, PR #205, merge 3c570b3): `blockLayer(doc)` in docmodel/src/blocks.js, exported from index.js; flat document-ordered entries `{kind, path, text, section}` (kinds paragraph, list_item, table, figure, code, quote, heading, html, front_matter, footnote, thematic_break; image-only paragraph is a figure; lists are containers, nested items get own entries; quote/table/code one entry); section from sectionTree. Ran on Claude (D-008). seen: docmodel/test/blocks.test.js 7 pass, docmodel 115/115 reviewer rerun at head 55ab8e79ab66c7182cfd5f658d00e421ac21ad5d, 135/135 on main, Python gate 1127 OK. Unwired by design; HI-03/ED-01 wire it. Residuals: paths positional (NI-01 ids not yet used); lists nested in a quote/footnote inside an item are not separate entries; html and front_matter entries have empty text.
 - [ ] **HI-03** `[A]` Sentence layer: lazy, cached by block hash, not stored in the ProseMirror doc
 - [ ] **HI-04** `[A]` Section type mapping: map a heading to a section type of the genre ("Findings", "Conclusions"), using the genre file — check: mapping test on corpus headings; unmapped headings reported
 
