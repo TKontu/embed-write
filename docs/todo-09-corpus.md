@@ -17,7 +17,8 @@ The corpus defines what "good" means for a genre. The selection is the single mo
 - [ ] **CO-03** `[H]` Decide confidentiality handling: which reports may be used, whether anything must be redacted
 - [ ] **CO-04** `[A]` Ingestion: convert PDF, Word or other formats to Markdown through the document model — check: every report parses, round-trips, and has a section tree
 - [ ] **CO-05** `[A→H]` Conversion quality: agent lists reports with suspicious output (broken tables, merged columns, lost headings); the expert spot-checks
-- [ ] **CO-06** `[A]` Metadata per report: genre, date, author role, language, length — check: schema validation
+- [x] **CO-06** `[A]` Metadata per report: genre, date, author role, language, length — check: schema validation — seen: tests/test_corpus_metadata.py (14 tests); gate 1296 OK
+  - done (R106/A1, PR #277, merge 153b6e4, reviewed head 19b9f20): `experiments/corpus_metadata.py` (`validate_record`, `validate_file`, streaming `iter_records`, `word_count`, `MetadataError`, CLI `python -m experiments.corpus_metadata validate PATH [--genre G]`); stdlib JSONL, exact field set, line-numbered errors, duplicate doc_id detection; synthetic LLM-built fixtures. Ran on Claude (D-008). Unwired by design: CO-08, CO-09, AN-02 read it. Residuals: CLI exits 2 on a missing file; language tag checked by shape only; genre values open until CO-01 [H]; real-corpus metadata file not yet written (private).
 - [ ] **CO-07** `[A]` Near-duplicate and boilerplate detection (templates, disclaimers, repeated headers) — check: flagged passages listed for review
 - [ ] **CO-08** `[A]` Train / dev / test split **by document**, fixed and versioned — check: no report appears in two splits
 - [ ] **CO-09** `[A]` Corpus statistics: section headings in use, section lengths, sentence counts — check: report generated
