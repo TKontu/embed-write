@@ -50,28 +50,45 @@ def _heading_map(genre):
 
 
 def _sections(markdown, headings):
-    """Yield (section_type, paragraph text) per blank-line paragraph."""
-    current, para = UNKNOWN, []
+    """Yield (section_type, heading_text, section_index, paragraph) per blank-line paragraph."""
+    current, heading, index, para = UNKNOWN, None, 0, []
     for line in markdown.splitlines():
         m = _HEADING.match(line)
         if m or not line.strip():
             if para:
-                yield current, '\n'.join(para)
+                yield current, heading, index, '\n'.join(para)
                 para = []
             if m:
-                current = headings.get(normalize_heading(m.group(1)), UNKNOWN)
+                heading = m.group(1)
+                current = headings.get(normalize_heading(heading), UNKNOWN)
+                index += 1
         else:
             para.append(line)
     if para:
-        yield current, '\n'.join(para)
+        yield current, heading, index, '\n'.join(para)
+
+
+def document_sentences(doc_id, markdown, headings):
+    """Sentences of one document in order, with the ids the manifest uses.
+
+    Returns dicts {sentence_id, section_type, heading, section_index, ordinal, text};
+    ``headings`` is ``heading_map(genre)``. Public for AN-01 (experiments/annotate.py).
+    """
+    typed = [(st, h, ix, s) for st, h, ix, text in _sections(markdown, headings)
+             for s in segment_sentences(text)]
+    hashes = [hashlib.sha256(s.encode('utf-8')).hexdigest()[:16] for *_, s in typed]
+    keys = sentence_keys(doc_id, hashes) if typed else ()
+    return [{'sentence_id': key, 'section_type': st, 'heading': h, 'section_index': ix,
+             'ordinal': i, 'text': s}
+            for i, ((st, h, ix, s), key) in enumerate(zip(typed, keys))]
 
 
 def _candidates(doc_id, markdown, headings):
-    typed = [(st, s) for st, text in _sections(markdown, headings)
-             for s in segment_sentences(text)]
-    hashes = [hashlib.sha256(s.encode('utf-8')).hexdigest()[:16] for _, s in typed]
-    keys = sentence_keys(doc_id, hashes) if typed else ()
-    return [(doc_id, st, key, i) for i, ((st, _), key) in enumerate(zip(typed, keys))]
+    return [(doc_id, r['section_type'], r['sentence_id'], r['ordinal'])
+            for r in document_sentences(doc_id, markdown, headings)]
+
+
+heading_map = _heading_map
 
 
 def _allocate(sizes, n, rng):
