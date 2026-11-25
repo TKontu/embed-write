@@ -18,6 +18,7 @@ Stage 1 proposes rewrites and logs what the expert does with them. Stage 2 draft
 - [ ] **GE-01** `[A]` Context assembly: the passage, its section, its move, and the neighbouring passages
 - [ ] **GE-02** `[A]` Exemplar conditioning: retrieve passages performing the same move in the same section type and pass them as examples — check: exemplars never come from the current document
 - [ ] **GE-03** `[A]` Several candidates per request with varied sampling; near-duplicates removed — check: pairwise similarity below a cutoff
+  - partial (R57/A2, PR #152, merge 25df765): generation/candidates.py vary_sampling(base, n) (seeds base..base+n-1, temperatures in [0.2, 1.0]) and remove_near_duplicates(candidates, vectors, cutoff) (order-preserving greedy, kept pairs below cutoff, cross-level raises); unwired by design until GE-04. seen: tests/test_candidates.py 12 tests OK (combined gate 910 OK) at head 5913d718a12055744070be038a0166e2e862555e. Residuals: production cutoff not chosen (caller supplies); no request-size cap, large-request performance untested; synthetic LLM-built vectors only.
 - [ ] **GE-04** `[A]` Local LLM through an OpenAI-compatible endpoint; remote models only with explicit per-session opt-in (invariant I9)
 - [ ] **GE-05** `[A]` Streaming and cancellation
 - [ ] **GE-06** `[A]` Generation run records: prompt, exemplars used, model version, candidates — check: every candidate is reproducible from its record
