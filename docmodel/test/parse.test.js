@@ -3,7 +3,18 @@ import assert from 'node:assert/strict';
 import { parseMarkdown, serializeMarkdown, schema, UnsupportedNodeError } from '../src/index.js';
 
 // toJSON() attrs use null-prototype objects; round-trip through JSON for plain deepEqual.
-const json = (md) => JSON.parse(JSON.stringify(parseMarkdown(md).toJSON()));
+// NI-01: block nodes carry `id: null` after parse; drop it (and emptied attrs) so the literal
+// expectations below stay about parse semantics, not the id attr.
+const stripNullIds = (_k, v) => {
+  if (v && typeof v === 'object' && !Array.isArray(v) && v.attrs && v.attrs.id === null) {
+    const { id, ...rest } = v.attrs;
+    const out = { ...v, attrs: rest };
+    if (Object.keys(rest).length === 0) delete out.attrs;
+    return out;
+  }
+  return v;
+};
+const json = (md) => JSON.parse(JSON.stringify(parseMarkdown(md).toJSON()), stripNullIds);
 const blocks = (md) => json(md).content ?? [];
 const first = (md) => blocks(md)[0];
 
