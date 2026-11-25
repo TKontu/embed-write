@@ -18,6 +18,7 @@ A native writing surface over Markdown: the expert sees formatted text, shortcut
 - [ ] **ED-02** `[A]` Schema decisions recorded: first-class nodes, passthrough HTML, unsupported constructs and what happens when a file contains them
 - [ ] **ED-03** `[A]` One serializer, shared with the document model
 - [ ] **ED-04** `[A]` Source view toggle showing the raw Markdown
+  - partial (R127/A1, PR #323, merge 504c297): `createEditor` handle gains `showSource()`, `showRich()`, `isSourceView()` (editor/src/source.js); textarea `md-source` holds `serializeMarkdown` output, `showRich` parses with docmodel `parseMarkdown` in one undoable transaction, a throwing parse keeps source view. Ran on Claude (D-008). Tests: planner rerun at head befc91e: editor 63/63 under jsdom, docmodel 256/256, Python gate 1455 OK. Unwired by design: stays partial until AP-01 shell adds the toggle control; not yet seen in the app. Residuals: no CSS, no keyboard shortcut; editor tests not in CI.
 - [ ] **ED-05** `[A]` Autosave with atomic writes — check: kill the process mid-save, file is intact
 
 ---
