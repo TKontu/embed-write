@@ -4,6 +4,8 @@
 export { parseMarkdown } from './parse.js';
 export { serializeMarkdown } from './serialize.js';
 export { schema } from './schema.js';
+// ulid/assignIds (NI-01) unwired by design; NI-02/ED-01 wire them.
+export { ulid, assignIds } from './ids.js';
 export { UnsupportedNodeError } from './errors.js';
 export { openMarkdown } from './open.js';
 // sectionTree (HI-01) is unwired by design; HI-02/ED-01 wire it.
