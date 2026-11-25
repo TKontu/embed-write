@@ -63,6 +63,40 @@ HTML = ("<html><head><title>x</title><style>p{}</style></head><body>"
         "</body></html>")
 
 
+def _pdf_escape(s: str) -> str:
+    return s.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+
+def make_pdf(pages: list[list[str]]) -> bytes:
+    """Minimal valid PDF (synthetic, LLM-built): one Helvetica text stream per page."""
+    n = len(pages)
+    objs = ["<< /Type /Catalog /Pages 2 0 R >>",
+            "<< /Type /Pages /Kids [" + " ".join(f"{4 + 2 * i} 0 R" for i in range(n))
+            + f"] /Count {n} >>",
+            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]
+    for i, lines in enumerate(pages):
+        objs.append(f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                    f"/Resources << /Font << /F1 3 0 R >> >> /Contents {5 + 2 * i} 0 R >>")
+        ops = "BT /F1 12 Tf 14 TL 72 720 Td " + " ".join(
+            f"({_pdf_escape(t)}) Tj T*" for t in lines) + " ET" if lines else ""
+        objs.append(f"<< /Length {len(ops)} >>\nstream\n{ops}\nendstream")
+    out = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    for k, body in enumerate(objs, 1):
+        offsets.append(len(out))
+        out += f"{k} 0 obj\n{body}\nendobj\n".encode("latin-1")
+    xref = len(out)
+    out += f"xref\n0 {len(objs) + 1}\n0000000000 65535 f \n".encode()
+    for off in offsets:
+        out += f"{off:010d} 00000 n \n".encode()
+    out += (f"trailer\n<< /Size {len(objs) + 1} /Root 1 0 R >>\n"
+            f"startxref\n{xref}\n%%EOF\n").encode()
+    return bytes(out)
+
+
+PDF_SKIP = "pypdf not installed"
+
+
 class IngestTest(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
@@ -107,15 +141,12 @@ class IngestTest(unittest.TestCase):
         self.assertEqual(rep["b.md"]["format"], "md")
 
     def test_unsupported_and_corrupt(self):
-        (self.src / "p.pdf").write_bytes(b"%PDF-1.4")
         (self.src / "x.xyz").write_text("?")
         (self.src / "bad.docx").write_bytes(b"not a zip")
         make_docx(self.src / "good.docx")
         code, _ = self.run_cli()
         self.assertEqual(code, 1)
         rep = self.report()
-        self.assertEqual(rep["p.pdf"]["status"], "unsupported")
-        self.assertEqual(rep["p.pdf"]["reason"], "pdf: dependency decision pending")
         self.assertEqual(rep["x.xyz"]["status"], "unsupported")
         self.assertEqual(rep["bad.docx"]["status"], "failed")
         self.assertTrue(rep["bad.docx"]["error"])
@@ -154,6 +185,79 @@ class IngestTest(unittest.TestCase):
         self.addCleanup(setattr, ingest, "node_available", orig)
         self.run_cli(check=True)
         self.assertEqual(self.report()["a.txt"]["roundtrip"], "skipped: node unavailable")
+
+    @unittest.skipUnless(ingest.HAVE_PYPDF, PDF_SKIP)
+    def test_pdf_two_pages_heading(self):
+        (self.src / "r.pdf").write_bytes(make_pdf([
+            ["1. Introduction", "", "The first page has body text."],
+            ["Second page body continues here."]]))
+        md = ingest.convert_pdf(self.src / "r.pdf")
+        self.assertIn("## 1. Introduction\n", md)
+        self.assertIn("The first page has body text.", md)
+        self.assertIn("Second page body continues here.", md)
+
+    @unittest.skipUnless(ingest.HAVE_PYPDF, PDF_SKIP)
+    def test_pdf_heading_levels_follow_numbering(self):
+        (self.src / "r.pdf").write_bytes(make_pdf([
+            ["1. Scope", "", "Body about scope.", "", "1.2 Details", "", "Detail body text."]]))
+        md = ingest.convert_pdf(self.src / "r.pdf")
+        self.assertIn("## 1. Scope\n", md)
+        self.assertIn("### 1.2 Details\n", md)
+        self.assertNotIn("# Body", md)
+
+    @unittest.skipUnless(ingest.HAVE_PYPDF, PDF_SKIP)
+    def test_pdf_page_numbers_and_hyphenation(self):
+        (self.src / "r.pdf").write_bytes(make_pdf([
+            ["This is an exam-", "ple of joining.", "", "3"], ["Next page.", "", "- 4 -"]]))
+        md = ingest.convert_pdf(self.src / "r.pdf")
+        self.assertIn("example of joining.", md)
+        self.assertNotRegex(md, r"(?m)^\s*-?\s*[34]\s*-?\s*$")
+
+    def test_pdf_heading_heuristic_on_text(self):
+        md = ingest.pdf_text_to_markdown(["Overview\n\nSome body sentence here.\n\nEnd."])
+        self.assertTrue(md.startswith("## Overview\n"))
+        self.assertTrue(md.rstrip().endswith("End."))
+
+    @unittest.skipUnless(ingest.HAVE_PYPDF, PDF_SKIP)
+    def test_pdf_without_text_fails_with_ocr_reason(self):
+        (self.src / "scan.pdf").write_bytes(make_pdf([[]]))
+        self.run_cli()
+        e = self.report()["scan.pdf"]
+        self.assertEqual(e["status"], "failed")
+        self.assertIn("no extractable text (OCR not supported)", e["error"])
+
+    @unittest.skipUnless(ingest.HAVE_PYPDF, PDF_SKIP)
+    def test_pdf_corrupt_isolated_and_ok_counted(self):
+        (self.src / "bad.pdf").write_bytes(b"%PDF-1.4 garbage")
+        (self.src / "good.pdf").write_bytes(make_pdf([["2. Results", "", "Results body."]]))
+        (self.src / "a.txt").write_text("hi\n")
+        code, _ = self.run_cli()
+        self.assertEqual(code, 1)
+        rep = self.report()
+        self.assertEqual(rep["bad.pdf"]["status"], "failed")
+        self.assertTrue(rep["bad.pdf"]["error"])
+        self.assertEqual(rep["good.pdf"]["status"], "ok")
+        self.assertEqual(rep["good.pdf"]["format"], "pdf")
+        self.assertEqual(rep["good.pdf"]["headings"], 1)
+        self.assertEqual(rep["a.txt"]["status"], "ok")
+
+    def test_pdf_unsupported_without_pypdf(self):
+        orig = ingest.HAVE_PYPDF
+        ingest.HAVE_PYPDF = False
+        self.addCleanup(setattr, ingest, "HAVE_PYPDF", orig)
+        (self.src / "p.pdf").write_bytes(b"%PDF-1.4")
+        self.run_cli()
+        e = self.report()["p.pdf"]
+        self.assertEqual((e["status"], e["reason"]), ("unsupported", "pypdf not installed"))
+
+    @unittest.skipUnless(ingest.HAVE_PYPDF and ingest.node_available(), "pypdf or node unavailable")
+    def test_pdf_roundtrip_check(self):
+        (self.src / "r.pdf").write_bytes(make_pdf([["1. Intro", "", "Body."], ["1.1 More", "", "Text."]]))
+        code, _ = self.run_cli(check=True)
+        self.assertEqual(code, 0)
+        rt = self.report()["r.pdf"]["roundtrip"]
+        self.assertTrue(rt["parses"] and rt["roundtrip_idempotent"])
+        self.assertEqual(rt["section_count"], 2)
 
     def test_batches_of_50(self):
         calls = []
