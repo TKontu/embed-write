@@ -12,7 +12,7 @@
     "node": ">=18"
   },
   "scripts": {
-    "test": "node --test test/ids.test.js test/parse.test.js test/serialize.test.js test/roundtrip.test.js test/open.test.js test/fuzz.test.js test/sections.test.js test/blocks.test.js test/hash.test.js test/dirty.test.js test/sidecar.test.js test/coalesce.test.js test/reattach.test.js test/idplugin.test.js test/undo-dirty.test.js test/stale.test.js test/overlay.test.js test/sentences.test.js test/sentencekeys.test.js test/sectiontypes.test.js test/links.test.js test/schema-coverage.test.js"
+    "test": "node --test test/ids.test.js test/parse.test.js test/serialize.test.js test/roundtrip.test.js test/open.test.js test/fuzz.test.js test/sections.test.js test/blocks.test.js test/hash.test.js test/dirty.test.js test/sidecar.test.js test/coalesce.test.js test/reattach.test.js test/idplugin.test.js test/undo-dirty.test.js test/stale.test.js test/overlay.test.js test/sentences.test.js test/sentencekeys.test.js test/sectiontypes.test.js test/links.test.js test/provenance.test.js test/schema-coverage.test.js"
   },
   "dependencies": {
     "@noble/hashes": "1.8.0",

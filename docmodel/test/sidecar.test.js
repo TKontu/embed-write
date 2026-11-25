@@ -161,3 +161,43 @@ test('SL-02: invalid link shapes are rejected with sidecar: links errors', () =>
       /^Error: sidecar: links\[1\]/, JSON.stringify(entry));
   }
 });
+
+test('SL-03: valid provenance round-trips canonically, sorted, human entries omitted', () => {
+  const value = { version: 1, nodes: [], provenance: [
+    { run: 'run-2', kind: 'machine-edited', node: 'n2' },
+    { node: 'h1', kind: 'human', run: null },
+    { node: 'n1', kind: 'machine', run: 'run-1' },
+  ] };
+  const text = model.serializeSidecar(value);
+  const parsed = model.parseSidecar(text);
+  assert.deepEqual(parsed.provenance, [
+    { node: 'n1', kind: 'machine', run: 'run-1' },
+    { node: 'n2', kind: 'machine-edited', run: 'run-2' },
+  ]);
+  assert.deepEqual(Object.keys(parsed.provenance[1]), ['node', 'kind', 'run']);
+  assert.equal(model.serializeSidecar(parsed), text);
+  const empty = { version: 1, nodes: [], provenance: [] };
+  assert.deepEqual(model.parseSidecar(model.serializeSidecar(empty)), empty);
+});
+
+test('SL-03: invalid provenance shapes are rejected with sidecar: provenance errors', () => {
+  const ok = { node: 'n1', kind: 'machine', run: 'r' };
+  assert.throws(() => model.parseSidecar(JSON.stringify({ version: 1, nodes: [], provenance: {} })),
+    /^Error: sidecar: provenance must be an array/);
+  for (const entry of [null, [], 'x', { ...ok, extra: 1 }, { ...ok, node: '' }, { ...ok, node: 7 },
+    { kind: 'machine', run: 'r' }, { ...ok, kind: 'robot' }, { ...ok, run: null }, { ...ok, run: '' },
+    { node: 'n2', kind: 'machine' }, { node: 'n2', kind: 'human', run: 'r' }, { ...ok }]) {
+    assert.throws(() => model.parseSidecar(JSON.stringify({ version: 1, nodes: [], provenance: [ok, entry] })),
+      /^Error: sidecar: provenance\[1\]/, JSON.stringify(entry));
+  }
+});
+
+test('SL-03: sidecars without provenance serialize byte-identically to before', () => {
+  const doc = docWithIds();
+  const bare = model.buildSidecar(doc);
+  const text = model.serializeSidecar(bare);
+  assert.equal(text, JSON.stringify(bare, null, 2) + '\n');
+  assert.ok(!text.includes('provenance'));
+  const withLinks = { ...bare, genre: null, links: [] };
+  assert.equal(model.serializeSidecar(withLinks), JSON.stringify(withLinks, null, 2) + '\n');
+});
