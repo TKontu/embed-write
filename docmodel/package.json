@@ -12,7 +12,7 @@
     "node": ">=18"
   },
   "scripts": {
-    "test": "node --test test/parse.test.js test/serialize.test.js"
+    "test": "node --test test/parse.test.js test/serialize.test.js test/open.test.js"
   },
   "dependencies": {
     "prosemirror-model": "1.25.13",
