@@ -91,3 +91,4 @@ export function acceptProposal({ view }, { from, to, text }) {
 export function undo({ view }) {
   return pmUndo(view.state, view.dispatch);
 }
+export { renderDiff } from './diff.js';
