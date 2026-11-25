@@ -1,0 +1,67 @@
+// @ts-check
+// ED-01: Milkdown editor over docmodel's schema.
+// createEditor is the production entry for the app shell; unwired by design until the Tauri
+// shell row wires it.
+import {
+  Editor, rootCtx, defaultValueCtx, schemaCtx, nodesCtx, marksCtx, prosePluginsCtx,
+  nodeViewCtx, markViewCtx, editorViewCtx, SchemaReady, parserTimerCtx, serializerTimerCtx,
+  editorStateTimerCtx,
+} from '@milkdown/core';
+import { createTimer } from '@milkdown/ctx';
+import { schema, parseMarkdown, serializeMarkdown, overlayPlugin, idPlugin } from 'docmodel';
+import { views } from './render.js';
+
+const DocmodelSchemaReady = createTimer('DocmodelSchemaReady');
+
+/**
+ * Milkdown always builds its own Schema from nodesCtx/marksCtx. We feed it docmodel's specs so
+ * that build succeeds, then replace schemaCtx with docmodel's own Schema instance before the
+ * parser, serializer and editor state read it; documents from parseMarkdown therefore belong
+ * to the editor's schema (same object, same node/mark names and attrs).
+ * @type {import('@milkdown/ctx').MilkdownPlugin}
+ */
+const docmodelSchema = (ctx) => {
+  ctx.record(DocmodelSchemaReady);
+  return async () => {
+    await ctx.wait(SchemaReady);
+    ctx.set(schemaCtx, schema);
+    ctx.done(DocmodelSchemaReady);
+    return () => ctx.clearTimer(DocmodelSchemaReady);
+  };
+};
+
+/** @param {import('orderedmap').default<any>} om @returns {[string, any][]} */
+const entries = (om) => { /** @type {[string, any][]} */ const out = []; om.forEach((k, v) => out.push([k, v])); return out; };
+
+/**
+ * Build a Milkdown editor in `root` holding `markdown`, parsed by docmodel.
+ * One document in memory; no corpus loop.
+ * @param {{ root: HTMLElement, markdown: string }} opts
+ * @returns {Promise<{ editor: Editor, view: import('prosemirror-view').EditorView, getMarkdown: () => string, destroy: () => Promise<void> }>}
+ */
+export async function createEditor({ root, markdown }) {
+  const doc = parseMarkdown(markdown);
+  const { nodeViews, markViews } = views(root.ownerDocument);
+  const editor = await Editor.make()
+    .config((ctx) => {
+      ctx.set(rootCtx, root);
+      ctx.set(nodesCtx, entries(schema.spec.nodes));
+      ctx.set(marksCtx, entries(schema.spec.marks));
+      for (const t of [parserTimerCtx, serializerTimerCtx, editorStateTimerCtx]) {
+        ctx.update(t, (xs) => [...xs, DocmodelSchemaReady]);
+      }
+      ctx.set(defaultValueCtx, { type: 'json', value: doc.toJSON() });
+      ctx.update(prosePluginsCtx, (xs) => [...xs, overlayPlugin(), idPlugin()]);
+      ctx.update(nodeViewCtx, (xs) => [...xs, .../** @type {any[]} */ (nodeViews)]);
+      ctx.update(markViewCtx, (xs) => [...xs, .../** @type {any[]} */ (markViews)]);
+    })
+    .use(docmodelSchema)
+    .create();
+  const view = editor.ctx.get(editorViewCtx);
+  return {
+    editor,
+    view,
+    getMarkdown: () => serializeMarkdown(editor.ctx.get(editorViewCtx).state.doc),
+    destroy: async () => { await editor.destroy(); },
+  };
+}
