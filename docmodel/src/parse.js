@@ -10,7 +10,7 @@ import remarkFrontmatter from 'remark-frontmatter';
 import { schema } from './schema.js';
 import { UnsupportedNodeError } from './errors.js';
 
-const processor = unified().use(remarkParse).use(remarkGfm).use(remarkFrontmatter, ['yaml']);
+const processor = unified().use(remarkParse).use(remarkGfm).use(remarkFrontmatter, ['yaml', 'toml']);
 
 /** @typedef {import('prosemirror-model').Node} PMNode */
 /** @typedef {import('prosemirror-model').Mark} PMMark */
@@ -99,6 +99,8 @@ function block(node, ctx) {
         }));
       }));
     }
+    case 'toml': // DM-03: recognised only to be rejected, never read as paragraph text
+      throw new UnsupportedNodeError('toml (TOML front matter)', node.position?.start);
     case 'yaml':
       return schema.node('front_matter', { value: node.value });
     case 'footnoteDefinition':
