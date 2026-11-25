@@ -84,6 +84,14 @@ Thresholds are proposals until confirmed; see `todo-01-experiments.md`.
 
 ## Critical path
 
+**Planning order (D-009, operator 2026-11-25, record in PR #246):** until G-01 and G-02 have actual result files, lanes come only from, in this order:
+
+1. **G-01/G-02 enablers:** corpus ingestion (CO-04, CO-06, CO-08, CO-10), move-inventory draft (MV-02), annotation tool and sampling (AN-01, AN-02), LLM pre-labels for the expert to confirm or overturn (G-01.4), the κ harness (G-01.5), the G-02 notes/generation/blind-pair runner (G-02.2, G-02.3, X-04), preregistration drafts with proposed thresholds for the expert (G-01.1, G-02.1 are `[H]`; agents prepare only).
+2. **Thin demo:** a Tauri shell (AP-01) with the Milkdown editor (ED-01) that opens one real report, round-trips it, and shows provisional move overlays with a legend.
+3. **Anything that cuts the expert's effort per judgment.**
+
+Later-phase rows (proposals, generation, fine-tuning, distillation, extra signals) wait unless they are a direct dependency of 1-3. The tracks below remain the long-run shape.
+
 ```
 Track R (expert)                          Track E (agents, start now)
 ────────────────                          ───────────────────────────
