@@ -20,3 +20,5 @@ export { dirtySet, dirtyRanges } from './dirty.js';
 export { buildSidecar, serializeSidecar, parseSidecar, sidecarPath } from './sidecar.js';
 // createCoalescer (HS-03) is unwired by design; ED-01 wires it, HS-04 tests it.
 export { createCoalescer } from './coalesce.js';
+// reattachIds (NI-03) is unwired by design; ED-01 wires document open.
+export { reattachIds } from './reattach.js';
