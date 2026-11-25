@@ -36,6 +36,7 @@ Depends on: corpus and move inventory (`todo-09`).
 - [ ] **G-01.3** `[H]` Re-annotate a 10 % sample at least a week later
 - [ ] **G-01.4** `[A]` LLM labels the same sentences, with section context — check: every sentence has exactly one label from the inventory or `other`
 - [ ] **G-01.5** `[A]` Compute Cohen's κ expert vs LLM, expert vs self, per-move confusion matrix, share of `other`
+  - partial (R95/A1, PR #249, merge 77d093e): `experiments/gates/g01.py` (`gate_id = "g01"`, `run(rng, config)` via run_gate): κ expert-vs-LLM and expert-vs-self (bootstrap 95 %), confusion matrix expert rows × LLM columns with per-move P/R/F1, `other` share per rater, missing-id counts, DocumentSplit leak check, `verdict_hint` against the proposed thresholds (never a gate status). Ran on Claude (D-008). seen: tests/test_gate_g01.py 11 pass on LLM-built synthetic fixtures; main gate 1204 OK. Not yet exercised on real labels: done when G-01.6 runs it on AN-03/G-01.4 data. Residuals: thresholds=None raises TypeError; method name claims bootstrap when n_resamples ≤ 0; `other` share is over all labelled, not the paired set; degenerate resamples give κ 1.0; interval percentiles untested.
 - [ ] **G-01.6** `[A→H]` Result document and verdict
 
 **Proposed threshold:** expert vs LLM κ ≥ 0.6; expert self-agreement κ ≥ 0.7; `other` ≤ 15 %.
