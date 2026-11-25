@@ -216,6 +216,131 @@ class GenerateTests(unittest.TestCase):
         self.assertFalse(s['complete'])
         self.assertEqual(s['same_report_exemplars'], [target['section_id']])
 
+    def _stale(self, rec):
+        return {**rec, 'prompt_version': 'g02.3-v0', 'text': 'stale'}
+
+    def test_summary_ignores_stale_prompt_version_records(self):
+        target = notes(1)[0]
+        out = gen.generate([target], pool(), FakeModel(), out_path=self.out,
+                           critic=FakeCritic({}), n_candidates=2)
+        stale = [self._stale(r) for r in out]
+        s = gen.summarize(stale + out, expected_sections=1, model='fake-1',
+                          prompt_version=gen.PROMPT_VERSION)
+        self.assertTrue(s['complete'])
+        self.assertEqual(s['duplicates'], [])
+        self.assertEqual(s['n_records'], 3)
+        other_model = [{**r, 'model': 'other'} for r in out]
+        s2 = gen.summarize(other_model + out, expected_sections=1, model='fake-1',
+                           prompt_version=gen.PROMPT_VERSION)
+        self.assertTrue(s2['complete'])
+        self.assertEqual(s2['duplicates'], [])
+
+    def test_summary_flags_missing_current_arm_covered_only_by_stale(self):
+        target = notes(1)[0]
+        out = gen.generate([target], pool(), FakeModel(), out_path=self.out,
+                           critic=FakeCritic({}), n_candidates=2)
+        current = [r for r in out if r['arm'] != 'B']
+        stale = [self._stale(r) for r in out]
+        s = gen.summarize(stale + current, expected_sections=1, model='fake-1',
+                          prompt_version=gen.PROMPT_VERSION)
+        self.assertFalse(s['complete'])
+        self.assertEqual(s['missing'], [(target['section_id'], 'B')])
+        # A stale-only section does not count toward the target either.
+        only_stale = gen.summarize(stale, expected_sections=1, model='fake-1',
+                                   prompt_version=gen.PROMPT_VERSION)
+        self.assertFalse(only_stale['complete'])
+        self.assertEqual(only_stale['n_sections'], 0)
+
+    def test_cli_summary_ignores_stale_records_in_out_file(self):
+        notes_path = os.path.join(self.tmp.name, 'notes.jsonl')
+        pool_path = os.path.join(self.tmp.name, 'pool.jsonl')
+        with open(notes_path, 'w', encoding='utf-8') as fh:
+            for r in notes(2):
+                fh.write(json.dumps(r) + '\n')
+        with open(pool_path, 'w', encoding='utf-8') as fh:
+            for r in pool():
+                fh.write(json.dumps(r) + '\n')
+        with open(self.out, 'w', encoding='utf-8') as fh:
+            for r in notes(2):
+                for arm in gen.ARMS:
+                    fh.write(json.dumps({'section_id': r['section_id'], 'report_id': r['report_id'],
+                                         'arm': arm, 'model': 'fake-1',
+                                         'prompt_version': 'g02.3-v0', 'text': 'stale',
+                                         'exemplar_report_ids': []}) + '\n')
+        rc = gen.main(['--notes', notes_path, '--pool', pool_path, '--out', self.out,
+                       '--n-candidates', '2', '--expected-sections', '2'],
+                      model=FakeModel(), critic=FakeCritic({}))
+        self.assertEqual(rc, 0)
+        self.assertEqual(len(read(self.out)), 12)
+
+    def test_temperature_reaches_arm_c_model_calls(self):
+        class TempModel(FakeModel):
+            def __init__(self):
+                super().__init__()
+                self.temps = []
+
+            def __call__(self, prompt, temperature=None):
+                self.temps.append(('C' if 'Draft variant' in prompt else 'AB', temperature))
+                return super().__call__(prompt)
+
+        m = TempModel()
+        gen.generate(notes(1), pool(), m, out_path=self.out, critic=FakeCritic({}),
+                     n_candidates=3, temperature=0.8)
+        self.assertEqual([t for a, t in m.temps if a == 'C'], [0.8, 0.8, 0.8])
+        self.assertEqual([t for a, t in m.temps if a == 'AB'], [None, None])
+        c = [r for r in read(self.out) if r['arm'] == 'C'][0]
+        self.assertEqual(c['temperature'], 0.8)
+
+    def test_default_path_calls_model_with_prompt_only(self):
+        class Strict(FakeModel):
+            def __call__(self, prompt):  # no temperature kwarg accepted
+                return super().__call__(prompt)
+
+        out = gen.generate(notes(1), pool(), Strict(), out_path=self.out,
+                           critic=FakeCritic({}), n_candidates=2)
+        self.assertEqual(len(out), 3)
+        self.assertNotIn('temperature', out[2])
+
+    def test_cli_temperature_option(self):
+        class TempModel(FakeModel):
+            def __init__(self):
+                super().__init__()
+                self.temps = []
+
+            def __call__(self, prompt, temperature=None):
+                self.temps.append(temperature)
+                return super().__call__(prompt)
+
+        notes_path = os.path.join(self.tmp.name, 'notes.jsonl')
+        pool_path = os.path.join(self.tmp.name, 'pool.jsonl')
+        with open(notes_path, 'w', encoding='utf-8') as fh:
+            fh.write(json.dumps(notes(1)[0]) + '\n')
+        with open(pool_path, 'w', encoding='utf-8') as fh:
+            for r in pool():
+                fh.write(json.dumps(r) + '\n')
+        m = TempModel()
+        rc = gen.main(['--notes', notes_path, '--pool', pool_path, '--out', self.out,
+                       '--n-candidates', '2', '--expected-sections', '1',
+                       '--temperature', '0.7'], model=m, critic=FakeCritic({}))
+        self.assertEqual(rc, 0)
+        self.assertEqual(sorted(m.temps, key=str), [0.7, 0.7, None, None])
+
+    def test_local_sampling_model_sends_temperature(self):
+        import io
+        from unittest import mock
+        sent = []
+
+        def fake_open(req, timeout):
+            sent.append(json.loads(req.data))
+            return io.BytesIO(json.dumps({'choices': [{'message': {'content': 'ok'}}]}).encode())
+
+        call = gen.local_sampling_model('http://127.0.0.1:8080/v1', model='m')
+        with mock.patch('urllib.request.urlopen', fake_open):
+            self.assertEqual(call('p'), 'ok')
+            self.assertEqual(call('p', temperature=0.9), 'ok')
+        self.assertEqual([b['temperature'] for b in sent], [0, 0.9])
+        self.assertEqual(call.model_id, 'm')
+
     def test_lexical_retriever_ranks_overlap_and_is_deterministic(self):
         target = {'section_id': 't', 'report_id': 'rt', 'section_type': 'intro',
                   'notes': 'wavelet denoising spectral'}
