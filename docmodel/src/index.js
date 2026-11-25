@@ -24,3 +24,5 @@ export { createCoalescer } from './coalesce.js';
 export { reattachIds } from './reattach.js';
 // idPlugin/fixIds (NI-04) are unwired by design; ED-01 wires the plugin into the editor.
 export { idPlugin, fixIds } from './idplugin.js';
+// admitResult/filterFresh (PM-02) are unwired by design; ED-01 and the overlay rows wire them.
+export { admitResult, filterFresh } from './stale.js';
