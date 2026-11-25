@@ -49,6 +49,7 @@ Each axis is a separate, separately validated check. They are shown side by side
 - [ ] **VF-09** `[A]` Critic rerank for generation: candidates ordered by move and register fit, subject to the filters. The ordering is a default, not a verdict
 - [ ] **VF-10** `[A]` No aggregate score anywhere — check: lint for score-combining code in this module
   - partial (R49/A2, PR #117): `scripts/lint_no_aggregate.py` flags aggregate-score names (function, argument, variable, attribute, dict key) and sum/mean/fmean/average calls over two or more distinct `*score`/`*_result` names in service/support_check.py, length_delta.py, number_check.py by default; no operator/dataflow detection; run nightly in .github/workflows/nightly.yml (R50/A1); seen only once a nightly run shows it (residual)
+  - partial (R74/A1, PR #187, merge 83f8374): default targets now also follow every `implementation="….py"` literal in service/verify_panel.py (ast-parsed, `panel_implementations`/`default_targets`); effective list unchanged today; gate 1108 OK at head 1713fbc2739d32d941aca92e71be06bc92db0669; still seen only once a nightly run shows it
 - [ ] **VF-11** `[A]` Method text stating why an LLM is not the final judge of candidate quality (position, verbosity and self-preference bias)
   - partial (R49/A3, PR #119): docs/methods/llm-not-final-judge.md; linked from service/verify_panel.py (R56/A2)
 
