@@ -1,0 +1,80 @@
+# Gate registry (X-01; architecture invariant I6).
+# Every gate starts pending; only an actual run with its result doc may mark one passed.
+# threshold = null until the expert confirms it (omitted key means null).
+
+[[gate]]
+id = "G-01"
+title = "Can the genre's moves be recovered?"
+status = "pending"
+result_doc = "experiments/results/G-01.md"
+flags_unlocked = []
+
+[[gate]]
+id = "G-02"
+title = "Can LLM output be steered to the genre?"
+status = "pending"
+result_doc = "experiments/results/G-02.md"
+flags_unlocked = []
+
+[[gate]]
+id = "G-03"
+title = "Embedding model and chunking strategy"
+status = "pending"
+result_doc = "experiments/results/G-03.md"
+flags_unlocked = []
+
+[[gate]]
+id = "G-04"
+title = "Is the fast layer close enough to the slow layer?"
+status = "pending"
+result_doc = "experiments/results/G-04.md"
+flags_unlocked = []
+
+[[gate]]
+id = "G-05"
+title = "Sequence fit"
+status = "pending"
+result_doc = "experiments/results/G-05.md"
+flags_unlocked = []
+
+[[gate]]
+id = "G-06"
+title = "Register fit"
+status = "pending"
+result_doc = "experiments/results/G-06.md"
+flags_unlocked = []
+
+[[gate]]
+id = "G-07"
+title = "Support mapping"
+status = "pending"
+result_doc = "experiments/results/G-07.md"
+flags_unlocked = []
+
+[[gate]]
+id = "G-08"
+title = "Meaning-preservation check"
+status = "pending"
+result_doc = "experiments/results/G-08.md"
+flags_unlocked = []
+
+[[gate]]
+id = "G-09"
+title = "Overlay legibility"
+status = "pending"
+result_doc = "experiments/results/G-09.md"
+flags_unlocked = []
+
+[[gate]]
+id = "G-10"
+title = "Fine-tuning"
+status = "pending"
+result_doc = "experiments/results/G-10.md"
+flags_unlocked = []
+
+[[gate]]
+id = "G-11"
+title = "Topic overlay"
+status = "pending"
+result_doc = "experiments/results/G-11.md"
+flags_unlocked = []
