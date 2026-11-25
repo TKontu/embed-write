@@ -190,3 +190,23 @@ class SessionTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class PassHelperTests(unittest.TestCase):
+    def test_first_pass_labels_survive_repeat_label(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = AnnotationStore(os.path.join(d, 's.jsonl'))
+            its = items()
+            rep = MANIFEST['repeat'][0]
+            session(its, store, ['1'] * len(its))
+            session(items(only=set(MANIFEST['repeat'])), store, ['o'], pass_name='repeat')
+            first = an.labels_for_pass(store, GENRE, 'first')
+            self.assertEqual(len(first), len(its))
+            by = {r['sentence_id']: r for r in first}
+            self.assertEqual(by[rep]['label'], GENRE['moves'][0]['id'])
+            self.assertEqual(by[rep]['pass'], 'first')
+            repeat = an.labels_for_pass(store, GENRE, 'repeat', 'ann')
+            self.assertEqual([(r['sentence_id'], r['label']) for r in repeat], [(rep, 'other')])
+            self.assertEqual(an.labels_for_pass(store, GENRE, 'first', 'nobody'), [])
+            with self.assertRaises(an.AnnotateError):
+                an.labels_for_pass(store, GENRE, 'bogus')
