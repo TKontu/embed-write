@@ -102,6 +102,7 @@ This is the core of revision 2. The pattern model is built and tested offline on
   - partial (R55/A2, PR #143, merge 4461e7d): analysis/reconcile_layers.py LayerReconciler state machine; unwired by design until LY-01/LY-02 wire the fast and slow paths. seen: tests/test_reconcile_layers.py 11 tests OK (synthetic LLM-built signals; gate 850 tests OK) at head 924ee47c7ea55f8d8c91f6774a82db5e812c06e0; memory O(live keys). Stays partial until LY-01/LY-02 exercise it.
 - [ ] **LY-05** `[A]` Staleness: slow results for changed text are discarded — check: test with edits during an in-flight review
 - [ ] **LY-06** `[A]` Slow-layer cache keyed by content hash plus context hash
+  - partial (R56/A1, PR: task/ly06-slow-cache): analysis/slow_cache.py SlowLayerCache; unwired by design until LY-02. seen: tests/test_slow_cache.py 11 tests OK; head: see PR. Residuals: in-memory only, no persistence; context-hash definition owned by LY-02; synthetic LLM-built tests only.
 - [ ] **LY-07** `[A]` Visibility policy read from the G-04 result, per signal
 - [ ] **LY-08** `[A]` Disagreement monitor: rolling fast-vs-slow disagreement rate in the debug panel
 
