@@ -23,10 +23,7 @@ from typing import Callable, Sequence
 
 ROOT = Path(__file__).resolve().parents[1]
 # D-002: these stay the operator's to merge.
-OPERATOR_PATHS = (
-    "docs/decisions.md",
-    "docs/architecture.md",
-    ".agent/config.toml",
+OPERATOR_PATHS = (  # D-010 narrowed this list; decisions, architecture and config merge too
     ".claude/*",
     "scripts/merge_guard.py",
     "experiments/results/G-*",  # a gate result is how a gate becomes `passed`

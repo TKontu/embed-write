@@ -69,9 +69,6 @@ class MergeGuardTests(unittest.TestCase):
 
     def test_leaves_operator_owned_paths_to_the_operator(self):
         for path in (
-            "docs/decisions.md",
-            "docs/architecture.md",
-            ".agent/config.toml",
             ".claude/settings.json",
             "scripts/merge_guard.py",
             "experiments/results/G-01.md",
@@ -79,6 +76,10 @@ class MergeGuardTests(unittest.TestCase):
             gh = FakeGh(files=[{"path": "experiments/runner.py"}, {"path": path}])
             self.assertNotEqual(mg.guard(7, HEAD, run=gh), 0, path)
             self.assertEqual(gh.merge_calls(), [], path)
+
+    def test_d010_lets_decisions_architecture_and_config_merge(self):
+        files = [{"path": p} for p in ("docs/decisions.md", "docs/architecture.md", ".agent/config.toml")]
+        self.assertEqual(mg.guard(7, HEAD, run=FakeGh(files=files)), 0)
 
     def test_allows_the_results_template_and_ordinary_records(self):
         gh = FakeGh(files=[{"path": "experiments/results/TEMPLATE.md"}, {"path": "docs/todo.md"}])
