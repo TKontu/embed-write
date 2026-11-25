@@ -13,7 +13,8 @@ A native writing surface over Markdown: the expert sees formatted text, shortcut
 
 ## Foundation
 
-- [ ] **ED-01** `[A]` Milkdown setup with a schema covering the Markdown features reports use — check: every schema node has a round-trip test in `todo-03` DM-03
+- [x] **ED-01** `[A]` Milkdown setup with a schema covering the Markdown features reports use — check: every schema node has a round-trip test in `todo-03` DM-03
+  - done (R87/A1, PR #228, merge 865ef50): new ESM package `editor/` exporting `createEditor({root, markdown})`. It is a Milkdown 7.23.0 editor whose state schema is docmodel's own Schema instance. It loads via docmodel `parseMarkdown`, registers `overlayPlugin` and `idPlugin`, and `getMarkdown()` uses `serializeMarkdown`. New docmodel/test/schema-coverage.test.js covers every schema node and mark; it found `thematic_break` uncovered, so fixture thematic-break.md was added. Ran on Claude (D-008). seen: planner rerun at head 26175d54a92b7ba917a8f69cf5cf86c3adcba21d: editor 15/15 under jsdom, docmodel 207/207, Python gate 1136 OK. Unwired by design until the Tauri shell row. Residuals: DOM rendering lives in editor/src/render.js node views (docmodel schema has no toDOM), structure only, no CSS; prosemirror-state/transform/view are pinned via npm overrides plus `install-links=true` to avoid duplicate prosemirror copies; editor tests are not in CI yet.
 - [ ] **ED-02** `[A]` Schema decisions recorded: first-class nodes, passthrough HTML, unsupported constructs and what happens when a file contains them
 - [ ] **ED-03** `[A]` One serializer, shared with the document model
 - [ ] **ED-04** `[A]` Source view toggle showing the raw Markdown
