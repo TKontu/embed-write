@@ -40,6 +40,7 @@ Colour is the expert's main channel into the pattern model. Revision 2 replaces 
 - [ ] **RE-09** `[A]` Granularity toggle: section, paragraph, sentence
 - [ ] **RE-10** `[A]` Overlay selector: moves (default), register, support, redundancy, topic (optional). One at a time
 - [ ] **RE-11** `[A]` Off as a first-class state with a single shortcut
+  - partial (R122/A1, PR #312, merge 1917f2f): editor library half: signalDecorationsPlugin keyed by exported signalOverlayKey with state {on} from opts.initiallyOn (default true, non-boolean throws); off returns DecorationSet.empty; toggleSignalOverlay command, isSignalOverlayOn; one shortcut opts.offShortcut (DEFAULT_OFF_SHORTCUT Mod-Shift-o; Mod-Shift-p refused). seen: editor/test/decorations.test.js, npm test 51/51 and gate 1430 OK at head ade0740e55e048493f23e490b2b42fc728e80e1b (rerun by planner, node_modules linked). Stays partial: unwired by design until RE-10 / app shell installs the plugin.
 - [ ] **RE-12** `[A]` Provenance marks: machine-written and machine-edited text distinguishable on demand
 
 ---
