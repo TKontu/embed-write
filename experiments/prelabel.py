@@ -194,12 +194,15 @@ def summarize(items, records) -> dict:
 
 def local_model(base_url: str, *, model: str = 'local', timeout: float = 120.0,
                 policy: NetworkPolicy = NetworkPolicy()) -> Model:
-    """Callable for a local OpenAI-compatible /chat/completions endpoint (loopback only)."""
+    """Callable for a local OpenAI-compatible /chat/completions endpoint (loopback only).
+
+    ``call(prompt, temperature=None)`` sends ``temperature`` 0 when None, else the given value.
+    """
     url = base_url.rstrip('/') + '/chat/completions'
     check_url(url, policy)
 
-    def call(prompt: str) -> str:
-        body = json.dumps({'model': model, 'temperature': 0,
+    def call(prompt: str, temperature: float | None = None) -> str:
+        body = json.dumps({'model': model, 'temperature': 0 if temperature is None else temperature,
                            'messages': [{'role': 'user', 'content': prompt}]}).encode()
         req = urllib.request.Request(url, data=body,
                                      headers={'Content-Type': 'application/json'})

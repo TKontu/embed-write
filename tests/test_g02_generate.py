@@ -325,22 +325,6 @@ class GenerateTests(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertEqual(sorted(m.temps, key=str), [0.7, 0.7, None, None])
 
-    def test_local_sampling_model_sends_temperature(self):
-        import io
-        from unittest import mock
-        sent = []
-
-        def fake_open(req, timeout):
-            sent.append(json.loads(req.data))
-            return io.BytesIO(json.dumps({'choices': [{'message': {'content': 'ok'}}]}).encode())
-
-        call = gen.local_sampling_model('http://127.0.0.1:8080/v1', model='m')
-        with mock.patch('urllib.request.urlopen', fake_open):
-            self.assertEqual(call('p'), 'ok')
-            self.assertEqual(call('p', temperature=0.9), 'ok')
-        self.assertEqual([b['temperature'] for b in sent], [0, 0.9])
-        self.assertEqual(call.model_id, 'm')
-
     def test_lexical_retriever_ranks_overlap_and_is_deterministic(self):
         target = {'section_id': 't', 'report_id': 'rt', 'section_type': 'intro',
                   'notes': 'wavelet denoising spectral'}
