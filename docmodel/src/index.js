@@ -26,3 +26,5 @@ export { reattachIds } from './reattach.js';
 export { idPlugin, fixIds } from './idplugin.js';
 // admitResult/filterFresh (PM-02) are unwired by design; ED-01 and the overlay rows wire them.
 export { admitResult, filterFresh } from './stale.js';
+// overlayPlugin/overlayKey/overlayRanges (PM-01) are unwired by design; ED-01 wires the plugin into the editor.
+export { overlayPlugin, overlayKey, overlayRanges } from './overlay.js';
