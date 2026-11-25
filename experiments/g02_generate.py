@@ -32,6 +32,14 @@ Resumable: ``(section_id, arm)`` pairs already in ``out_path`` under the same mo
 ``PROMPT_VERSION`` are skipped, so a rerun after a change of prompts regenerates them.
 Memory: the exemplar pool and the done keys; sections stream one at a time.
 
+Sampling: ``temperature`` (CLI ``--temperature``) is passed as ``model(prompt, temperature=t)``
+for arm C candidates only, so the k drafts can differ; arms A and B, and the default
+``temperature=None``, call ``model(prompt)`` unchanged. Arm C records carry ``temperature`` when set.
+``local_sampling_model`` is the loopback client that honours it (default 0, as ``local_model``).
+
+``summarize(..., model=, prompt_version=)`` counts only the records of that run, so stale-version
+records in a reused ``out_path`` neither duplicate nor complete the current run; the CLI passes both.
+
 Production caller: the CLI run for G-02.3 on the G-02.2 notes. ``local_model`` (experiments.prelabel)
 posts to a loopback OpenAI-compatible endpoint gated by service.network_guard (I9); no model ships.
 """
@@ -43,11 +51,13 @@ import json
 import os
 import re
 import sys
+import urllib.request
 from collections import Counter
 from functools import partial
 from typing import Callable, Iterable, Iterator, Sequence, TypedDict
 
 from experiments.prelabel import local_model
+from service.network_guard import NetworkPolicy, check_url
 
 ARMS = ('A', 'B', 'C')
 PROMPT_VERSION = 'g02.3-v1'
@@ -178,6 +188,25 @@ def _done_pairs(out_path, model_id, prompt_version) -> set:
     return done
 
 
+def local_sampling_model(base_url: str, *, model: str = 'local', timeout: float = 120.0,
+                         policy: NetworkPolicy = NetworkPolicy()) -> Model:
+    """Loopback /chat/completions client accepting a per-call ``temperature`` (default 0)."""
+    url = base_url.rstrip('/') + '/chat/completions'
+    check_url(url, policy)
+
+    def call(prompt: str, temperature: float | None = None) -> str:
+        body = json.dumps({'model': model, 'temperature': 0 if temperature is None else temperature,
+                           'messages': [{'role': 'user', 'content': prompt}]}).encode()
+        req = urllib.request.Request(url, data=body,
+                                     headers={'Content-Type': 'application/json'})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.load(resp)
+        return data['choices'][0]['message']['content']
+
+    call.model_id = model
+    return call
+
+
 def _choose(critic: Critic, candidates: Sequence[str], context: str) -> tuple:
     scores = [float(critic(text, context)) for text in candidates]
     best = max(range(len(scores)), key=lambda i: (scores[i], -i))
@@ -186,7 +215,8 @@ def _choose(critic: Critic, candidates: Sequence[str], context: str) -> tuple:
 
 def iter_generate(sections: Iterable[NotesRecord], pool: Iterable[Exemplar], model: Model, *,
                   out_path, critic: Critic, retriever: Retriever | None = None,
-                  k_exemplars: int = 3, n_candidates: int = 4) -> Iterator[dict]:
+                  k_exemplars: int = 3, n_candidates: int = 4,
+                  temperature: float | None = None) -> Iterator[dict]:
     """Generate every missing ``(section_id, arm)``; yield each record as it is written."""
     if n_candidates < 1:
         raise ValueError('n_candidates must be at least 1')
@@ -209,11 +239,16 @@ def iter_generate(sections: Iterable[NotesRecord], pool: Iterable[Exemplar], mod
                     context = critic_context(record, exemplars)
                     prompts = [build_prompt(record, 'C', exemplars, candidate=(i, n_candidates))
                                for i in range(n_candidates)]
-                    candidates = [model(p) for p in prompts]
+                    if temperature is None:
+                        candidates = [model(p) for p in prompts]
+                    else:
+                        candidates = [model(p, temperature=temperature) for p in prompts]
                     best, scores = _choose(critic, candidates, context)
                     text, prompt = candidates[best], prompts[best]
                     extra = {'n_candidates': n_candidates, 'chosen_candidate': best,
                              'critic_scores': scores}
+                    if temperature is not None:
+                        extra['temperature'] = temperature
                 else:
                     prompt = build_prompt(record, arm, exemplars)
                     text = model(prompt)
@@ -227,23 +262,30 @@ def iter_generate(sections: Iterable[NotesRecord], pool: Iterable[Exemplar], mod
 
 
 def generate(sections, pool, model, *, out_path, critic: Critic, retriever: Retriever | None = None,
-             k_exemplars: int = 3, n_candidates: int = 4) -> list:
+             k_exemplars: int = 3, n_candidates: int = 4,
+             temperature: float | None = None) -> list:
     """Generate every missing pair; return the records this call wrote."""
     return list(iter_generate(sections, pool, model, out_path=out_path, critic=critic,
                               retriever=retriever, k_exemplars=k_exemplars,
-                              n_candidates=n_candidates))
+                              n_candidates=n_candidates, temperature=temperature))
 
 
-def summarize(records: Iterable[dict], *, expected_sections: int | None = 30) -> dict:
+def summarize(records: Iterable[dict], *, expected_sections: int | None = 30,
+              model: str | None = None, prompt_version: str | None = None) -> dict:
     """30 x 3 completeness: every section has each arm once, no same-report exemplar.
 
     ``expected_sections=None`` checks arm completeness only. ``complete`` is the G-02.3 check;
-    it also requires the target count when one is given.
+    it also requires the target count when one is given. ``model`` / ``prompt_version``, when
+    given, restrict the count to that run's records; others are ignored entirely.
     """
     per_pair = Counter()
     order = {}
     leaked = set()
     for r in records:
+        if model is not None and r.get('model') != model:
+            continue
+        if prompt_version is not None and r.get('prompt_version') != prompt_version:
+            continue
         per_pair[(r['section_id'], r['arm'])] += 1
         order.setdefault(r['section_id'], True)
         if r.get('report_id') in (r.get('exemplar_report_ids') or []):
@@ -278,16 +320,20 @@ def main(argv=None, *, model: Model | None = None, critic: Critic | None = None)
     ap.add_argument('--k-exemplars', type=int, default=3)
     ap.add_argument('--n-candidates', type=int, default=4)
     ap.add_argument('--expected-sections', type=int, default=30)
+    ap.add_argument('--temperature', type=float, default=None,
+                    help='sampling temperature for arm C candidates (default: model default)')
     a = ap.parse_args(argv)
     if model is None:
         if not a.model_url:
             ap.error('--model-url is required unless a model is injected')
-        model = local_model(a.model_url, model=a.model_name)
+        model = (local_model(a.model_url, model=a.model_name) if a.temperature is None
+                 else local_sampling_model(a.model_url, model=a.model_name))
     if critic is None:
         critic = model_critic(model)
     records = generate(read_jsonl(a.notes), list(read_jsonl(a.pool)), model, out_path=a.out,
-                       critic=critic, k_exemplars=a.k_exemplars, n_candidates=a.n_candidates)
-    summary = summarize(read_jsonl(a.out), expected_sections=a.expected_sections)
+                       critic=critic, k_exemplars=a.k_exemplars, n_candidates=a.n_candidates, temperature=a.temperature)
+    summary = summarize(read_jsonl(a.out), expected_sections=a.expected_sections,
+                        model=getattr(model, 'model_id', 'unknown'), prompt_version=PROMPT_VERSION)
     summary['written'] = len(records)
     print(json.dumps(summary, sort_keys=True))
     return 0 if summary['complete'] else 1
