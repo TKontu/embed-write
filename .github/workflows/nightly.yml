@@ -16,6 +16,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: docmodel tests
+        working-directory: docmodel
+        run: npm ci && npm test
       - name: Unit tests
         run: python3 -m unittest discover -s tests
       - name: No-aggregate-score lint
