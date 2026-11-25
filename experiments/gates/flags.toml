@@ -1,0 +1,11 @@
+# Flag definitions (X-02; architecture invariant I6).
+# Each [[flag]] names the gate that removes it. scripts/check_flags.py fails CI when a flag is
+# enabled while its gate is not `passed`. Schema:
+#
+# [[flag]]
+# name = "example_feature"        # [a-z0-9_]+, unique
+# gate = "G-01"                   # id present in experiments/gates/registry.toml
+# enabled = false                 # bool
+# description = "What it guards"  # nonempty
+#
+# No flags are defined yet.
