@@ -1,4 +1,4 @@
-"""CA-01/CA-02/CA-03 append-only LMDB vectors; unwired by design until SV-02.
+"""CA-01/CA-02/CA-03/CA-04 append-only LMDB vectors; unwired by design until SV-02.
 
 Each put uses one write transaction; calls allocate O(dims) vector memory.
 Keys must fit LMDB's key-size limit. FIFO eviction retains O(1) entries.
@@ -8,6 +8,7 @@ Existing pre-CA-03 stores require recreation (migration is not supported).
 from collections.abc import Iterator
 from dataclasses import dataclass
 import json
+import math
 import os
 import struct
 
@@ -53,6 +54,10 @@ class AppendOnlyError(ValueError):
     """An existing cache key cannot be assigned a different vector."""
 
 
+class CorruptEntryError(ValueError):
+    """Stored cache data is malformed; unwired by design until SV-02."""
+
+
 class CapacityError(ValueError):
     """A single encoded entry exceeds the configured byte cap."""
 
@@ -70,7 +75,15 @@ class VectorStore:
     def size_bytes(self) -> int:
         """Return live encoded key/value bytes, excluding index and LMDB overhead."""
         with self._env.begin() as txn:
-            return int(txn.get(b'total', db=self._meta) or b'0')
+            raw = txn.get(b'total', db=self._meta)
+        if raw is None:
+            return 0
+        if not raw or not raw.isdigit():
+            raise CorruptEntryError('invalid accounting total')
+        try:
+            return int(raw)
+        except ValueError:
+            raise CorruptEntryError('invalid accounting total') from None
 
     def __len__(self) -> int:
         with self._env.begin() as txn:
@@ -89,6 +102,8 @@ class VectorStore:
     def put(self, key: VectorKey, vector: LevelVector) -> None:
         if vector.level is not key.level or len(vector.values) != key.dims:
             raise ValueError('vector dimensions and level must match key')
+        if not all(math.isfinite(value) for value in vector.values):
+            raise ValueError('vector values must be finite')
         # A newline terminates the JSON metadata; the remaining bytes are f64 LE.
         header = json.dumps([vector.level.value, len(vector.values)],
                             separators=(',', ':')).encode('ascii') + b'\n'
@@ -134,8 +149,15 @@ class VectorStore:
                     encoded = cursor.key()
                     if not encoded.startswith(prefix):
                         break
-                    level, content_hash, dims = json.loads(encoded[len(prefix):])
-                    yield VectorKey(model_id, model_version, Level(level), content_hash, dims)
+                    try:
+                        fields = json.loads(encoded[len(prefix):].decode('ascii'))
+                        if not isinstance(fields, list) or len(fields) != 3:
+                            raise ValueError('invalid key triple')
+                        level, content_hash, dims = fields
+                        key = VectorKey(model_id, model_version, Level(level), content_hash, dims)
+                    except (ValueError, TypeError, RecursionError):
+                        raise CorruptEntryError('invalid stored key in requested keyspace') from None
+                    yield key
                     found = cursor.next()
 
     def get(self, key: VectorKey) -> LevelVector | None:
@@ -143,8 +165,18 @@ class VectorStore:
             value = txn.get(key.encode())
         if value is None:
             return None
-        header, payload = value.split(b'\n', 1)
-        level, dims = json.loads(header)
-        if level != key.level.value or dims != key.dims or len(payload) != key.dims * 8:
-            raise ValueError('stored vector dimensions and level must match key')
-        return LevelVector(key.level, struct.unpack(f'<{key.dims}d', payload))
+        try:
+            header, payload = value.split(b'\n', 1)
+            fields = json.loads(header.decode('ascii'))
+            if (not isinstance(fields, list) or len(fields) != 2
+                    or not isinstance(fields[0], str) or type(fields[1]) is not int):
+                raise ValueError('invalid header')
+            level, dims = fields
+            if level != key.level.value or dims != key.dims or len(payload) != key.dims * 8:
+                raise ValueError('metadata or payload mismatch')
+            values = struct.unpack(f'<{key.dims}d', payload)
+            if not all(math.isfinite(value) for value in values):
+                raise ValueError('non-finite payload')
+        except (ValueError, RecursionError):
+            raise CorruptEntryError(f'corrupt vector for content hash {key.content_hash}') from None
+        return LevelVector(key.level, values)

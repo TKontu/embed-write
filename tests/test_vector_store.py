@@ -37,6 +37,107 @@ class VectorStoreTests(unittest.TestCase):
         header = json.dumps([key.level.value, key.dims], separators=(',', ':'))
         return len(key.encode()) + len(header.encode('ascii')) + 1 + 8 * key.dims
 
+    def assert_corrupt_value(self, raw):
+        import service.vector_store as module
+        with self.VectorStore(self.path) as store:
+            with store._env.begin(write=True) as txn:
+                txn.put(self.key.encode(), raw)
+            with self.assertRaises(module.CorruptEntryError) as caught:
+                store.get(self.key)
+            self.assertEqual(type(caught.exception).__name__, 'CorruptEntryError')
+            self.assertIs(type(caught.exception), module.CorruptEntryError)
+            self.assertIn(self.key.content_hash, str(caught.exception))
+            self.assertNotIn('1.25', str(caught.exception))
+            self.assertNotIn('-2.5', str(caught.exception))
+            with store._env.begin() as txn:
+                self.assertEqual(txn.get(self.key.encode()), raw)
+
+    def test_corrupt_value_missing_separator(self):
+        self.assert_corrupt_value(b'["sentence",2]')
+
+    def test_corrupt_value_non_ascii_header(self):
+        self.assert_corrupt_value(b'["sentenc\xc3\xa9",2]\n' + struct.pack('<2d', 1.25, -2.5))
+
+    def test_corrupt_value_invalid_json(self):
+        self.assert_corrupt_value(b'not json\n' + struct.pack('<2d', 1.25, -2.5))
+
+    def test_corrupt_value_header_shape_and_types(self):
+        for header in (b'null', b'{}', b'[]', b'["sentence"]',
+                       b'["sentence",2,3]', b'[1,2]', b'["sentence",2.0]',
+                       b'["sentence",true]', b'{"sentence":0,"2":0}'):
+            with self.subTest(header=header):
+                self.assert_corrupt_value(header + b'\n' + struct.pack('<2d', 1.25, -2.5))
+
+    def test_corrupt_value_wrong_level(self):
+        self.assert_corrupt_value(b'["block",2]\n' + struct.pack('<2d', 1.25, -2.5))
+
+    def test_corrupt_value_wrong_dimensions(self):
+        self.assert_corrupt_value(b'["sentence",3]\n' + struct.pack('<2d', 1.25, -2.5))
+
+    def test_corrupt_value_payload_length(self):
+        for payload in (b'', b'x' * 15, b'x' * 17):
+            with self.subTest(length=len(payload)):
+                self.assert_corrupt_value(b'["sentence",2]\n' + payload)
+
+    def test_corrupt_value_non_finite(self):
+        for value in (float('nan'), float('inf'), -float('inf')):
+            with self.subTest(value=value):
+                self.assert_corrupt_value(b'["sentence",2]\n' + struct.pack('<2d', 1.25, value))
+
+    def assert_corrupt_key(self, suffix):
+        import service.vector_store as module
+        encoded = self.key.encode()
+        prefix_length = 4 + struct.unpack('>I', encoded[:4])[0]
+        with self.VectorStore(self.path) as store:
+            bad_key = encoded[:prefix_length] + suffix
+            with store._env.begin(write=True) as txn:
+                txn.put(bad_key, b'irrelevant')
+            self.assertEqual(list(store.keys('other', 'v1')), [])
+            with self.assertRaises(module.CorruptEntryError) as caught:
+                list(store.keys('model', 'v1'))
+            self.assertEqual(type(caught.exception).__name__, 'CorruptEntryError')
+            self.assertIs(type(caught.exception), module.CorruptEntryError)
+            with store._env.begin(write=True) as txn:
+                self.assertEqual(txn.get(bad_key), b'irrelevant')
+                txn.delete(bad_key)
+
+    def test_corrupt_key_invalid_json_triple(self):
+        for suffix in (b'not json', b'\xff', b'null', b'[]',
+                       b'["sentence","hash"]', b'["sentence","hash",2,3]',
+                       b'{"sentence":0,"hash":0,"2":0}',
+                       b'["sentence",3,2]', b'["sentence","hash",true]',
+                       b'["sentence","hash",2.0]', b'["sentence","hash",0]',
+                       b'["sentence","hash",-1]', b'[[],"hash",2]'):
+            with self.subTest(suffix=suffix):
+                self.assert_corrupt_key(suffix)
+
+    def test_corrupt_key_unknown_level(self):
+        self.assert_corrupt_key(b'["unknown","hash",2]')
+
+    def test_corrupt_accounting_total(self):
+        import service.vector_store as module
+        with self.VectorStore(self.path) as store:
+            for raw in (b'', b'-1', b'1.0', b'abc', b'\xff', b' 1', b'+1', b'1_0'):
+                with self.subTest(raw=raw):
+                    with store._env.begin(write=True) as txn:
+                        txn.put(b'total', raw, db=store._meta)
+                    with self.assertRaises(module.CorruptEntryError) as caught:
+                        store.size_bytes()
+                    self.assertEqual(type(caught.exception).__name__, 'CorruptEntryError')
+                    self.assertIs(type(caught.exception), module.CorruptEntryError)
+
+    def test_put_rejects_non_finite_before_writing(self):
+        with self.VectorStore(self.path) as store:
+            for value in (float('nan'), float('inf'), -float('inf')):
+                with self.subTest(value=value):
+                    # Bypass LevelVector validation to exercise the storage boundary.
+                    vector = LevelVector(self.key.level, (1, 2))
+                    object.__setattr__(vector, 'values', (1.25, value))
+                    with self.assertRaises(ValueError):
+                        store.put(self.key, vector)
+                    self.assertIsNone(store.get(self.key))
+                    self.assertEqual((len(store), store.size_bytes()), (0, 0))
+
     def test_cap_boundary_evicts_oldest_across_keyspaces(self):
         newer = replace(self.key, model_version='v2')
         newest = replace(self.key, model_version='v3')
