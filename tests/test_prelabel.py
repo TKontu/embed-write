@@ -257,6 +257,25 @@ class CliTests(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertTrue(spy.called)
 
+    def test_cli_manifest_resolves_documents_once_per_run(self):
+        from unittest import mock
+        from experiments import annotate
+        with mock.patch.object(annotate, 'load_documents',
+                               wraps=annotate.load_documents) as spy:
+            rc = self.run_cli('--manifest', self.manifest_path, '--documents', self.docs_dir)
+        self.assertEqual(rc, 0)
+        self.assertEqual(spy.call_count, 1)
+
+    def test_cli_items_file_read_once_per_run(self):
+        from unittest import mock
+        path = os.path.join(self.tmp.name, 'items.jsonl')
+        with open(path, 'w', encoding='utf-8') as fh:
+            for it in items(3):
+                fh.write(json.dumps(it) + '\n')
+        with mock.patch.object(prelabel, '_read_items', wraps=prelabel._read_items) as spy:
+            self.assertEqual(self.run_cli('--items', path), 0)
+        self.assertEqual(spy.call_count, 1)
+
     def test_items_jsonl_still_works(self):
         path = os.path.join(self.tmp.name, 'items.jsonl')
         with open(path, 'w', encoding='utf-8') as fh:

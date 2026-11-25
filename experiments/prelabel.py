@@ -266,8 +266,16 @@ def main(argv=None) -> int:
 
     from experiments.annotate import AnnotateError
     try:
-        prelabel(source(), genre, model, out_path=a.out, max_retries=a.max_retries)
-        ids = [{'sentence_id': it['sentence_id']} for it in source()]
+        ids = []
+
+        def recording():
+            for it in source():
+                ids.append({'sentence_id': it['sentence_id']})
+                yield it
+
+        for _ in iter_prelabel(recording(), genre, model, out_path=a.out,
+                               max_retries=a.max_retries):
+            pass
     except AnnotateError as exc:
         print(f'error: {exc}', file=sys.stderr)
         return 2
