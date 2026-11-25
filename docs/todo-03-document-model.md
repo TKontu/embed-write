@@ -69,7 +69,8 @@ No research risk and total structural risk. If node IDs are not stable, the cach
 ## Position mapping
 
 - [ ] **PM-01** `[A]` Overlay positions survive transactions — check: apply a decoration, make 100 random edits elsewhere, assert it covers the same text
-- [ ] **PM-02** `[A]` Stale-result policy: a result for a node whose hash has changed is discarded, never drawn
+- [x] **PM-02** `[A]` Stale-result policy: a result for a node whose hash has changed is discarded, never drawn
+  - done (R85/A1, PR #222, merge 7d1fba0): `admitResult(doc, result)` and `filterFresh(doc, results)` in docmodel/src/stale.js, exported from index.js; fresh only when the node id exists and `nodeHash` matches; discards reasons 'missing' | 'changed' | 'malformed' (no throw); one doc walk, results in input order; mark-only edits stay fresh (nodeHash ignores marks). Ran on Claude (D-008). seen: docmodel/test/stale.test.js (acceptance a-g), docmodel 200/200 planner rerun at head 63797b6ec86681bba145faf43074b2fb03c1100b, Python gate 1127 OK (lane). Unwired by design; ED-01 and overlay rows wire it, so 'never drawn' is shown only once overlays exist. Residual: admitResult walks the whole doc per call (use filterFresh for batches).
 
 ---
 
