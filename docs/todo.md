@@ -34,7 +34,7 @@ Track E can start today. Track R decides whether the project continues.
 |---|---|---|---|---|---|---|
 | `todo-01-experiments.md` | Gates G-01 to G-11 | 58 | 30 | 16 | 12 | 0 |
 | `todo-02-embedding.md` | Embedding service, cache | 28 | 28 | 0 | 0 | 20 |
-| `todo-03-document-model.md` | Markdown round-trip, node identity | 24 | 24 | 0 | 0 | 111 |
+| `todo-03-document-model.md` | Markdown round-trip, node identity | 24 | 24 | 0 | 0 | 14 |
 | `todo-04-analysis.md` | Pattern model, two-layer analysis | 47 | 45 | 0 | 2 | 15 |
 | `todo-05-visualization.md` | Overlays, legend, inspector | 35 | 30 | 5 | 0 | 0 |
 | `todo-06-editor.md` | Editor, app shell | 34 | 33 | 1 | 0 | 0 |
