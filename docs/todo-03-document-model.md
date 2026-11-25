@@ -13,7 +13,8 @@ No research risk and total structural risk. If node IDs are not stable, the cach
 
 ## Markdown ⇄ ProseMirror
 
-- [ ] **DM-01** `[A]` Parse pipeline: remark → mdast → ProseMirror doc
+- [x] **DM-01** `[A]` Parse pipeline: remark → mdast → ProseMirror doc
+  - done (R75/A1, PR #189, merge 5e0d2bf): new ESM package `docmodel/` (plain JS + JSDoc) exporting `parseMarkdown`, `schema`, `UnsupportedNodeError`; remark-parse + remark-gfm + remark-frontmatter(yaml), pinned exact versions. Source conventions kept as attrs (em/strong marker, heading setext, code fence, bullet marker, link/image `ref`). Ran on Claude (D-008 fallback, Codex at usage limit). seen: docmodel/test/parse.test.js 29 pass (reviewer rerun at head 0f50924864ac6969408ca1a73fb54e1f08e2234a), Python gate 1108 OK. Unwired by design until DM-02/DM-03 and ED-01. Residuals: strikethrough, inline HTML and TOML front matter throw UnsupportedNodeError (real documents with inline HTML do not parse yet); footnote_reference is a mark on text equal to its label; not recorded: list spread, ordered delimiter, table header row, escapes, link destination form, code fence meta; extra attrs list_item.checked, image.ref; docmodel CI step is only in nightly.yml (schedule/dispatch), not yet run in CI.
 - [ ] **DM-02** `[A]` Serializer preserving the author's conventions (`*` or `_`, heading style, list markers, wrap width)
 - [ ] **DM-03** `[A]` Round-trip idempotence suite: parse → serialize → parse is stable — check: passes on a corpus including nested emphasis, reference links, footnotes, aligned tables, code fences containing Markdown, HTML blocks, hard breaks, front matter, setext headings
 - [ ] **DM-04** `[A]` Property-based fuzzing of the round-trip
