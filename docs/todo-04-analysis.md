@@ -65,7 +65,8 @@ This is the core of revision 2. The pattern model is built and tested offline on
 - [ ] **RG-01** `[A]` Genre profile from style embeddings of corpus text, per move
 - [ ] **RG-02** `[A]` Baseline-LLM set: default-style rewrites of corpus sentences, content held constant
 - [ ] **RG-03** `[A]` Corpus-vs-LLM classifier on sentence embeddings as a second arm
-- [ ] **RG-04** `[A]` Feature report: what distinguishes the two sets (sentence length, hedging, passive voice, numbers per sentence, connectives), for the slow layer's explanations and for the expert
+- [x] **RG-04** `[A]` Feature report: what distinguishes the two sets (sentence length, hedging, passive voice, numbers per sentence, connectives), for the slow layer's explanations and for the expert
+  - done (R86/A2, PR #225, merge 9fb3dda): `sentence_features(sentence)` and `compare(set_a, set_b) -> FeatureReport` in analysis/register_features.py (stdlib + analysis.numbers); per feature n/mean/median per set, B-minus-A mean diff, Cohen's d (pooled SD, None when undefined); no aggregate score; `sorted_by_effect` is display order only. Ran on Claude (D-008). seen: tests/test_register_features.py (9 tests, synthetic sentences), Python gate 1136 OK planner rerun at head e0947517cceed48b1b4b65878c8230e26d89489c. Not run on corpus or a baseline-LLM set (RG-02 absent). Unwired by design; RG-05 and slow-layer explanations consume it. Residuals: heuristic passive detection (misses get-passives, misfires on adjectival -ed), fixed English lexicons, O(n) floats per feature.
 - [ ] **RG-05** `[A]` Register-fit signal per sentence with confidence
 
 ---
