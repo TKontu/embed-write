@@ -18,8 +18,20 @@ Schema (JSON object; provisional until MV-03/MV-04 [H] fix the content):
       "legend": {
           "colors": object mapping every move id (and only those) -> "#rrggbb"
           "other":  "#rrggbb", the neutral colour for the `other` class
-      }
+      },
+      "section_types": OPTIONAL list of objects (HI-04), each:
+          "id":       non-empty string, unique
+          "name":     non-empty string
+          "headings": list of >= 1 non-empty strings (heading aliases);
+                      ``normalize_heading`` forms must be non-empty and unique
+                      across all section types
     }
+
+``normalize_heading`` is the twin of docmodel/src/sectiontypes.js
+``normalizeHeading`` (shared fixture docmodel/test/fixtures/heading-normalize.json):
+NFKC, trim, strip a leading section number ("3", "3.2", "IV.", "A." + space),
+strip trailing ":"/".", collapse whitespace, lowercase. An absent
+"section_types" leaves the file and its content hash unchanged.
 
 Keys starting with "_" (e.g. "_note") are comments: ignored by validation and
 excluded from the content hash, like "version".
@@ -31,17 +43,23 @@ Dependent labels carry ``version_key(genre)`` = {"genre_version", "genre_hash"};
 ``labels_valid_for`` rejects them once either differs.
 
 Unwired by design: production callers are LG-02 (legend rendering from the
-genre file) and AN-01 / G-01.4 label exports (carry the version key).
+genre file) and AN-01 / G-01.4 label exports (carry the version key);
+section types are wired by BH-06 / EX-01 / ED-01.
 """
 
 import hashlib
 import json
 import re
+import unicodedata
 
 MAX_MOVES = 10
 OTHER = 'other'
 _HEX = re.compile(r'#[0-9a-fA-F]{6}\Z')
 _MOVE_FIELDS = ('id', 'name', 'definition', 'positive_examples', 'near_miss')
+_SECTION_FIELDS = ('id', 'name', 'headings')
+_SECTION_NUMBER = re.compile(r'(?:\d+(?:\.\d+)*\.?|[IVXLCDM]+\.|[A-Z]\.)\s+', re.ASCII)
+_TRAILING = re.compile(r'[:.]+\Z')
+_SPACE = re.compile(r'\s+')
 
 
 class GenreFileError(ValueError):
@@ -117,7 +135,47 @@ def validate_genre(obj):
             _fail(f'legend.colors.{mid}', 'move missing from legend')
         _hex(colors[mid], f'legend.colors.{mid}')
     _hex(legend['other'], 'legend.other')
+    if 'section_types' in obj:
+        _validate_section_types(obj['section_types'])
     return obj
+
+
+def normalize_heading(text):
+    """Normalize a heading for exact alias matching (twin of normalizeHeading)."""
+    s = unicodedata.normalize('NFKC', str(text)).strip()
+    s = _SECTION_NUMBER.sub('', s, count=1)
+    s = _TRAILING.sub('', s)
+    return _SPACE.sub(' ', s).strip().lower()
+
+
+def _validate_section_types(types):
+    if not isinstance(types, list):
+        _fail('section_types', 'must be a list')
+    ids, aliases = set(), {}
+    for i, t in enumerate(types):
+        where = f'section_types[{i}]'
+        if not isinstance(t, dict):
+            _fail(where, 'must be an object')
+        for key in _SECTION_FIELDS:
+            if key not in t:
+                _fail(f'{where}.{key}', 'required field missing')
+        _text(t['id'], f'{where}.id')
+        _text(t['name'], f'{where}.name')
+        if t['id'] in ids:
+            _fail(f'{where}.id', f'duplicate section type id "{t["id"]}"')
+        ids.add(t['id'])
+        heads = t['headings']
+        if not isinstance(heads, list) or not heads:
+            _fail(f'{where}.headings', 'must list at least one heading')
+        for j, h in enumerate(heads):
+            field = f'{where}.headings[{j}]'
+            _text(h, field)
+            norm = normalize_heading(h)
+            if not norm:
+                _fail(field, 'heading is empty after normalization')
+            if norm in aliases:
+                _fail(field, f'normalized heading "{norm}" already used by {aliases[norm]}')
+            aliases[norm] = f'{where}.headings[{j}]'
 
 
 def load_genre(path):
