@@ -37,8 +37,8 @@ The service embeds sentences and blocks, caches by content hash, and hosts the f
   - done (R53/A2, PR #136, merge 3d6e46e): experiments/arms/late_chunking.py late_chunk with TokenEmbedder Protocol; overlap mean pooling then L2 normalization. seen: tests/test_late_chunking.py, 9 tests OK (gate 807 tests OK) at head 51c73abc206a667c0243f7c009704687b7c4448f. Production caller: G-03 runner arm, unwired by design until G-03 wiring. Residuals: no real model; quality unmeasured; O(tokens*d) section memory, model-context bound is caller responsibility and untested; synthetic LLM-built tests only.
 - [x] **CK-05** `[A]` Contextual-prefix arm for G-03
   - done (R54/A1, PR #139, merge 450018b): experiments/arms/contextual_prefix.py deterministic title/section paths, character-capped prefixes and bounded embedding batches via service.embedder.embed. seen: tests/test_contextual_prefix.py, 15 tests OK (gate 827 tests OK) at head 4c7c0c3c376385553d0e220cf7cbe172d1400916. Production caller: G-03 runner arm, unwired by design until G-03 wiring. Residuals: no real model; quality unmeasured; LLM-summary variant not built; synthetic LLM-built tests only; O(batch_size * text) prefixed texts plus O(chunks*d) output; model token/context bounds untested.
-- [ ] **CK-06** `[A]` Policy for tables, code, figures and captions: skipped, embedded as caption, or summarized — check: each type has a tested path
-  - partial (R50/A2, PR #124): service/block_policy.py embed_text_for per D-006; now called by service/chunk.py (R52/A1, exercised in tests/test_chunk.py). seen: tests/test_block_policy.py (synthetic offline policy checks); per-block O(block size).
+- [x] **CK-06** `[A]` Policy for tables, code, figures and captions: skipped, embedded as caption, or summarized — check: each type has a tested path
+  - done (R55/A3, PR: task/ck06-paths): each D-006 type has a tested chunk_blocks path. seen: tests/test_chunk_policy.py 9 tests OK; head: see PR. Residuals: summarized option not built per D-006; synthetic LLM-built blocks only.
 
 ---
 

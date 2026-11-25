@@ -1,4 +1,4 @@
-"""Per-block embedding text policy from D-006; unwired until CK-01."""
+"""Per-block embedding text policy from D-006; called by service/chunk.py chunk_blocks."""
 
 
 def embed_text_for(block_type, *, text="", caption=None, header_row=None) -> str | None:
