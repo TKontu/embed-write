@@ -1,7 +1,9 @@
-"""CA-01/CA-02 append-only LMDB vectors; unwired by design until SV-02.
+"""CA-01/CA-02/CA-03 append-only LMDB vectors; unwired by design until SV-02.
 
 Each put uses one write transaction; calls allocate O(dims) vector memory.
-Keys must fit LMDB's key-size limit. Eviction is deferred.
+Keys must fit LMDB's key-size limit. FIFO eviction retains O(1) entries.
+The cap counts encoded vector keys and values, not LMDB pages or bookkeeping.
+Existing pre-CA-03 stores require recreation (migration is not supported).
 """
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -51,9 +53,28 @@ class AppendOnlyError(ValueError):
     """An existing cache key cannot be assigned a different vector."""
 
 
+class CapacityError(ValueError):
+    """A single encoded entry exceeds the configured byte cap."""
+
+
 class VectorStore:
-    def __init__(self, path, map_size=1024 * 1024 * 1024):
-        self._env = lmdb.open(os.fspath(path), map_size=map_size)
+    def __init__(self, path, map_size=1024 * 1024 * 1024, max_bytes=None):
+        if max_bytes is not None and (type(max_bytes) is not int or max_bytes < 0):
+            raise ValueError('max_bytes must be a nonnegative integer or None')
+        self._max_bytes = max_bytes
+        self._env = lmdb.open(os.fspath(path), map_size=map_size, max_dbs=2)
+        with self._env.begin(write=True) as txn:
+            self._order = self._env.open_db(b'fifo', txn=txn)
+            self._meta = self._env.open_db(b'accounting', txn=txn)
+
+    def size_bytes(self) -> int:
+        """Return live encoded key/value bytes, excluding index and LMDB overhead."""
+        with self._env.begin() as txn:
+            return int(txn.get(b'total', db=self._meta) or b'0')
+
+    def __len__(self) -> int:
+        with self._env.begin() as txn:
+            return txn.stat(db=self._order)['entries']
 
     def __enter__(self):
         return self
@@ -79,7 +100,25 @@ class VectorStore:
                 if existing != value:
                     raise AppendOnlyError('cache key already contains a different vector')
                 return
+            entry_size = len(encoded) + len(value)
+            if self._max_bytes is not None and entry_size > self._max_bytes:
+                raise CapacityError('encoded entry exceeds max_bytes')
+            total = int(txn.get(b'total', db=self._meta) or b'0')
+            sequence = int(txn.get(b'next', db=self._meta) or b'0')
+            # Delete before inserting to avoid temporarily exceeding the map with
+            # both old and new values. Any failure rolls back all these writes.
+            with txn.cursor(db=self._order) as cursor:
+                while self._max_bytes is not None and total + entry_size > self._max_bytes:
+                    if not cursor.first():
+                        raise ValueError('FIFO accounting has no oldest entry')
+                    oldest = cursor.value()
+                    total -= len(oldest) + len(txn.get(oldest))
+                    txn.delete(oldest)
+                    cursor.delete()
             txn.put(encoded, value, overwrite=False)
+            txn.put(sequence.to_bytes(8, 'big'), encoded, db=self._order)
+            txn.put(b'next', str(sequence + 1).encode('ascii'), db=self._meta)
+            txn.put(b'total', str(total + entry_size).encode('ascii'), db=self._meta)
 
     def keys(self, model_id: str, model_version: str) -> Iterator[VectorKey]:
         """Stream one keyspace in a read snapshot, retaining O(1) keys.
