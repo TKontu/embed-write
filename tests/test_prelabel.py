@@ -301,6 +301,22 @@ class FlakyModel:
         return MOVE_IDS[0]
 
 
+class ScriptedModel:
+    """Returns or raises the scripted outcomes in order, one per call."""
+    model_id = 'fake-1'
+
+    def __init__(self, script):
+        self.script = list(script)
+        self.calls = 0
+
+    def __call__(self, prompt):
+        self.calls += 1
+        out = self.script.pop(0)
+        if isinstance(out, Exception):
+            raise out
+        return out
+
+
 class ModelErrorTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -334,6 +350,33 @@ class ModelErrorTests(unittest.TestCase):
         self.assertEqual([r['sentence_id'] for r in recs], ['s2', 's3'])
         self.assertEqual(len(ok.prompts), 2)
         self.assertTrue(prelabel.summarize(items(4), read(self.out))['exactly_one_label_each'])
+
+    def test_budget_always_raising_calls_max_retries_plus_one(self):
+        model = ScriptedModel([OSError('down')] * 10)
+        with self.assertRaises(OSError):
+            prelabel.prelabel(items(1), GENRE, model, out_path=self.out, max_retries=2,
+                              sleep=self.sleeps.append)
+        self.assertEqual(model.calls, 3)
+        self.assertEqual(len(self.sleeps), 2)
+
+    def test_budget_raise_then_invalid_replies_shares_one_budget(self):
+        model = ScriptedModel([OSError('down')] + ['banana'] * 10)
+        recs = prelabel.prelabel(items(1), GENRE, model, out_path=self.out, max_retries=2,
+                                 sleep=self.sleeps.append)
+        self.assertEqual(model.calls, 3)
+        self.assertEqual(recs[0]['label'], 'other')
+        self.assertTrue(recs[0]['invalid_reply'])
+        self.assertEqual(recs[0]['attempts'], 3)
+        self.assertEqual(len(self.sleeps), 1)  # invalid replies retry without sleep
+
+    def test_budget_raise_then_valid_counts_both_calls(self):
+        model = ScriptedModel([OSError('down'), MOVE_IDS[0]])
+        recs = prelabel.prelabel(items(1), GENRE, model, out_path=self.out, max_retries=2,
+                                 sleep=self.sleeps.append)
+        self.assertEqual(recs[0]['label'], MOVE_IDS[0])
+        self.assertFalse(recs[0]['invalid_reply'])
+        self.assertEqual(recs[0]['attempts'], 2)
+        self.assertEqual(model.calls, 2)
 
     def test_well_behaved_model_never_sleeps(self):
         prelabel.prelabel(items(3), GENRE, FakeModel({}), out_path=self.out,

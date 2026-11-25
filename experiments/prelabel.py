@@ -12,8 +12,10 @@ Output: one JSONL record per sentence, appended and flushed as produced:
   {sentence_id, doc_id, label, invalid_reply, attempts, model, prompt_hash,
    genre_version, genre_hash}
 ``llm_labels(records)`` gives the ``sentence_id -> label`` map that experiments.gates.g01 takes
-as ``config["llm"]``. A reply that does not name exactly one valid label is retried up to
-``max_retries`` times, then recorded as ``other`` with ``invalid_reply: true``.
+as ``config["llm"]``. Each item has one budget of ``max_retries + 1`` model calls shared by
+raising calls (retried after a bounded backoff) and replies that do not name exactly one valid
+label (retried at once); an item whose budget ends on invalid replies is recorded as ``other``
+with ``invalid_reply: true``, one whose last call raises re-raises.
 
 Resumable: ids already in ``out_path`` under the same genre version key and model are skipped. An
 unparsable line (a torn final write) is ignored, so its id is relabelled; appends then start on a
@@ -127,16 +129,25 @@ def _parsed_lines(path) -> Iterator[dict]:
 BACKOFF_DELAYS = (0.5, 1.0, 2.0, 4.0)
 
 
-def _call_with_backoff(model: Model, prompt: str, max_retries: int, sleep) -> str:
-    """Call ``model``; on exception retry up to ``max_retries`` times with bounded backoff."""
-    for attempt in range(max_retries + 1):
+def _label_within_budget(model: Model, prompt: str, labels, max_retries: int, sleep):
+    """``(label or None, calls)`` using at most ``max_retries + 1`` model calls in total.
+
+    A raising call sleeps per ``BACKOFF_DELAYS`` before the next call; an invalid reply retries
+    at once. If the last call in the budget raises, the exception is re-raised."""
+    raises = 0
+    for call in range(1, max_retries + 2):
         try:
-            return model(prompt)
+            reply = model(prompt)
         except Exception:
-            if attempt >= max_retries:
+            if call > max_retries:
                 raise
-            sleep(BACKOFF_DELAYS[min(attempt, len(BACKOFF_DELAYS) - 1)])
-    raise AssertionError('unreachable')
+            sleep(BACKOFF_DELAYS[min(raises, len(BACKOFF_DELAYS) - 1)])
+            raises += 1
+            continue
+        label = parse_reply(reply, labels)
+        if label is not None:
+            return label, call
+    return None, max_retries + 1
 
 
 def iter_prelabel(items: Iterable[PrelabelItem], genre, model: Model, *, out_path,
@@ -154,10 +165,7 @@ def iter_prelabel(items: Iterable[PrelabelItem], genre, model: Model, *, out_pat
             if sid in done:
                 continue
             prompt = build_prompt(item, genre)
-            label, attempts = None, 0
-            while label is None and attempts <= max_retries:
-                attempts += 1
-                label = parse_reply(_call_with_backoff(model, prompt, max_retries, sleep), labels)
+            label, attempts = _label_within_budget(model, prompt, labels, max_retries, sleep)
             rec = {'sentence_id': sid, 'doc_id': item.get('doc_id'),
                    'label': label or OTHER, 'invalid_reply': label is None,
                    'attempts': attempts, 'model': model_id,
