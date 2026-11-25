@@ -28,3 +28,5 @@ export { idPlugin, fixIds } from './idplugin.js';
 export { admitResult, filterFresh } from './stale.js';
 // overlayPlugin/overlayKey/overlayRanges (PM-01) are unwired by design; ED-01 wires the plugin into the editor.
 export { overlayPlugin, overlayKey, overlayRanges } from './overlay.js';
+// createSentenceLayer (HI-03) is unwired by design; NI-05/ED-01 wire it.
+export { createSentenceLayer } from './sentences.js';
