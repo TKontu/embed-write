@@ -38,7 +38,7 @@ Track E can start today. Track R decides whether the project continues.
 | `todo-04-analysis.md` | Pattern model, two-layer analysis | 47 | 45 | 0 | 2 | 15 |
 | `todo-05-visualization.md` | Overlays, legend, inspector | 35 | 30 | 5 | 0 | 0 |
 | `todo-06-editor.md` | Editor, app shell | 34 | 33 | 1 | 0 | 0 |
-| `todo-07-proposals.md` | Proposals, verification, edit log, automatic drafting | 46 | 43 | 3 | 0 | 7 |
+| `todo-07-proposals.md` | Proposals, verification, edit log, automatic drafting | 46 | 43 | 3 | 0 | 8 |
 | `todo-08-evaluation.md` | Evaluation harness | 29 | 26 | 2 | 1 | 1 |
 | `todo-09-corpus.md` | Reference corpus, annotation, source items | 32 | 19 | 11 | 2 |3 |
 | **Total** | | **333** | **278** | **38** | **17** | **50** |

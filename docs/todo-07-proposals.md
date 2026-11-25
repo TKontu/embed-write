@@ -61,7 +61,8 @@ Each axis is a separate, separately validated check. They are shown side by side
   - partial (R64/A1, PR #167, merge 3ae2ec2): `service/word_diff.py` word_diff(original, candidate) -> frozen DiffOp(kind, original_text, candidate_text) rows (equal/delete/insert/replace) over word-plus-trailing-whitespace tokens, difflib.SequenceMatcher(autojunk=False); both sides reconstruct exactly; proposal_diffs maps it over Proposal.candidates. Library half only; ran by OpenCode (D-008). seen: tests/test_word_diff.py 20 tests OK (gate 998 OK, rerun by planner) at head 36e566ff4f4b891ccadf05554eea3cac67714130. Unwired by design until the UX-01 UI (needs the TS stack, todo-06). Residuals: no length cap (quadratic worst case); whitespace-only changes attach to the neighbouring word.
 - [ ] **UX-02** `[A]` Accept, reject, or edit then accept; reject is one keystroke
 - [ ] **UX-03** `[A]` Proposals on request only; no unprompted ghost text
-- [ ] **UX-04** `[A]` Undo restores the original exactly — check: document hash equal after accept and undo
+- [x] **UX-04** `[A]` Undo restores the original exactly — check: document hash equal after accept and undo
+  - done (R115/A1, PR #296): `editor/src/index.js` acceptProposal + undo (ProseMirror history, one step per accept). Unwired by design until UX-02. Residual: block ids change after undo (idPlugin reassigns; hash unaffected). seen: editor/test/undo.test.js, npm test 18/18 and gate OK at head 0f510196c5dd0e7a5ac5a3e57433bf5d3860a4aa
 - [ ] **UX-05** `[A]` Acceptance statistics shown to the expert, locally
 - [ ] **UX-06** `[H]` Review of the proposal flow after a week of real use
 
