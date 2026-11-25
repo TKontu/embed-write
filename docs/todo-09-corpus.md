@@ -45,7 +45,8 @@ The corpus defines what "good" means for a genre. The selection is the single mo
 - [ ] **AN-04** `[H]` Re-annotate a 10 % sample after a week (self-agreement)
 - [ ] **AN-05** `[H]` For ~50 conclusions, mark supporting passages and source items (feeds G-07)
 - [ ] **AN-06** `[H]` Label ~200 rewrite pairs as meaning-preserving or not (feeds G-08)
-- [ ] **AN-07** `[A]` Annotation store, versioned, tied to the inventory version — check: labels from an old inventory version are never mixed in silently
+- [x] **AN-07** `[A]` Annotation store, versioned, tied to the inventory version — check: labels from an old inventory version are never mixed in silently
+  - done (R76/A2, PR #193, merge 6538c85): `AnnotationStore(path)` in service/annotation_store.py (stdlib JSONL, append-only): `append`, `read(genre, include_stale=False)`, `stale_count`, `history`; each record carries genre + `version_key`; reads under another inventory version exclude them (stale only when asked, marked `stale: True`); labels outside the genre moves/`other` refused; one fsynced line per append; a torn tail is reported with its line number and blocks appends; reads stream. Ran on Claude (D-008, Codex at usage limit). seen: tests/test_annotation_store.py 19 pass, Python gate 1127 OK (reviewer rerun at head e2c11241736ee25c3ff5b8d9558439006d7a9a5e). Unwired by design: AN-01 writes, G-01.4 reads. Residuals: supersede index (one entry per sentence and version key) untested at corpus scale; no repair tool for a torn tail; no cross-process lock (relies on O_APPEND single writes).
 
 ---
 
