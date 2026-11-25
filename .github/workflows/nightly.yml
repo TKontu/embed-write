@@ -28,6 +28,8 @@ jobs:
         run: python3 scripts/lint_no_aggregate.py
       - name: Flag gate check
         run: python3 scripts/check_flags.py
+      - name: Result report lint
+        run: python3 scripts/check_results.py
       - name: Signal gate check
         run: python3 -m analysis.signal_gates
       - name: Nightly gates

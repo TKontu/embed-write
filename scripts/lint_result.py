@@ -3,7 +3,12 @@
 
 Usage: python3 scripts/lint_result.py [--template] FILE...
 
-Unwired by design until X-02 (CI gate check) and EV-03 (report generator) call it.
+Outside --template mode the Numbers section must also state an interval as
+"95% CI [lo, hi]" and one basis line (AGENTS.md "Who judged what"):
+
+    Basis: population: <...>; metric: <...>; reference: <...>; built by: <expert | LLM>
+
+Called by scripts/check_results.py (nightly CI) and tests/test_report.py.
 """
 
 import argparse
@@ -16,6 +21,24 @@ HEADING = re.compile(r"^##\s+(.+?)\s*#*\s*$")
 PLACEHOLDER = re.compile(r"<[^<>\n]+>")
 COMMENT = re.compile(r"<!--.*?-->", re.S)
 SAMPLE_SIZE = re.compile(r"\bn\s*=\s*\d")
+_NUM = r"[-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?"
+INTERVAL = re.compile(rf"95% CI \[\s*{_NUM}\s*,\s*{_NUM}\s*\]")
+BASIS_LINE = re.compile(r"^\s*(?:[-*]\s*)?basis:(.*)$", re.I | re.M)
+BASIS_FIELDS = ("population", "metric", "reference", "built by")
+
+
+def basis_problems(body):
+    lines = BASIS_LINE.findall(body)
+    if not lines:
+        return ["Numbers section must state a basis line: Basis: population: ...; "
+                "metric: ...; reference: ...; built by: ..."]
+    fields = {}
+    for part in lines[0].split(";"):
+        key, sep, value = part.partition(":")
+        if sep:
+            fields[key.strip().lower()] = value.strip()
+    return [f"basis line missing or empty field: {name}"
+            for name in BASIS_FIELDS if not fields.get(name)]
 
 
 def sections(text):
@@ -41,8 +64,12 @@ def lint(text, template=False):
         elif not template:
             if PLACEHOLDER.search(body):
                 problems.append(f"placeholder left in section: {name}")
-            elif name == "Numbers" and not SAMPLE_SIZE.search(body):
-                problems.append("Numbers section must state a sample size as n=<count>")
+            elif name == "Numbers":
+                if not SAMPLE_SIZE.search(body):
+                    problems.append("Numbers section must state a sample size as n=<count>")
+                if not INTERVAL.search(body):
+                    problems.append("Numbers section must state an interval as 95% CI [lo, hi]")
+                problems.extend(basis_problems(body))
     return problems
 
 
