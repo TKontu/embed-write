@@ -34,14 +34,14 @@ Track E can start today. Track R decides whether the project continues.
 |---|---|---|---|---|---|---|
 | `todo-01-experiments.md` | Gates G-01 to G-11 | 58 | 30 | 16 | 12 | 0 |
 | `todo-02-embedding.md` | Embedding service, cache | 28 | 28 | 0 | 0 | 20 |
-| `todo-03-document-model.md` | Markdown round-trip, node identity | 24 | 24 | 0 | 0 | 0 |
+| `todo-03-document-model.md` | Markdown round-trip, node identity | 24 | 24 | 0 | 0 | 3 |
 | `todo-04-analysis.md` | Pattern model, two-layer analysis | 47 | 45 | 0 | 2 | 15 |
 | `todo-05-visualization.md` | Overlays, legend, inspector | 35 | 30 | 5 | 0 | 0 |
 | `todo-06-editor.md` | Editor, app shell | 34 | 33 | 1 | 0 | 0 |
 | `todo-07-proposals.md` | Proposals, verification, edit log, automatic drafting | 46 | 43 | 3 | 0 | 7 |
 | `todo-08-evaluation.md` | Evaluation harness | 29 | 26 | 2 | 1 | 1 |
 | `todo-09-corpus.md` | Reference corpus, annotation, source items | 32 | 19 | 11 | 2 |3 |
-| **Total** | | **333** | **278** | **38** | **17** | **45** |
+| **Total** | | **333** | **278** | **38** | **17** | **49** |
 
 The 38 `[H]` tasks are the critical path.
 
