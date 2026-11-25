@@ -170,14 +170,16 @@ function titlePart(title) {
   return title == null ? '' : ` "${title.replace(/["\\]/g, '\\$&')}"`;
 }
 
-/** @param {string} t */
-function codeSpan(t) {
+/** @param {string} t @param {boolean} [inTable] */
+function codeSpan(t, inTable) {
   const runs = t.match(/`+/g) ?? [];
   let n = 1;
   while (runs.some((r) => r.length === n)) n++;
   const tick = '`'.repeat(n);
   const pad = /^`|`$/.test(t) || (/^ .* $/.test(t) && t.trim() !== '') ? ' ' : '';
-  return tick + pad + t + pad + tick;
+  // GFM splits table cells on `|` before parsing code spans; `\|` keeps one cell.
+  const body = inTable ? t.replace(/\|/g, '\\|') : t;
+  return tick + pad + body + pad + tick;
 }
 
 const ORDER = ['link', 'em', 'strong'];
@@ -228,7 +230,7 @@ function inline(parent, ctx, inTable) {
       lastFootnote = fn.attrs.label;
     } else if (node.isText) {
       const t = node.text ?? '';
-      if (node.marks.some((m) => m.type.name === 'code')) out += codeSpan(t);
+      if (node.marks.some((m) => m.type.name === 'code')) out += codeSpan(t, inTable);
       else out += escapeText(t, inTable).replace(/ /g, BREAK);
     } else if (node.type.name === 'hard_break') {
       out += '\\\n';
