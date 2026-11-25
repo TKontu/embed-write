@@ -40,8 +40,8 @@ Track E can start today. Track R decides whether the project continues.
 | `todo-06-editor.md` | Editor, app shell | 34 | 33 | 1 | 0 | 0 |
 | `todo-07-proposals.md` | Proposals, verification, edit log, automatic drafting | 46 | 43 | 3 | 0 | 7 |
 | `todo-08-evaluation.md` | Evaluation harness | 29 | 26 | 2 | 1 | 1 |
-| `todo-09-corpus.md` | Reference corpus, annotation, source items | 32 | 19 | 11 | 2 | 0 |
-| **Total** | | **333** | **278** | **38** | **17** | **42** |
+| `todo-09-corpus.md` | Reference corpus, annotation, source items | 32 | 19 | 11 | 2 | 2 |
+| **Total** | | **333** | **278** | **38** | **17** | **44** |
 
 The 38 `[H]` tasks are the critical path.
 
