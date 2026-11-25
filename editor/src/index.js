@@ -9,6 +9,7 @@ import {
 } from '@milkdown/core';
 import { createTimer } from '@milkdown/ctx';
 import { schema, parseMarkdown, serializeMarkdown, overlayPlugin, idPlugin } from 'docmodel';
+import { history, undo as pmUndo, closeHistory } from '@milkdown/prose/history';
 import { views } from './render.js';
 
 const DocmodelSchemaReady = createTimer('DocmodelSchemaReady');
@@ -51,7 +52,7 @@ export async function createEditor({ root, markdown }) {
         ctx.update(t, (xs) => [...xs, DocmodelSchemaReady]);
       }
       ctx.set(defaultValueCtx, { type: 'json', value: doc.toJSON() });
-      ctx.update(prosePluginsCtx, (xs) => [...xs, overlayPlugin(), idPlugin()]);
+      ctx.update(prosePluginsCtx, (xs) => [...xs, history(), overlayPlugin(), idPlugin()]);
       ctx.update(nodeViewCtx, (xs) => [...xs, .../** @type {any[]} */ (nodeViews)]);
       ctx.update(markViewCtx, (xs) => [...xs, .../** @type {any[]} */ (markViews)]);
     })
@@ -64,4 +65,29 @@ export async function createEditor({ root, markdown }) {
     getMarkdown: () => serializeMarkdown(editor.ctx.get(editorViewCtx).state.doc),
     destroy: async () => { await editor.destroy(); },
   };
+}
+
+/**
+ * UX-04: replace [from, to) with candidate `text` in one undoable transaction. closeHistory makes
+ * each accept its own undo step even when accepts follow each other within history's group delay.
+ * Unwired by design until UX-02 (accept/reject UI) calls it.
+ * @param {{ view: import('prosemirror-view').EditorView }} ed
+ * @param {{ from: number, to: number, text: string }} proposal
+ * @returns {boolean}
+ */
+export function acceptProposal({ view }, { from, to, text }) {
+  const { state } = view;
+  if (!(0 <= from && from <= to && to <= state.doc.content.size)) return false;
+  const tr = text ? state.tr.insertText(text, from, to) : state.tr.delete(from, to);
+  view.dispatch(closeHistory(tr).scrollIntoView());
+  return true;
+}
+
+/**
+ * UX-04: undo the last history step (one accepted proposal). Unwired by design until UX-02.
+ * @param {{ view: import('prosemirror-view').EditorView }} ed
+ * @returns {boolean} false when there is nothing to undo
+ */
+export function undo({ view }) {
+  return pmUndo(view.state, view.dispatch);
 }
