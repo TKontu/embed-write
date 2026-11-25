@@ -99,4 +99,4 @@ export function undo({ view }) {
 export { renderDiff } from './diff.js';
 export { showProposal } from './proposal.js';
 export { proposalRequestKeymap } from './request.js';
-export { signalDecorations, signalDecorationsPlugin } from './decorations.js';
+export { signalDecorations, signalDecorationsPlugin, DEFAULT_WEAK_BELOW } from './decorations.js';

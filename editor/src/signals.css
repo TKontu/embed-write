@@ -1,0 +1,10 @@
+/* RE-08: signal strength by opacity only. Colour comes from the fixed genre legend (I3), never here.
+   "weak"/"strong" describe rendering of signal confidence, not text quality (I8). Not imported by JS;
+   the app shell links this stylesheet when it installs signalDecorationsPlugin (RE-10). */
+.signal-strong {
+  opacity: 1;
+}
+
+.signal-weak {
+  opacity: 0.55;
+}
