@@ -21,7 +21,7 @@ The corpus defines what "good" means for a genre. The selection is the single mo
 - [ ] **CO-07** `[A]` Near-duplicate and boilerplate detection (templates, disclaimers, repeated headers) — check: flagged passages listed for review
 - [ ] **CO-08** `[A]` Train / dev / test split **by document**, fixed and versioned — check: no report appears in two splits
 - [ ] **CO-09** `[A]` Corpus statistics: section headings in use, section lengths, sentence counts — check: report generated
-- [ ] **CO-10** `[A]` Network guard: corpus processing fails closed if a remote endpoint is configured without explicit opt-in (invariant I9) — check: test with a remote URL fails
+- [x] **CO-10** `[A]` Network guard: corpus processing fails closed if a remote endpoint is configured without explicit opt-in (invariant I9) — check: test with a remote URL fails — seen: tests/test_corpus_network_guard.py (prelabel, g02_generate, AnalysisClient); gate 1282 OK
 
 ---
 
