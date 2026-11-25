@@ -40,3 +40,54 @@ class NumberCheckTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+from service.number_check import QuantityCheck, check_quantities
+from service.source_items import Provenance, SourceItem
+
+_PROV = Provenance(source="test", locator=None, recorded_by="t", recorded_at=None)
+
+
+def _item(item_id, content, units=()):
+    return SourceItem(id=item_id, type="note", content=content, units=tuple(units), provenance=_PROV)
+
+
+class QuantityCheckTest(unittest.TestCase):
+    def test_value_match_normalised_number(self):
+        r = check_quantities("It was 12 kg.", [_item("i1", "weighed 12.0 kg")])
+        self.assertIsInstance(r, QuantityCheck)
+        self.assertEqual([m.item_ids for m in r.matches], [("i1",)])
+        self.assertEqual(r.matches[0].quantity.text, "12 kg")
+        self.assertTrue(r.all_matched)
+
+    def test_unit_mismatch_unmatched(self):
+        r = check_quantities("5 km", [_item("i1", "5 m")])
+        self.assertEqual([q.text for q in r.unmatched], ["5 km"])
+        self.assertFalse(r.all_matched)
+
+    def test_range_matches_equal_range_not_single_value(self):
+        r = check_quantities("took 3-5 h", [_item("a", "3 h"), _item("b", "between 3–5 h")])
+        self.assertEqual(r.matches[0].item_ids, ("b",))
+        r = check_quantities("took 3-5 h", [_item("a", "3 h")])
+        self.assertEqual(len(r.unmatched), 1)
+
+    def test_unitless_item_quantity_inherits_single_unit(self):
+        self.assertTrue(check_quantities("12 kg", [_item("i", "12", ["kg"])]).all_matched)
+        self.assertFalse(check_quantities("12 kg", [_item("i", "12", ["kg", "g"])]).all_matched)
+        self.assertFalse(check_quantities("12 kg", [_item("i", "12")]).all_matched)
+
+    def test_duplicate_draft_occurrences_reported_in_order(self):
+        r = check_quantities("3 h, then 7 h, then 3 h", [_item("s", "3 h")])
+        self.assertEqual([m.quantity.text for m in r.matches], ["3 h", "7 h", "3 h"])
+        self.assertEqual([m.item_ids for m in r.matches], [("s",), (), ("s",)])
+        self.assertEqual([q.text for q in r.unmatched], ["7 h"])
+
+    def test_multiple_items_listed_in_item_order(self):
+        items = iter([_item("c", "42 kg"), _item("a", "none"), _item("b", "42 kg and 42 kg")])
+        r = check_quantities("42 kg", items)
+        self.assertEqual(r.matches[0].item_ids, ("c", "b"))
+
+    def test_empty_draft_all_matched(self):
+        r = check_quantities("", [_item("s", "5 kg")])
+        self.assertEqual(r.matches, ())
+        self.assertTrue(r.all_matched)
