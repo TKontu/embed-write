@@ -115,7 +115,8 @@ This is the core of revision 2. The pattern model is built and tested offline on
 ## Distillation
 
 - [ ] **DS-01** `[A]` Store every slow-layer verdict as a candidate training label, with model version
-- [ ] **DS-02** `[A]` Expert corrections outrank slow-layer labels, which outrank nothing — check: precedence unit test
+- [x] **DS-02** `[A]` Expert corrections outrank slow-layer labels, which outrank nothing — check: precedence unit test
+  - done (R124/A2, PR #317, merge 5e14bd7): analysis/label_precedence.py resolve_labels (expert > slow_layer, latest timestamp then later position within a source, streamed, ValueError names index). seen: tests/test_label_precedence.py 10 OK, gate OK at head 3b45689f25f4ecdc25802680a5099d14874877be (rerun by planner). Unwired by design: DS-01 and PT-01 consume it.
 - [ ] **DS-03** `[A]` Scheduled retraining of the classifier head; a new head is adopted only if held-out F1 against expert labels does not drop — check: regression gate in the retraining job
 - [ ] **DS-04** `[A]` Drift report after each retraining: disagreement rate before and after
 
