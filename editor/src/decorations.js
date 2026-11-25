@@ -10,12 +10,20 @@ import { keydownHandler } from '@milkdown/prose/keymap';
 const LAYERS = new Set(['provisional', 'confirmed']);
 // RE-08: confidence below this renders weak (lower opacity via signals.css). Rendering words only (I8).
 export const DEFAULT_WEAK_BELOW = 0.5;
+// RE-10: overlay selector; one overlay at a time. A signal without `overlay` belongs to 'moves'.
+export const OVERLAYS = Object.freeze(['moves', 'register', 'support', 'redundancy', 'topic']);
+export const DEFAULT_OVERLAY = 'moves';
+/** @param {unknown} name @param {string} what @returns {string} */
+const checkOverlay = (name, what) => {
+  if (typeof name !== 'string' || !OVERLAYS.includes(name)) throw new Error(`${what} must be one of ${OVERLAYS.join(', ')}: ${name}`);
+  return name;
+};
 
 /**
- * @typedef {{ node_id: string, kind: string, confidence: number, layer: string }} Signal
+ * @typedef {{ node_id: string, kind: string, confidence: number, layer: string, overlay?: string }} Signal
  * @param {import('prosemirror-model').Node} doc
  * @param {Signal[]} signals
- * @param {{ weakBelow?: number }} [opts]
+ * @param {{ weakBelow?: number, overlay?: string }} [opts] overlay: decorate only that overlay's signals (all when absent)
  * @returns {DecorationSet}
  */
 export function signalDecorations(doc, signals, opts = {}) {
@@ -23,6 +31,7 @@ export function signalDecorations(doc, signals, opts = {}) {
   if (typeof weakBelow !== 'number' || !Number.isFinite(weakBelow) || weakBelow < 0 || weakBelow > 1) {
     throw new Error(`weakBelow must be a finite number in [0,1]: ${weakBelow}`);
   }
+  const only = opts.overlay === undefined ? undefined : checkOverlay(opts.overlay, 'overlay');
   /** @type {Map<string, { pos: number, size: number }>} */
   const byId = new Map();
   doc.descendants((node, pos) => {
@@ -36,6 +45,8 @@ export function signalDecorations(doc, signals, opts = {}) {
     if (typeof c !== 'number' || !Number.isFinite(c) || c < 0 || c > 1) {
       throw new Error(`signal confidence must be a finite number in [0,1]: ${c}`);
     }
+    const overlay = checkOverlay(s.overlay === undefined ? DEFAULT_OVERLAY : s.overlay, 'signal overlay');
+    if (only !== undefined && overlay !== only) continue;
     const hit = byId.get(s.node_id);
     if (!hit) continue;
     const strength = c < weakBelow ? 'weak' : 'strong';
@@ -44,6 +55,7 @@ export function signalDecorations(doc, signals, opts = {}) {
       'data-signal-layer': s.layer,
       'data-signal-confidence': String(c),
       'data-signal-strength': strength,
+      'data-signal-overlay': overlay,
       class: `signal signal-${s.layer} signal-${strength}`,
     }));
   }
@@ -54,13 +66,34 @@ export function signalDecorations(doc, signals, opts = {}) {
 // RE-10 / the app shell installs signalDecorationsPlugin.
 export const DEFAULT_OFF_SHORTCUT = 'Mod-Shift-o';
 const RESERVED = new Set(['mod-shift-p']); // UX-03 proposal request (request.js)
-/** @type {PluginKey<{ on: boolean }>} */
+/** @type {PluginKey<{ on: boolean, overlay: string }>} */
 export const signalOverlayKey = new PluginKey('signalOverlay');
 
 /** @param {import('prosemirror-state').EditorState} state @returns {boolean} */
 export function isSignalOverlayOn(state) {
   const s = signalOverlayKey.getState(state);
   return !!(s && s.on);
+}
+
+/** @param {import('prosemirror-state').EditorState} state @returns {string | undefined} */
+export function selectedSignalOverlay(state) {
+  const s = signalOverlayKey.getState(state);
+  return s ? s.overlay : undefined;
+}
+
+/**
+ * RE-10: build a ProseMirror command selecting overlay `name` (throws on an unknown name).
+ * @param {string} name
+ * @returns {(state: import('prosemirror-state').EditorState, dispatch?: (tr: import('prosemirror-state').Transaction) => void) => boolean}
+ */
+export function setSignalOverlay(name) {
+  const overlay = checkOverlay(name, 'overlay');
+  return (state, dispatch) => {
+    const s = signalOverlayKey.getState(state);
+    if (!s) return false;
+    if (dispatch) dispatch(state.tr.setMeta(signalOverlayKey, { ...s, overlay }));
+    return true;
+  };
 }
 
 /**
@@ -70,14 +103,15 @@ export function isSignalOverlayOn(state) {
  * @returns {boolean}
  */
 export function toggleSignalOverlay(state, dispatch) {
-  if (!signalOverlayKey.getState(state)) return false;
-  if (dispatch) dispatch(state.tr.setMeta(signalOverlayKey, { on: !isSignalOverlayOn(state) }));
+  const s = signalOverlayKey.getState(state);
+  if (!s) return false;
+  if (dispatch) dispatch(state.tr.setMeta(signalOverlayKey, { ...s, on: !s.on }));
   return true;
 }
 
 /**
  * @param {() => Signal[]} getSignals
- * @param {{ weakBelow?: number, initiallyOn?: boolean, offShortcut?: string }} [opts]
+ * @param {{ weakBelow?: number, initiallyOn?: boolean, offShortcut?: string, initialOverlay?: string }} [opts]
  * @returns {Plugin}
  */
 export function signalDecorationsPlugin(getSignals, opts = {}) {
@@ -87,16 +121,18 @@ export function signalDecorationsPlugin(getSignals, opts = {}) {
   if (typeof shortcut !== 'string' || !shortcut || RESERVED.has(shortcut.toLowerCase())) {
     throw new Error(`offShortcut must be a non-empty string other than Mod-Shift-p: ${shortcut}`);
   }
+  const initialOverlay = checkOverlay(opts.initialOverlay === undefined ? DEFAULT_OVERLAY : opts.initialOverlay, 'initialOverlay');
   const { weakBelow } = opts;
   return new Plugin({
     key: signalOverlayKey,
     state: {
-      init: () => ({ on: initiallyOn }),
+      init: () => ({ on: initiallyOn, overlay: initialOverlay }),
       apply: (tr, prev) => tr.getMeta(signalOverlayKey) || prev,
     },
     props: {
       decorations: (state) => (isSignalOverlayOn(state)
-        ? signalDecorations(state.doc, getSignals(), { weakBelow }) : DecorationSet.empty),
+        ? signalDecorations(state.doc, getSignals(), { weakBelow, overlay: selectedSignalOverlay(state) })
+        : DecorationSet.empty),
       handleKeyDown: keydownHandler({ [shortcut]: toggleSignalOverlay }),
     },
   });

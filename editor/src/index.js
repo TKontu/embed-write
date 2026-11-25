@@ -100,4 +100,5 @@ export { renderDiff } from './diff.js';
 export { showProposal } from './proposal.js';
 export { proposalRequestKeymap } from './request.js';
 export { signalDecorations, signalDecorationsPlugin, DEFAULT_WEAK_BELOW, DEFAULT_OFF_SHORTCUT,
-  signalOverlayKey, toggleSignalOverlay, isSignalOverlayOn } from './decorations.js';
+  signalOverlayKey, toggleSignalOverlay, isSignalOverlayOn, OVERLAYS, DEFAULT_OVERLAY, setSignalOverlay,
+  selectedSignalOverlay } from './decorations.js';
