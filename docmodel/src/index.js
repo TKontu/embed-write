@@ -30,3 +30,5 @@ export { admitResult, filterFresh } from './stale.js';
 export { overlayPlugin, overlayKey, overlayRanges } from './overlay.js';
 // createSentenceLayer (HI-03) is unwired by design; NI-05/ED-01 wire it.
 export { createSentenceLayer } from './sentences.js';
+// sentenceIndex/resolveSentenceKey/parseSentenceKey (NI-05) are unwired by design; ED-01 / edit log wire it.
+export { sentenceIndex, resolveSentenceKey, parseSentenceKey } from './sentencekeys.js';

@@ -1,0 +1,62 @@
+[
+  {
+    "block_id": "b1",
+    "sentences": [
+      "Aa.",
+      "Bb."
+    ],
+    "hashes": [
+      "3e6f62964e72495c34fec17ebeef34d23d49049cca0720566daa788af2be44af",
+      "54a06289cb92c8654f090e3ded6c8e4a2bf50f015b07f1f1dfbf8737eb30b46f"
+    ],
+    "keys": [
+      "b1:3e6f62964e72495c34fec17ebeef34d23d49049cca0720566daa788af2be44af",
+      "b1:54a06289cb92c8654f090e3ded6c8e4a2bf50f015b07f1f1dfbf8737eb30b46f"
+    ]
+  },
+  {
+    "block_id": "b1",
+    "sentences": [],
+    "hashes": [],
+    "keys": []
+  },
+  {
+    "block_id": "01HZX",
+    "sentences": [
+      "Aa.",
+      "Aa.",
+      "Bb.",
+      "Aa."
+    ],
+    "hashes": [
+      "3e6f62964e72495c34fec17ebeef34d23d49049cca0720566daa788af2be44af",
+      "3e6f62964e72495c34fec17ebeef34d23d49049cca0720566daa788af2be44af",
+      "54a06289cb92c8654f090e3ded6c8e4a2bf50f015b07f1f1dfbf8737eb30b46f",
+      "3e6f62964e72495c34fec17ebeef34d23d49049cca0720566daa788af2be44af"
+    ],
+    "keys": [
+      "01HZX:3e6f62964e72495c34fec17ebeef34d23d49049cca0720566daa788af2be44af",
+      "01HZX:3e6f62964e72495c34fec17ebeef34d23d49049cca0720566daa788af2be44af#1",
+      "01HZX:54a06289cb92c8654f090e3ded6c8e4a2bf50f015b07f1f1dfbf8737eb30b46f",
+      "01HZX:3e6f62964e72495c34fec17ebeef34d23d49049cca0720566daa788af2be44af#2"
+    ]
+  },
+  {
+    "block_id": "blk",
+    "sentences": [
+      "Same.",
+      "Same.",
+      "Same."
+    ],
+    "hashes": [
+      "959befa0a999a0c59d7a7e1441a75f88d5a0fb98b343e6aa98a17ae0f86b11f8",
+      "959befa0a999a0c59d7a7e1441a75f88d5a0fb98b343e6aa98a17ae0f86b11f8",
+      "959befa0a999a0c59d7a7e1441a75f88d5a0fb98b343e6aa98a17ae0f86b11f8"
+    ],
+    "keys": [
+      "blk:959befa0a999a0c59d7a7e1441a75f88d5a0fb98b343e6aa98a17ae0f86b11f8",
+      "blk:959befa0a999a0c59d7a7e1441a75f88d5a0fb98b343e6aa98a17ae0f86b11f8#1",
+      "blk:959befa0a999a0c59d7a7e1441a75f88d5a0fb98b343e6aa98a17ae0f86b11f8#2"
+    ]
+  }
+]
