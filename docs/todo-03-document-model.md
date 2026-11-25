@@ -52,7 +52,8 @@ No research risk and total structural risk. If node IDs are not stable, the cach
 
 ## Hashing and dirty sets
 
-- [ ] **HS-01** `[A]` Normalized text per node (whitespace collapsed, marks stripped) and blake3 hash
+- [x] **HS-01** `[A]` Normalized text per node (whitespace collapsed, marks stripped) and blake3 hash
+  - done (R80/A1, PR #208, merge f428af3): `normalizeText(node)`, `hashText(str)`, `nodeHash(node)` in docmodel/src/hash.js, exported from index.js; text content with marks and all attrs (ids, markers) ignored, hard breaks and block boundaries as one space, Unicode whitespace runs collapsed, trimmed; blake3 (@noble/hashes 1.8.0, pinned) over UTF-8, 64-char lowercase hex. Ran on Claude (D-008, Codex at usage limit). seen: docmodel/test/hash.test.js (acceptance a-g incl. blake3 empty vector), docmodel 142/142 reviewer rerun at head a61a5baad891cb50a0b90ce088031c687edc0b4a and on main, Python gate 1127 OK (coordinator .venv; lane lacked pysbd). Unwired by design; NI-02/HI-03/PM-02 wire it. Residuals: no NFC normalization; atoms (image, html_block, front_matter, thematic_break) hash as empty text, so all such nodes share one hash.
 - [ ] **HS-02** `[A]` Dirty set from a transaction: changed nodes plus ancestors
 - [ ] **HS-03** `[A]` Coalescing of rapid keystrokes into one dirty set
 - [ ] **HS-04** `[A]` Correctness under undo and redo — check: property test comparing incremental dirty sets with a full recompute
