@@ -26,7 +26,7 @@ from pathlib import Path
 
 
 DEFAULT_TARGETS = ('service/support_check.py', 'service/length_delta.py',
-                   'service/number_check.py')
+                   'service/number_check.py', 'service/verify_panel.py')
 NAME_RE = re.compile(r'(aggregate|overall|combined|composite|total)_?score'
                      r'|score_?(sum|total|mean|avg)|weighted_(sum|score)', re.I)
 COMBINERS = {'sum', 'mean', 'fmean', 'average'}
