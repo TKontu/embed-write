@@ -18,5 +18,7 @@ export { normalizeText, nodeHash, hashText } from './hash.js';
 export { dirtySet, dirtyRanges } from './dirty.js';
 // Sidecar helpers (NI-02) are unwired by design; NI-03/ED-01 wire them.
 export { buildSidecar, serializeSidecar, parseSidecar, sidecarPath } from './sidecar.js';
+// createCoalescer (HS-03) is unwired by design; ED-01 wires it, HS-04 tests it.
+export { createCoalescer } from './coalesce.js';
 // reattachIds (NI-03) is unwired by design; ED-01 wires document open.
 export { reattachIds } from './reattach.js';
