@@ -1,0 +1,24 @@
+{
+  "name": "docmodel",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Markdown <-> ProseMirror document model (DM-01: parse pipeline)",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test test/parse.test.js"
+  },
+  "dependencies": {
+    "prosemirror-model": "1.25.13",
+    "remark-frontmatter": "5.0.0",
+    "remark-gfm": "4.0.1",
+    "remark-parse": "11.0.0",
+    "unified": "11.0.5"
+  }
+}

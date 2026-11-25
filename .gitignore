@@ -50,3 +50,6 @@ src-tauri/target/
 .idea/
 .DS_Store
 Thumbs.db
+
+# docmodel (Node) dependencies
+docmodel/node_modules/
