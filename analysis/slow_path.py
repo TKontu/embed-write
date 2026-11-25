@@ -1,5 +1,7 @@
 """LY-02 wires LY-04/05/06; unwired by design until LY-01/analysis service.
 
+Optional DS-01 label_store receives one candidate per accepted fresh Signal.
+
 Only the injected review runs outside the state lock. No LLM or corpus is loaded.
 The owner must call note_edit on every relevant edit, including context changes.
 Context is JSON data (string-keyed objects, finite numbers); its canonical UTF-8
@@ -18,6 +20,7 @@ from dataclasses import replace
 from hashlib import sha256
 import json
 from threading import Lock
+import time
 
 from analysis.reconcile_layers import LayerReconciler
 from analysis.signals import Signal
@@ -72,13 +75,18 @@ class SlowPath:
     """
 
     def __init__(self, review, *, max_workers=2, max_pending=8, cache_entries=128,
-                 reconciler=None):
+                 reconciler=None, label_store=None, model_version=None, clock=time.time):
         for name, value in [('max_workers', max_workers), ('max_pending', max_pending)]:
             if isinstance(value, bool) or not isinstance(value, int) or value < 1:
                 raise ValueError(f'{name} must be an int >= 1')
         if not callable(review):
             raise TypeError('review must be callable')
+        if label_store is not None and (not isinstance(model_version, str) or not model_version):
+            raise ValueError('model_version must be a non-empty str when label_store is given')
         self._review = review
+        self._label_store = label_store
+        self._model_version = model_version
+        self._clock = clock
         self._cache = SlowLayerCache(cache_entries)
         self._guard = StalenessGuard()
         self._reconciler = reconciler if reconciler is not None else LayerReconciler()
@@ -125,6 +133,15 @@ class SlowPath:
         for signal in signals:
             self._reconciler.offer(deepcopy(signal), content)
 
+    def _store(self, signals):
+        # DS-01: accepted fresh verdicts only; cached replays never reach here.
+        if self._label_store is None:
+            return
+        for signal in signals:
+            label = json.dumps([signal.level, signal.kind, signal.value], sort_keys=True,
+                               separators=(',', ':'), ensure_ascii=False, allow_nan=False)
+            self._label_store.append(signal.node_id, label, self._model_version, self._clock())
+
     def _run(self, text, context, content, context_hash, ticket, result):
         error = None
         try:
@@ -139,6 +156,7 @@ class SlowPath:
             try:
                 if error is None and accepted:
                     self._publish(signals, content)
+                    self._store(signals)
                     self._cache.put(content, context_hash, signals)
             except Exception as exc:
                 error = exc
