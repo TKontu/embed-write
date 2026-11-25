@@ -12,6 +12,7 @@ import { schema, parseMarkdown, serializeMarkdown, overlayPlugin, idPlugin } fro
 import { history, undo as pmUndo, closeHistory } from '@milkdown/prose/history';
 import { views } from './render.js';
 import { proposalRequestKeymap } from './request.js';
+import { sourceView } from './source.js';
 
 const DocmodelSchemaReady = createTimer('DocmodelSchemaReady');
 
@@ -40,7 +41,7 @@ const entries = (om) => { /** @type {[string, any][]} */ const out = []; om.forE
  * One document in memory; no corpus loop.
  * UX-03: when `onRequest` is given, Mod-Shift-p on a selection calls it (proposalRequestKeymap).
  * @param {{ root: HTMLElement, markdown: string, onRequest?: (req: { from: number, to: number, text: string }) => void }} opts
- * @returns {Promise<{ editor: Editor, view: import('prosemirror-view').EditorView, getMarkdown: () => string, destroy: () => Promise<void> }>}
+ * @returns {Promise<{ editor: Editor, view: import('prosemirror-view').EditorView, getMarkdown: () => string, destroy: () => Promise<void>, showSource: () => void, showRich: () => void, isSourceView: () => boolean }>}
  */
 export async function createEditor({ root, markdown, onRequest }) {
   const doc = parseMarkdown(markdown);
@@ -64,11 +65,16 @@ export async function createEditor({ root, markdown, onRequest }) {
     .use(docmodelSchema)
     .create();
   const view = editor.ctx.get(editorViewCtx);
+  // ED-04: while in source view, getMarkdown returns the textarea text verbatim.
+  const src = sourceView(root, () => editor.ctx.get(editorViewCtx));
   return {
     editor,
     view,
-    getMarkdown: () => serializeMarkdown(editor.ctx.get(editorViewCtx).state.doc),
-    destroy: async () => { await editor.destroy(); },
+    getMarkdown: () => src.text() ?? serializeMarkdown(editor.ctx.get(editorViewCtx).state.doc),
+    showSource: src.showSource,
+    showRich: src.showRich,
+    isSourceView: src.isSourceView,
+    destroy: async () => { src.remove(); await editor.destroy(); },
   };
 }
 
