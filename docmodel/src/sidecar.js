@@ -7,7 +7,9 @@ import { nodeHash } from './hash.js';
  * @typedef {{id: string, path: number[], hash: string, type: string}} SidecarNode
  * @typedef {{node: string, from: number, to: number, sources: string[]}} SidecarLink
  * @typedef {{genre: string, genre_version: number, genre_hash: string}} GenreBinding
- * @typedef {{version: number, nodes: SidecarNode[], genre?: GenreBinding | null, links?: SidecarLink[]}} Sidecar
+ * @typedef {{node: string, kind: 'human' | 'machine' | 'machine-edited', run: string | null}} SidecarProvenance
+ * @typedef {{version: number, nodes: SidecarNode[], genre?: GenreBinding | null, links?: SidecarLink[],
+ *   provenance?: SidecarProvenance[]}} Sidecar
  */
 
 /** @param {import('prosemirror-model').Node} doc */
@@ -75,8 +77,30 @@ function canonicalLink(value, index) {
   return { node: value.node, from: value.from, to: value.to, sources: [...sources].sort() };
 }
 
+const PROVENANCE_KEYS = ['node', 'kind', 'run'];
+const PROVENANCE_KINDS = ['human', 'machine', 'machine-edited'];
+
+/** SL-03: one node's draft provenance. Machine kinds need a run id; human has run null.
+ * @param {any} value @param {number} index @returns {SidecarProvenance}
+ */
+function canonicalProvenance(value, index) {
+  const at = `sidecar: provenance[${index}]`;
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${at} must be an object`);
+  for (const key of Object.keys(value)) {
+    if (!PROVENANCE_KEYS.includes(key)) throw new Error(`${at} has unknown key ${key}`);
+  }
+  if (typeof value.node !== 'string' || value.node.length === 0) throw new Error(`${at}.node must be a non-empty string`);
+  if (!PROVENANCE_KINDS.includes(value.kind)) throw new Error(`${at}.kind must be human, machine or machine-edited`);
+  if (!Object.hasOwn(value, 'run')) throw new Error(`${at}.run is required`);
+  if (value.kind === 'human' ? value.run !== null : !(typeof value.run === 'string' && value.run.length > 0)) {
+    throw new Error(`${at}.run must be ${value.kind === 'human' ? 'null for human' : 'a non-empty string for machine kinds'}`);
+  }
+  return { node: value.node, kind: value.kind, run: value.run };
+}
+
 /** Validate the version-1 boundary and rebuild keys in their canonical order.
- * `links` entries are SL-02 span-to-source links (see canonicalLink).
+ * `links` entries are SL-02 span-to-source links (see canonicalLink). `provenance` entries are
+ * SL-03 records (see canonicalProvenance): unique node, sorted by node, human entries omitted.
  * @param {any} value
  * @returns {Sidecar}
  */
@@ -105,6 +129,17 @@ function canonicalSidecar(value) {
   if (Object.hasOwn(value, 'links')) {
     if (!Array.isArray(value.links)) throw new Error('sidecar: links must be an array');
     result.links = value.links.map(canonicalLink);
+  }
+  if (Object.hasOwn(value, 'provenance')) {
+    if (!Array.isArray(value.provenance)) throw new Error('sidecar: provenance must be an array');
+    const entries = value.provenance.map(canonicalProvenance);
+    const seen = new Set();
+    entries.forEach((e, i) => {
+      if (seen.has(e.node)) throw new Error(`sidecar: provenance[${i}] duplicates node ${e.node}`);
+      seen.add(e.node);
+    });
+    result.provenance = entries.filter((e) => e.kind !== 'human')
+      .sort((a, b) => (a.node < b.node ? -1 : a.node > b.node ? 1 : 0));
   }
   return result;
 }

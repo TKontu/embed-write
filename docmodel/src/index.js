@@ -38,3 +38,8 @@ export { sentenceIndex, resolveSentenceKey, parseSentenceKey } from './sentencek
 export { normalizeHeading, mapSectionTypes } from './sectiontypes.js';
 // linksPlugin/linksKey/currentLinks/resolveLinks (SL-02) are unwired by design; ED-01 wires the plugin and sidecar save/open, BH-06/generation write sources.
 export { linksPlugin, linksKey, currentLinks, resolveLinks } from './links.js';
+// provenancePlugin/provenanceKey/provenanceOf/currentProvenance/provenanceChanges (SL-03) are unwired by design;
+// ED-01 wires the plugin and sidecar save/open, AD-06/generation insert machine nodes, EL-02/IA-05 consume changes.
+export {
+  provenancePlugin, provenanceKey, provenanceOf, currentProvenance, provenanceChanges,
+} from './provenance.js';
