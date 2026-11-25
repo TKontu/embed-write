@@ -76,3 +76,17 @@ Append-only record of operator rulings and architecture decisions.
   private data.
 - **Unblocks:** the TS stack (editor, app shell, and the document-model and visualization rows).
   Needs a Rust toolchain and Node for the frontend build; installs follow D-005's pattern.
+
+## D-008 — Lane fallback when Codex is saturated (2026-11-25, operator)
+
+- **Ruling:** Codex stays the first choice for executor lanes (D-001). When Codex is at its usage
+  limit, rounds do not wait or halt: they run lanes on Claude and OpenCode, spread across both.
+- **OpenCode launch:** `opencode run --auto -m fireworks-ai/accounts/fireworks/models/deepseek-v4p1-flash-1017 "<task>"`,
+  inside the lane worktree in its Herdr tab. The model is the one the iknosreview loop approved;
+  change it only by a new decision.
+- **Lane tabs:** open every lane tab with `herdr tab create --cwd <lane worktree>`, so
+  `lane_cleanup.py` can link a tab to its lane. Tabs opened in the main checkout are held as
+  `foreign`.
+- **Why:** on 2026-11-24 the planner waited out a Codex limit, ran three empty rounds and halted
+  ("main unchanged across 3 rounds").
+- **Record:** HANDOFF.md names the harness each lane ran on.
