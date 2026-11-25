@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseMarkdown, schema, UnsupportedNodeError } from '../src/index.js';
+import { parseMarkdown, serializeMarkdown, schema, UnsupportedNodeError } from '../src/index.js';
 
 // toJSON() attrs use null-prototype objects; round-trip through JSON for plain deepEqual.
 const json = (md) => JSON.parse(JSON.stringify(parseMarkdown(md).toJSON()));
@@ -216,4 +216,17 @@ test('schema declares every DM-01 node and mark', () => {
   const marks = ['em', 'strong', 'code', 'link', 'footnote_reference'];
   for (const n of nodes) assert.ok(schema.nodes[n], n);
   for (const m of marks) assert.ok(schema.marks[m], m);
+});
+
+test('TOML front matter throws UnsupportedNodeError naming TOML front matter', () => {
+  assert.throws(() => parseMarkdown('+++\ntitle = "x"\n+++\n\nBody\n'),
+    (e) => e instanceof UnsupportedNodeError && /TOML front matter/.test(e.message));
+});
+
+test('+++ not at document start still parses and round-trips', () => {
+  for (const src of ['Body\n\n+++\n\nmore +++ here\n', '# Title\n\n+++\nx = 1\n+++\n']) {
+    const doc = parseMarkdown(src);
+    assert.equal(doc.type.name, 'doc');
+    assert.deepEqual(parseMarkdown(serializeMarkdown(doc)).toJSON(), doc.toJSON());
+  }
 });

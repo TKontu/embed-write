@@ -48,3 +48,14 @@ test('doc JSON drift after re-parse opens read-only (injected)', () => {
 test('non-Error/other parse failures propagate', () => {
   assert.throws(() => openMarkdown(/** @type {any} */ (42)));
 });
+
+test('TOML front matter opens read-only with a warning, bytes unchanged', () => {
+  const src = '+++\ntitle = "x"\n+++\n\nBody\n';
+  const before = sha(src);
+  const res = openMarkdown(src);
+  assert.equal(res.readOnly, true);
+  assert.equal(res.doc, null);
+  assert.equal(res.warnings.length, 1);
+  assert.match(res.warnings[0], /TOML front matter/);
+  assert.equal(sha(src), before);
+});

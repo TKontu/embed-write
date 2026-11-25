@@ -49,13 +49,7 @@ for (const [name, src] of Object.entries(REJECTED)) {
   });
 }
 
-// TOML front matter is NOT rejected at this base: remark-frontmatter is configured for yaml only,
-// so a +++ block parses as paragraph text (residual: contradicts the DM-01 record; policy is DM-05).
-test('TOML front matter: parsed as paragraph text, not front_matter, and round-trips', () => {
-  const src = '+++\ntitle = "x"\n+++\n\nbody\n';
-  const doc1 = parseMarkdown(src);
-  assert.equal(doc1.firstChild.type.name, 'paragraph');
-  const out1 = serializeMarkdown(doc1);
-  assert.deepEqual(json(parseMarkdown(out1)), json(doc1));
-  assert.equal(serializeMarkdown(parseMarkdown(out1)), out1);
+// TOML front matter is rejected (R78/A2): remark-frontmatter recognises toml and parse throws.
+test('TOML front matter throws UnsupportedNodeError', () => {
+  assert.throws(() => parseMarkdown('+++\ntitle = "x"\n+++\n\nbody\n'), UnsupportedNodeError);
 });
