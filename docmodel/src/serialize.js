@@ -22,6 +22,8 @@ export function serializeMarkdown(doc, opts = {}) {
   const defs = new Map();
   const ctx = { opts, defs };
   const parts = children(doc, ctx);
+  // A leading `---` would reopen as YAML front matter on reparse (DM-04 fuzz finding).
+  if (doc.firstChild?.type.name === 'thematic_break') parts[0] = '***';
   if (defs.size) {
     parts.push([...defs].map(([ref, d]) => `[${ref}]: ${destination(d.href)}${titlePart(d.title)}`).join('\n'));
   }
@@ -67,7 +69,7 @@ function block(node, ctx) {
         const last = text.split('\n').pop() ?? '';
         return `${text}\n${(node.attrs.level === 1 ? '=' : '-').repeat(Math.max(3, last.length))}`;
       }
-      return `${'#'.repeat(node.attrs.level)} ${text.replace(/#+$/, (m) => '\\' + m).replace(/\n/g, ' ')}`.trimEnd();
+      return `${'#'.repeat(node.attrs.level)} ${text.replace(/(?<!\\)#+$/, (m) => '\\' + m).replace(/\n/g, ' ')}`.trimEnd();
     }
     case 'blockquote':
       return indent(children(node, ctx).join('\n\n'), '> ', '> ');
