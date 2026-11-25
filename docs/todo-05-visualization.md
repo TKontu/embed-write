@@ -28,6 +28,7 @@ Colour is the expert's main channel into the pattern model. Revision 2 replaces 
 ## Rendering
 
 - [ ] **RE-01** `[A]` Decorations built from signals through ProseMirror `DecorationSet`
+  - partial (R120/A1, PR #308, merge 18d24d6): editor library half: `editor/src/decorations.js` signalDecorations(doc, signals) -> DecorationSet (one Decoration.node per signal whose node_id matches a block `id`; data-signal-kind/layer/confidence attrs and class "signal signal-<layer>", no colours (I3); unknown node_id skipped; bad layer or confidence outside finite [0,1] throws; one pass over doc into a Map) and signalDecorationsPlugin(getSignals). seen: editor/test/decorations.test.js 5 tests, npm test 43/43 and gate 1430 OK at head d15ca7e7d338f3fce6451d6a482e868c2750ea75 (rerun by planner, node_modules linked). Stays partial: unwired by design until the overlay selector (RE-10) / app shell installs the plugin with real signals.
 - [ ] **RE-02** `[A]` Viewport-scoped decoration: visible nodes plus a margin — check: build time under 16 ms for a viewport
 - [ ] **RE-03** `[A]` Section level: margin ribbon showing the move sequence, with markers for missing, misplaced and foreign moves
 - [ ] **RE-04** `[A]` Paragraph and sentence level: tint by move
