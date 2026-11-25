@@ -1,0 +1,271 @@
+"""G-02.3 generation runner. LLM-built synthetic fixtures, a fake model and a fake critic only."""
+import hashlib
+import json
+import os
+import re
+import tempfile
+import unittest
+
+from experiments import g02_generate as gen
+
+
+def notes(n=5):
+    return [{'section_id': f'{r}-s{i}', 'report_id': r, 'section_type': 'intro',
+             'notes': f'{r} notes token{i} shared fact'} for i, r in enumerate(f'r{i}' for i in range(n))]
+
+
+def pool():
+    return [
+        {'section_id': 'ex1', 'report_id': 'r1', 'section_type': 'intro',
+         'text': 'Alpha beta gamma uniform words about shared fact.'},
+        {'section_id': 'ex2', 'report_id': 'r2', 'section_type': 'intro',
+         'text': 'Delta epsilon zeta uniform words about shared fact.'},
+        {'section_id': 'ex3', 'report_id': 'r3', 'section_type': 'method',
+         'text': 'Eta theta iota other words entirely.'},
+    ]
+
+
+def read(path):
+    with open(path, encoding='utf-8') as fh:
+        return [json.loads(line) for line in fh if line.strip()]
+
+
+class FakeModel:
+    """Answers from the prompt: section id, exemplar markers and candidate variant."""
+    model_id = 'fake-1'
+
+    def __init__(self):
+        self.prompts = []
+
+    def __call__(self, prompt):
+        self.prompts.append(prompt)
+        sid = re.search(r'NOTES:\n(.+)', prompt).group(1)
+        variant = re.search(r'Draft variant (\d+) of', prompt)
+        if variant:
+            return f'{sid} candidate {variant.group(1)}'
+        arm = 'B' if 'EXEMPLARS:' in prompt else 'A'
+        return f'{sid} arm {arm}'
+
+
+class FakeCritic:
+    def __init__(self, scores):
+        self.scores = scores
+        self.calls = []
+
+    def __call__(self, candidate, context):
+        self.calls.append((candidate, context))
+        return self.scores.get(candidate, 0.0)
+
+
+def critic_for_candidates(best):
+    class C:
+        def __call__(self, candidate, context):
+            return 10.0 if candidate.endswith(f'candidate {best}') else float(candidate[-1])
+    return C()
+
+
+class GenerateTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.out = os.path.join(self.tmp.name, 'runs.jsonl')
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_three_records_per_section_and_no_same_report_exemplar(self):
+        recs = notes(30)
+        # Every section's own report contributes an exemplar that must never be used.
+        big_pool = [{'section_id': f'{r}-ex{j}', 'report_id': r, 'section_type': 'intro',
+                     'text': 'shared fact token words'}
+                    for r in (f'r{i}' for i in range(30)) for j in range(2)]
+        big_pool += [{'section_id': 'far', 'report_id': 'other', 'section_type': 'intro',
+                      'text': 'shared fact token words'}]
+        model = FakeModel()
+        out = gen.generate(recs, big_pool, model, out_path=self.out,
+                           critic=FakeCritic({}), k_exemplars=3, n_candidates=3)
+        self.assertEqual(len(out), 90)
+        by_section = {}
+        for r in out:
+            by_section.setdefault(r['section_id'], []).append(r['arm'])
+        for sid, arms in by_section.items():
+            self.assertEqual(sorted(arms), ['A', 'B', 'C'])
+        for r in out:
+            self.assertNotIn(r['report_id'], r['exemplar_report_ids'])
+            self.assertNotIn(r['section_id'], r['exemplar_section_ids'])
+        self.assertEqual(len(by_section), 30)
+        s = gen.summarize(read(self.out), expected_sections=30)
+        self.assertTrue(s['complete'], s)
+        self.assertEqual(s['n_sections'], 30)
+        self.assertEqual(s['missing'], [])
+        self.assertEqual(s['same_report_exemplars'], [])
+
+    def test_exemplars_come_from_other_reports_only(self):
+        target = notes(1)[0]
+        local_pool = [
+            {'section_id': 'same-1', 'report_id': target['report_id'], 'section_type': 'intro',
+             'text': 'shared fact token words'},
+            {'section_id': 'same-2', 'report_id': target['report_id'], 'section_type': 'intro',
+             'text': 'shared fact token words'},
+            {'section_id': 'other-1', 'report_id': 'other', 'section_type': 'intro',
+             'text': 'shared fact token words'},
+            {'section_id': 'other-2', 'report_id': 'other2', 'section_type': 'intro',
+             'text': 'shared fact token words'},
+        ]
+        out = gen.generate([target], local_pool, FakeModel(), out_path=self.out,
+                           critic=FakeCritic({}), k_exemplars=3, n_candidates=2)
+        for r in out:
+            self.assertTrue(set(r['exemplar_report_ids']) <= {'other', 'other2'}, r)
+        self.assertEqual(len([r for r in out if r['arm'] == 'B'][0]['exemplar_section_ids']), 2)
+
+    def test_injected_retriever_cannot_leak_the_same_report(self):
+        target = notes(1)[0]
+
+        def leaky(record, pool_):
+            return [{'section_id': 'leak', 'report_id': record['report_id'],
+                     'section_type': 'intro', 'text': 'same report text'}]
+
+        out = gen.generate([target], [], FakeModel(), out_path=self.out,
+                           critic=FakeCritic({}), retriever=leaky, n_candidates=2)
+        for r in out:
+            self.assertEqual(r['exemplar_section_ids'], [])
+            self.assertNotIn(r['report_id'], r['exemplar_report_ids'])
+
+    def test_c_picks_the_critic_top_candidate(self):
+        target = notes(1)[0]
+        out = gen.generate([target], pool(), FakeModel(), out_path=self.out,
+                           critic=critic_for_candidates(3), k_exemplars=2, n_candidates=4)
+        c = [r for r in out if r['arm'] == 'C'][0]
+        self.assertTrue(c['text'].endswith('candidate 3'), c['text'])
+        self.assertEqual(c['chosen_candidate'], 2)
+        self.assertEqual(len(c['critic_scores']), 4)
+        self.assertEqual(len(set(r['prompt_hash'] for r in out if r['arm'] == 'C')), 1)
+        self.assertEqual(c['n_candidates'], 4)
+
+    def test_c_critic_context_is_the_exemplar_prompt(self):
+        target = notes(1)[0]
+        critic = FakeCritic({})
+        gen.generate([target], pool(), FakeModel(), out_path=self.out,
+                     critic=critic, k_exemplars=2, n_candidates=2)
+        contexts = {ctx for _, ctx in critic.calls}
+        self.assertEqual(len(contexts), 1)
+        self.assertIn('EXEMPLARS:', contexts.pop())
+
+    def test_resume_skips_done_pairs(self):
+        recs = notes(2)
+        model = FakeModel()
+        first = gen.generate(recs, pool(), model, out_path=self.out,
+                             critic=FakeCritic({}), n_candidates=2)
+        calls = len(model.prompts)
+        second = gen.generate(recs, pool(), model, out_path=self.out,
+                              critic=FakeCritic({}), n_candidates=2)
+        self.assertEqual(len(first), 6)
+        self.assertEqual(second, [])
+        self.assertEqual(len(model.prompts), calls)
+        self.assertEqual(len(read(self.out)), 6)
+
+    def test_prompt_hash_model_and_text_recorded(self):
+        target = notes(1)[0]
+        out = gen.generate([target], pool(), FakeModel(), out_path=self.out,
+                           critic=FakeCritic({}), n_candidates=2)
+        for r in out:
+            self.assertEqual(len(r['prompt_hash']), 64)
+            self.assertEqual(r['model'], 'fake-1')
+            self.assertIn(target['notes'], r['text'])
+        a = [r for r in out if r['arm'] == 'A'][0]
+        self.assertEqual(a['prompt_hash'],
+                         hashlib.sha256(gen.build_prompt(target, 'A').encode()).hexdigest())
+
+    def test_arm_a_omits_exemplars_and_arms_b_c_include_them(self):
+        target = notes(1)[0]
+        exemplars = [{'section_id': 'ex1', 'report_id': 'r9', 'section_type': 'intro',
+                      'text': 'Unique exemplar wording.'}]
+        a = gen.build_prompt(target, 'A')
+        b = gen.build_prompt(target, 'B', exemplars)
+        c = gen.build_prompt(target, 'C', exemplars, candidate=(0, 2))
+        self.assertNotIn('Unique exemplar wording.', a)
+        self.assertNotIn('EXEMPLARS:', a)
+        for p in (a, b, c):
+            self.assertIn(target['notes'], p)
+            self.assertIn('intro', p)
+        for p in (b, c):
+            self.assertIn('Unique exemplar wording.', p)
+            self.assertNotIn('r9', p)
+        self.assertIn('Draft variant 1 of 2', c)
+        self.assertNotEqual(gen.build_prompt(target, 'C', exemplars, candidate=(0, 2)),
+                            gen.build_prompt(target, 'C', exemplars, candidate=(1, 2)))
+
+    def test_summary_flags_a_missing_arm_and_duplicates(self):
+        target = notes(1)[0]
+        out = gen.generate([target], pool(), FakeModel(), out_path=self.out,
+                           critic=FakeCritic({}), n_candidates=2)
+        recs = [r for r in out if r['arm'] != 'B']
+        s = gen.summarize(recs, expected_sections=1)
+        self.assertFalse(s['complete'])
+        self.assertEqual(s['missing'], [(target['section_id'], 'B')])
+        s2 = gen.summarize(out + [out[0]], expected_sections=1)
+        self.assertFalse(s2['complete'])
+        self.assertEqual(s2['duplicates'], [(target['section_id'], 'A')])
+        self.assertFalse(gen.summarize(out, expected_sections=2)['complete'])
+
+    def test_summary_flags_same_report_exemplars(self):
+        target = notes(1)[0]
+        out = gen.generate([target], pool(), FakeModel(), out_path=self.out,
+                           critic=FakeCritic({}), n_candidates=2)
+        out[1]['exemplar_report_ids'] = [target['report_id']]
+        s = gen.summarize(out, expected_sections=1)
+        self.assertFalse(s['complete'])
+        self.assertEqual(s['same_report_exemplars'], [target['section_id']])
+
+    def test_lexical_retriever_ranks_overlap_and_is_deterministic(self):
+        target = {'section_id': 't', 'report_id': 'rt', 'section_type': 'intro',
+                  'notes': 'wavelet denoising spectral'}
+        p = [{'section_id': 'b', 'report_id': 'r2', 'section_type': 'method',
+              'text': 'wavelet transform'},
+             {'section_id': 'a', 'report_id': 'r1', 'section_type': 'intro',
+              'text': 'wavelet denoising'},
+             {'section_id': 'c', 'report_id': 'r3', 'section_type': 'intro',
+              'text': 'unrelated'}]
+        got = gen.lexical_retriever(target, p, k=2)
+        self.assertEqual([e['section_id'] for e in got], ['a', 'b'])
+        self.assertEqual(got, gen.lexical_retriever(target, p, k=2))
+        self.assertEqual(gen.lexical_retriever(target, p, k=0), [])
+        self.assertEqual([e['section_id'] for e in gen.lexical_retriever(target, p, k=10)],
+                         ['a', 'b', 'c'])
+
+    def test_model_critic_parses_number_or_defaults_to_zero(self):
+        class M:
+            model_id = 'm'
+
+            def __init__(self):
+                self.replies = ['7', 'Score: 0.5', 'no number here', None]
+                self.prompts = []
+
+            def __call__(self, prompt):
+                self.prompts.append(prompt)
+                return self.replies.pop(0)
+
+        critic = gen.model_critic(M())
+        self.assertEqual(critic('text', 'context'), 7.0)
+        self.assertEqual(critic('text', 'context'), 0.5)
+        self.assertEqual(critic('text', 'context'), 0.0)
+        self.assertEqual(critic('text', 'context'), 0.0)
+
+    def test_cli_runs_offline_with_injected_model(self):
+        notes_path = os.path.join(self.tmp.name, 'notes.jsonl')
+        pool_path = os.path.join(self.tmp.name, 'pool.jsonl')
+        with open(notes_path, 'w', encoding='utf-8') as fh:
+            for r in notes(2):
+                fh.write(json.dumps(r) + '\n')
+        with open(pool_path, 'w', encoding='utf-8') as fh:
+            for r in pool():
+                fh.write(json.dumps(r) + '\n')
+        rc = gen.main(['--notes', notes_path, '--pool', pool_path, '--out', self.out,
+                       '--model-name', 'fake-1', '--n-candidates', '2', '--expected-sections', '2'],
+                      model=FakeModel(), critic=FakeCritic({}))
+        self.assertEqual(rc, 0)
+        self.assertEqual(len(read(self.out)), 6)
+        self.assertEqual(len(gen.summarize(read(self.out), expected_sections=2)['missing']), 0)
+
+
+if __name__ == '__main__':
+    unittest.main()
