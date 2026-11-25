@@ -5,14 +5,20 @@ Serves one pair at a time on 127.0.0.1 only (I9: offline, local); the browser
 sees only blind_pair.render_html output plus an opaque per-page nonce and a
 metadata-free keyboard script. The current item is tracked on the server; a
 POST is accepted only with the current nonce, so stale or duplicate submits
-record nothing. Items already in CHOICES.jsonl are skipped on restart.
+record nothing. Items already in CHOICES.jsonl are skipped on restart; a torn
+final line is skipped (the next append starts on a fresh line) and any other
+malformed line is reported on stderr and skipped. An exclusive flock on the
+CHOICES.jsonl.lock sidecar makes a second server on the same file fail fast.
 
 Usage: python3 -m experiments.blind_ui SESSION.json CHOICES.jsonl [--port N]
 """
 
 import argparse
+import fcntl
 import json
+import os
 import secrets
+import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs
@@ -40,15 +46,53 @@ _DONE = '''<!doctype html>
 <body><h1>All comparisons recorded</h1><p>You may close this window.</p></body></html>'''
 
 
+class ChoicesLocked(RuntimeError):
+    """Another process holds the CHOICES file."""
+
+
+def _lock_choices(path):
+    lock_path = path + '.lock'
+    fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        os.close(fd)
+        raise ChoicesLocked(f'{path} is in use by another blind_ui server '
+                            f'(lock {lock_path}); stop it first') from None
+    return fd
+
+
 def _recorded_ids(path):
+    """Return recorded item ids; skip a torn final line, report other bad lines.
+
+    A file not ending in a newline gets one appended so the next record starts
+    on a fresh line. Call only while holding the CHOICES lock.
+    """
     done = set()
     try:
-        with open(path, encoding='utf-8') as source:
-            for line in source:
-                if line.strip():
-                    done.add(json.loads(line)['item_id'])
+        with open(path, 'rb') as source:
+            data = source.read()
     except FileNotFoundError:
-        pass
+        return done
+    lines = data.split(b'\n')
+    torn = not data.endswith(b'\n') and data != b''
+    for number, raw in enumerate(lines, 1):
+        if not raw.strip():
+            continue
+        try:
+            item_id = json.loads(raw.decode('utf-8'))['item_id']
+            if not isinstance(item_id, str):
+                raise TypeError
+        except (ValueError, KeyError, TypeError):
+            if torn and number == len(lines):
+                print(f'{path}: line {number}: torn final line skipped', file=sys.stderr)
+            else:
+                print(f'{path}: line {number}: malformed record skipped', file=sys.stderr)
+            continue
+        done.add(item_id)
+    if torn:
+        with open(path, 'ab') as out:
+            out.write(b'\n')
     return done
 
 
@@ -56,7 +100,12 @@ class _State:
     def __init__(self, session_path, choices_path):
         self.session = load_session(session_path)
         self.choices_path = choices_path
-        done = _recorded_ids(choices_path)
+        self.lock_fd = _lock_choices(choices_path)
+        try:
+            done = _recorded_ids(choices_path)
+        except BaseException:
+            self.close()
+            raise
         self.pending = [item for item in self.session if item.item_id not in done]
         self.nonce = None
         self.lock = threading.Lock()
@@ -85,6 +134,11 @@ class _State:
             self.pending.pop(0)
             self.nonce = None
             return True
+
+    def close(self):
+        if self.lock_fd is not None:
+            os.close(self.lock_fd)  # releases the flock
+            self.lock_fd = None
 
 
 def _handler(state):
@@ -128,7 +182,23 @@ def make_server(session_path, choices_path, host=LOOPBACK, port=0):
     """Build (not start) the server; any host other than 127.0.0.1 is refused."""
     if host != LOOPBACK:
         raise ValueError(f'blind_ui binds to {LOOPBACK} only')
-    return ThreadingHTTPServer((LOOPBACK, port), _handler(_State(session_path, choices_path)))
+    state = _State(session_path, choices_path)
+    try:
+        server = _Server((LOOPBACK, port), _handler(state))
+    except BaseException:
+        state.close()
+        raise
+    server.state = state
+    return server
+
+
+class _Server(ThreadingHTTPServer):
+    state = None
+
+    def server_close(self):
+        super().server_close()
+        if self.state is not None:
+            self.state.close()
 
 
 def main(argv=None):
@@ -137,7 +207,10 @@ def main(argv=None):
     parser.add_argument('choices')
     parser.add_argument('--port', type=int, default=8765)
     args = parser.parse_args(argv)
-    server = make_server(args.session, args.choices, port=args.port)
+    try:
+        server = make_server(args.session, args.choices, port=args.port)
+    except ChoicesLocked as error:
+        sys.exit(f'blind_ui: {error}')
     print(f'Open http://{LOOPBACK}:{server.server_address[1]}/ (Ctrl-C to stop)')
     try:
         server.serve_forever()

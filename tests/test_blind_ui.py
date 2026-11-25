@@ -1,3 +1,5 @@
+import contextlib
+import io
 import json
 import os
 import random
@@ -129,6 +131,45 @@ class BlindUiTests(unittest.TestCase):
         self.post(url, self.nonce(body), 'tie')
         self.assertEqual([r['item_id'] for r in self.records()],
                          [i.item_id for i in self.session[:3]])
+
+    def test_torn_final_line_skipped_and_next_append_on_fresh_line(self):
+        first = self.session[0].item_id
+        with open(self.choices_path, 'w', encoding='utf-8') as out:
+            out.write(json.dumps({'item_id': first, 'winner': 'tie'}) + '\n')
+            out.write('{"item_id": "torn')
+        url = self.start()
+        _, body = self.get(url)
+        self.assertIn(self.session[1].presentation.left, body)
+        self.post(url, self.nonce(body), 'left')
+        with open(self.choices_path, encoding='utf-8') as source:
+            lines = source.read().splitlines()
+        self.assertEqual(lines[1], '{"item_id": "torn')
+        self.assertEqual(json.loads(lines[2])['item_id'], self.session[1].item_id)
+
+    def test_malformed_middle_line_reported_and_skipped(self):
+        first, second = self.session[0].item_id, self.session[1].item_id
+        with open(self.choices_path, 'w', encoding='utf-8') as out:
+            out.write('not json at all\n')
+            out.write(json.dumps({'winner': 'tie'}) + '\n')
+            out.write(json.dumps({'item_id': first, 'winner': 'tie'}) + '\n')
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            url = self.start()
+        self.assertIn('line 1', err.getvalue())
+        self.assertIn('line 2', err.getvalue())
+        _, body = self.get(url)
+        self.assertIn(self.session[1].presentation.left, body)
+        self.assertNotIn(second, body)
+
+    def test_second_server_on_same_choices_fails_fast(self):
+        self.start()
+        with self.assertRaises(blind_ui.ChoicesLocked) as ctx:
+            blind_ui.make_server(self.session_path, self.choices_path, port=0)
+        self.assertIn(self.choices_path, str(ctx.exception))
+        old = self.servers.pop()
+        old.shutdown()
+        old.server_close()
+        self.start()  # lock released on close
 
     def test_non_loopback_host_refused(self):
         for host in ('0.0.0.0', '192.168.1.5', 'example.org', ''):
