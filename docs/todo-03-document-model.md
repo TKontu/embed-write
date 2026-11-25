@@ -81,7 +81,7 @@ No research risk and total structural risk. If node IDs are not stable, the cach
 ## Genre binding and source links
 
 - [x] **SL-01** `[A]` Sidecar field binding a document to a genre and inventory version — `genre` holds `{genre, genre_version, genre_hash}` (the genre file's version key) or null; `bindGenre` / `genreBindingStatus` (unbound/match/stale/other) are unwired by design (ED-01 open/save and BH-06 wire them)
-  - seen: R92/A1 branch task/sl01-sidecar-genre (head in PR) — `cd docmodel && npm test` 229/229 pass; `python3 -m unittest discover -s tests` 1182 OK incl. `SidecarGenreBindingParityTests` against docmodel/test/fixtures/genre-binding.json (LLM-built)
+  - done (R92/A1, PR #242, merge 4e401f1): seen: docmodel 229/229 and Python gate 1182 OK, planner rerun at head 5905de8ccab8a26470ac328c4ca21357eba9b286 and on main; Python `SidecarGenreBindingParityTests` checks docmodel/test/fixtures/genre-binding.json (LLM-built) against `version_key`. Ran on Claude (D-008). Note: the PR was merged on GitHub before planner review (merger unknown); the post-hoc review of that same head is ready. Residual: stray trailing blank line at the EOF of tests/test_genre.py (nit).
 - [ ] **SL-02** `[A]` Span-to-source links: a sentence or span references source item IDs; links survive edits elsewhere and are dropped when their text is deleted — check: link-survival tests
 - [ ] **SL-03** `[A]` Draft provenance per node: `human`, `machine`, or `machine-edited`, with the generation run ID — check: provenance updates correctly on accept, reject and manual edit (feeds the edit log)
 
