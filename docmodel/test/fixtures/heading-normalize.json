@@ -1,0 +1,19 @@
+[
+  {"input": "Findings", "expected": "findings"},
+  {"input": "  FINDINGS  ", "expected": "findings"},
+  {"input": "3. Findings", "expected": "findings"},
+  {"input": "3 Findings", "expected": "findings"},
+  {"input": "3.2 Key   Findings:", "expected": "key findings"},
+  {"input": "3.2. Key findings.", "expected": "key findings"},
+  {"input": "IV. Conclusions", "expected": "conclusions"},
+  {"input": "A. Conclusions:", "expected": "conclusions"},
+  {"input": "Conclusions and\tRecommendations", "expected": "conclusions and recommendations"},
+  {"input": "Ｆｉｎｄｉｎｇｓ", "expected": "findings"},
+  {"input": "Background and scope", "expected": "background and scope"},
+  {"input": "2020 review", "expected": "review"},
+  {"input": "IV.Conclusions", "expected": "iv.conclusions"},
+  {"input": "Annex", "expected": "annex"},
+  {"input": "I am a heading", "expected": "i am a heading"},
+  {"input": "", "expected": ""},
+  {"input": "3.", "expected": "3"}
+]

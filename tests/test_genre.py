@@ -172,3 +172,89 @@ class LabelValidityTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+SECTIONS_FIXTURE = os.path.join(os.path.dirname(__file__), 'fixtures',
+                                'genre_synthetic_sections.json')
+NORMALIZE_FIXTURE = os.path.join(os.path.dirname(__file__), '..', 'docmodel', 'test',
+                                 'fixtures', 'heading-normalize.json')
+
+
+def with_sections():
+    with open(SECTIONS_FIXTURE, encoding='utf-8') as fh:
+        return json.load(fh)
+
+
+class SectionTypesTests(unittest.TestCase):
+    def assertFails(self, obj, field):
+        with self.assertRaises(g.GenreFileError) as cm:
+            g.validate_genre(obj)
+        self.assertIn(field, str(cm.exception))
+
+    def test_fixture_loads(self):
+        obj = g.load_genre(SECTIONS_FIXTURE)
+        self.assertEqual([t['id'] for t in obj['section_types']],
+                         ['findings', 'conclusions'])
+
+    def test_absent_field_valid_and_hash_unchanged(self):
+        obj = base()
+        self.assertNotIn('section_types', obj)
+        g.validate_genre(obj)
+        # Hash of the unchanged fixture on main (52f3e70) before HI-04.
+        self.assertEqual(g.content_hash(obj),
+                         '9ccc4fb3842095adbf9f08ab0f7911da4539a9c5c23b5e24c827289f1f09a26e')
+
+    def test_field_is_content(self):
+        obj = with_sections()
+        other = copy.deepcopy(obj); del other['section_types']
+        self.assertNotEqual(g.content_hash(obj), g.content_hash(other))
+
+    def test_not_a_list(self):
+        for bad in ({}, 'findings', None, 3):
+            obj = with_sections(); obj['section_types'] = bad
+            self.assertFails(obj, 'section_types')
+
+    def test_entry_not_object(self):
+        obj = with_sections(); obj['section_types'][0] = 'findings'
+        self.assertFails(obj, 'section_types[0]')
+
+    def test_missing_fields(self):
+        for key in ('id', 'name', 'headings'):
+            obj = with_sections(); del obj['section_types'][1][key]
+            self.assertFails(obj, f'section_types[1].{key}')
+
+    def test_empty_strings(self):
+        for key in ('id', 'name'):
+            obj = with_sections(); obj['section_types'][0][key] = '  '
+            self.assertFails(obj, f'section_types[0].{key}')
+
+    def test_headings_bad(self):
+        for bad in ([], 'Findings', None):
+            obj = with_sections(); obj['section_types'][0]['headings'] = bad
+            self.assertFails(obj, 'section_types[0].headings')
+        obj = with_sections(); obj['section_types'][0]['headings'] = ['Findings', '']
+        self.assertFails(obj, 'section_types[0].headings[1]')
+
+    def test_duplicate_id(self):
+        obj = with_sections(); obj['section_types'][1]['id'] = 'findings'
+        self.assertFails(obj, 'section_types[1].id')
+
+    def test_duplicate_normalized_alias(self):
+        obj = with_sections(); obj['section_types'][1]['headings'].append('2. FINDINGS:')
+        self.assertFails(obj, 'section_types[1].headings[2]')
+        obj = with_sections(); obj['section_types'][0]['headings'].append('findings.')
+        self.assertFails(obj, 'section_types[0].headings[2]')
+
+    def test_alias_empty_after_normalization(self):
+        obj = with_sections(); obj['section_types'][0]['headings'].append(':')
+        self.assertFails(obj, 'section_types[0].headings[2]')
+
+
+class NormalizeHeadingParityTests(unittest.TestCase):
+    def test_matches_shared_fixture(self):
+        with open(NORMALIZE_FIXTURE, encoding='utf-8') as fh:
+            cases = json.load(fh)
+        self.assertGreater(len(cases), 10)
+        for case in cases:
+            with self.subTest(input=case['input']):
+                self.assertEqual(g.normalize_heading(case['input']), case['expected'])
