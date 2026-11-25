@@ -92,3 +92,4 @@ export function undo({ view }) {
   return pmUndo(view.state, view.dispatch);
 }
 export { renderDiff } from './diff.js';
+export { showProposal } from './proposal.js';
