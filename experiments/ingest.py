@@ -1,12 +1,18 @@
-"""CO-04: convert source documents to Markdown for the corpus (stdlib only).
+"""CO-04: convert source documents to Markdown for the corpus (stdlib + pypdf).
 
 Formats: .docx (zipfile + xml.etree: paragraphs, Heading1..6 -> ATX headings,
 bold/italic runs, list paragraphs -> ``-`` items, simple tables -> pipe tables),
 .html/.htm (html.parser: h1-h6, p, ul/ol/li, table, strong/b, em/i), .txt
-(blank-line separated paragraphs) and .md (copied). ``.pdf`` is reported
-``unsupported`` until a dependency is decided; other extensions likewise.
+(blank-line separated paragraphs), .md (copied) and .pdf (pypdf text per page:
+blank-line paragraphs, page-number-only lines dropped, hyphenated line breaks
+joined, heuristic headings: a short line without terminal punctuation followed
+by body text; numbering depth sets the level, ``1.`` -> ``##``, ``1.2`` ->
+``###``, unnumbered ``##``). Encrypted/unreadable PDFs and PDFs without
+extractable text (scans; no OCR) are ``failed``. Without pypdf, ``.pdf`` is
+``unsupported`` ("pypdf not installed"); other extensions likewise unsupported.
 Not handled: images, footnotes, tracked changes, nested lists/tables, merged
-cells, hyperlinks (text kept), numbered DOCX lists (emitted as ``-``).
+cells, hyperlinks (text kept), numbered DOCX lists (emitted as ``-``), PDF
+layout, tables and images.
 
 Files are processed one at a time. After conversion each output is checked by
 docmodel/scripts/check-roundtrip.js (batches of at most 50 paths) when ``node``
@@ -29,12 +35,23 @@ from html.parser import HTMLParser
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
+try:
+    from pypdf import PdfReader
+    HAVE_PYPDF = True
+except ImportError:  # pragma: no cover - exercised by monkeypatching HAVE_PYPDF
+    PdfReader = None
+    HAVE_PYPDF = False
+
 REPO = Path(__file__).resolve().parent.parent
 CHECK_SCRIPT = REPO / "docmodel" / "scripts" / "check-roundtrip.js"
 REPORT_NAME = "ingest_report.json"
 BATCH = 50
-FORMATS = {".docx": "docx", ".html": "html", ".htm": "html", ".txt": "txt", ".md": "md"}
-PDF_REASON = "pdf: dependency decision pending"
+FORMATS = {".pdf": "pdf", ".docx": "docx", ".html": "html", ".htm": "html", ".txt": "txt", ".md": "md"}
+PDF_REASON = "pypdf not installed"
+OCR_REASON = "no extractable text (OCR not supported)"
+_PAGENUM_RE = re.compile(r"^\s*(?:page\s+)?[-\u2013\u2014]?\s*\d{1,4}\s*[-\u2013\u2014]?"
+                         r"(?:\s*(?:/|of)\s*\d{1,4})?\s*$", re.I)
+_NUMBERED_RE = re.compile(r"^(\d{1,2}(?:\.\d{1,2})*)(\.?)\s+\S")
 WNS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 _HEADING_RE = re.compile(r"^#{1,6}(\s|$)")
 
@@ -241,6 +258,70 @@ def convert_txt(text: str) -> str:
     return _join_blocks([("p", p) for p in paras])
 
 
+def _pdf_heading_level(line: str) -> int | None:
+    line = line.strip()
+    if not line or len(line) > 80 or "\n" in line or line[-1] in ".,;:!?":
+        return None
+    if not any(c.isalpha() for c in line):
+        return None
+    m = _NUMBERED_RE.match(line)
+    if m:
+        return min(6, 1 + len(m.group(1).split(".")))
+    return 2 if len(line.split()) <= 10 else None
+
+
+def pdf_text_to_markdown(pages) -> str:
+    """pages: iterable of extracted page texts (consumed lazily)."""
+    lines: list[str] = []
+    for text in pages:
+        for line in (text or "").replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+            if _PAGENUM_RE.match(line):
+                continue
+            lines.append(line.rstrip())
+        lines.append("")
+    paras: list[str] = []
+    cur = ""
+    for line in lines:
+        if not line.strip():
+            if cur:
+                paras.append(cur)
+            cur = ""
+        elif cur.endswith("-") and len(cur) > 1 and cur[-2].isalpha() and line.lstrip()[:1].islower():
+            cur = cur[:-1] + line.lstrip()
+        elif cur and cur[-1] in ".!?:" and _NUMBERED_RE.match(line.strip()) \
+                and _pdf_heading_level(line):
+            paras.append(cur)  # numbered heading after a sentence end starts a new block
+            cur = line.strip()
+        else:
+            cur = f"{cur}\n{line.strip()}" if cur else line.strip()
+    if cur:
+        paras.append(cur)
+    blocks: list[tuple[str, str]] = []
+    for i, para in enumerate(paras):
+        first, _, rest = para.partition("\n")
+        level = _pdf_heading_level(first)
+        if level and rest.strip():
+            blocks.append(("h", "#" * level + " " + first))
+            para = rest
+        elif level and i + 1 < len(paras) and _pdf_heading_level(paras[i + 1]) is None:
+            blocks.append(("h", "#" * level + " " + para))
+            continue
+        if _HEADING_RE.match(para):
+            para = "\\" + para
+        blocks.append(("p", para))
+    return _join_blocks(blocks)
+
+
+def convert_pdf(path: Path) -> str:
+    reader = PdfReader(str(path))
+    if reader.is_encrypted:
+        raise ValueError("pdf: encrypted")
+    md = pdf_text_to_markdown(page.extract_text() for page in reader.pages)
+    if not md.strip():
+        raise ValueError(OCR_REASON)
+    return md
+
+
 def count_headings(md: str) -> int:
     n, fence = 0, False
     for line in md.splitlines():
@@ -278,6 +359,8 @@ def convert_one(src: Path) -> str:
     fmt = FORMATS[src.suffix.lower()]
     if fmt == "docx":
         return convert_docx(src)
+    if fmt == "pdf":
+        return convert_pdf(src)
     text = src.read_text(encoding="utf-8", errors="replace")
     if fmt == "html":
         return convert_html(text)
@@ -294,7 +377,7 @@ def convert_dir(src_dir: Path, out_dir: Path, check: bool = True) -> dict:
         ext = src.suffix.lower()
         entry = {"source": str(src), "output": None, "format": ext.lstrip(".") or None,
                  "status": "unsupported", "headings": None, "roundtrip": None}
-        if ext == ".pdf":
+        if ext == ".pdf" and not HAVE_PYPDF:
             entry["reason"] = PDF_REASON
         elif ext not in FORMATS:
             entry["reason"] = f"unsupported extension: {ext or '(none)'}"
