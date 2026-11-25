@@ -25,18 +25,21 @@
 // - Split: when the text of the touched textblocks is unchanged overall, the change is
 //   structural. The second half gets a fresh id from idPlugin (an id attribute step); the new id
 //   inherits the source entry (cause 'insert'). Neither half counts as edited.
-// - Merge: a structural change that removes ids folds each removed entry into the surviving
+// - Merge: a change that removes ids (structural, or a cross-block delete that joins blocks and
+//   alters the survivor's text) folds each removed entry into the surviving
 //   node before it (else after it). The result is 'machine' only if every merged node was
 //   'machine' with the same run; otherwise 'machine-edited' with the first machine run in
 //   document order if any merged node was machine-kind; else 'human'. A kind change on the
-//   survivor emits cause 'edit'. (Deliberately not "machine wins": human text merged in is an
+//   survivor emits cause 'edit'. A removed node with no entry and no text (an empty human
+//   paragraph) is not folded: removing it leaves the survivor unchanged. (Deliberately not "machine wins": human text merged in is an
 //   expert change and must read as edited.)
 // - Deletion: a node that disappears loses its entry (event to: null, cause 'edit'). The
 //   entry is kept in a tombstone map; if a node with that id reappears (undo, redo, cut and
 //   paste) its entry is restored (cause 'insert').
 // - Undo/redo: plugin state only follows the document. Undo of an edit does NOT turn
 //   'machine-edited' back into 'machine' (its text was still changed by the expert at some
-//   point; the edit log records both). Undo of a machine insertion deletes the nodes (entries
+//   point; the edit log records both). Undo of a reject does NOT restore provenance: reject
+//   clears the tombstone, so the reappearing node is human. Undo of a machine insertion deletes the nodes (entries
 //   dropped); redo brings them back with their tombstoned entries.
 // Cost: apply is O(nodes in changed ranges) per step; meta `machine`/`restore` walk the doc
 // once. Tombstones grow with deleted machine nodes for the life of the state. Large-doc cost
@@ -172,12 +175,16 @@ export function provenancePlugin(opts = {}) {
               removedNow.add(id);
               entries.delete(id);
               if (gone && !exempt.has(id)) changes.push({ node: id, from: gone.kind, to: null, run: gone.run, cause: 'edit' });
-              if (!structural) continue;
-              // Merge: fold the removed entry into the surviving neighbour.
+              // Merge: fold the removed entry into the surviving neighbour. A removed human node
+              // folds only when it carried text (structural joins); an empty one changes nothing.
+              // A non-structural delete folds only into a neighbour whose own text changed (a
+              // cross-block join), never into an untouched neighbour of a deleted whole node.
+              if (!gone && !(structural && o.text.get(id))) continue;
               const at = o.order.indexOf(id);
               const target = o.order.slice(0, at).reverse().find((x) => n.text.has(x)) ??
                 o.order.slice(at + 1).find((x) => n.text.has(x)) ?? n.order[0];
               if (target === undefined || exempt.has(target)) continue;
+              if (!structural && o.text.get(target) === n.text.get(target)) continue;
               const merged = o.text.has(target) ? mergeEntries([entries.get(target), gone]) : gone ?? entries.get(target);
               set(target, merged, 'edit');
             }

@@ -124,6 +124,30 @@ test('(e) merge: machine+machine of one run stays machine; human+machine is mach
   assert.deepEqual(currentProvenance(state), [{ node: h.id, kind: 'machine-edited', run: RUN }]);
 });
 
+test('(e2) deleting an empty human paragraph next to a machine node leaves the machine node alone', () => {
+  const seen = [];
+  let state = mk([], seen);
+  const [, , m2] = paras(state);
+  const empty = schema.nodes.paragraph.create({ id: 'empty-human' });
+  state = state.apply(state.tr.insert(m2.pos + m2.node.nodeSize, empty));
+  const e = paras(state).find((p) => p.id === 'empty-human');
+  seen.length = 0;
+  state = state.apply(state.tr.delete(e.pos, e.pos + e.node.nodeSize));
+  assert.deepEqual(provenanceChanges(state), []);
+  assert.deepEqual(seen, []);
+  assert.deepEqual(provenanceOf(state, m2.id), { kind: 'machine', run: RUN });
+});
+
+test('(e3) cross-block delete from a human node into a machine node makes the survivor machine-edited', () => {
+  let state = mk();
+  const [h, m1] = paras(state);
+  state = state.apply(state.tr.delete(h.pos + 3, m1.pos + 3));
+  assert.equal(paras(state).length, 2);
+  assert.deepEqual(provenanceOf(state, h.id), { kind: 'machine-edited', run: RUN });
+  assert.equal(kind(state, m1.id), 'human');
+  assert.ok(provenanceChanges(state).some((c) => c.node === h.id && c.to === 'machine-edited' && c.cause === 'edit'));
+});
+
 test('(e) undo/redo of an edit keeps machine-edited; undo of a deletion restores the entry', () => {
   let state = mk([history()]);
   const dispatch = (tr) => { state = state.apply(tr); };
