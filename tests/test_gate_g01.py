@@ -110,6 +110,49 @@ class G01Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root, self.assertRaises(PreregistrationError):
             run_gate(g01.run, seed=0, config=CONFIG, preregistration_root=root)
 
+    def test_thresholds_none_gives_no_hint(self):
+        out = g01.run(random.Random(0), dict(CONFIG, thresholds=None))
+        self.assertEqual(out['thresholds_source'], 'none')
+        self.assertIsNone(out['thresholds'])
+        self.assertEqual({r['verdict_hint'] for r in out['metrics']}, {'n/a'})
+
+    def test_other_share_over_paired_ids(self):
+        # extra expert-only 'other' sentences must not move the paired share
+        expert = dict(EXPERT, x1='other', x2='other')
+        llm = dict(LLM, y1='claim')
+        r = rows(g01.run(random.Random(0), dict(CONFIG, expert=expert, llm=llm)))
+        self.assertAlmostEqual(r['other_share_expert']['value'], 0.2)
+        self.assertEqual(r['other_share_expert']['n'], 10)
+        self.assertEqual(r['other_share_expert']['method'], 'proportion_paired')
+        self.assertAlmostEqual(r['other_share_expert']['value_all_labelled'], 4 / 12, places=6)
+        self.assertEqual(r['other_share_expert']['n_all_labelled'], 12)
+        self.assertAlmostEqual(r['other_share_llm']['value'], 0.3)
+        self.assertAlmostEqual(r['other_share_llm']['value_all_labelled'], 3 / 11, places=6)
+
+    def test_no_bootstrap_method_without_resamples(self):
+        r = rows(g01.run(random.Random(0), dict(CONFIG, n_resamples=0)))['kappa_expert_llm']
+        self.assertIsNone(r['interval'])
+        self.assertNotIn('bootstrap', r['method'])
+        self.assertEqual(r['degenerate_resamples'], 0)
+
+    def test_degenerate_resamples_excluded_and_counted(self):
+        # expert has one 'other'; llm is all 'claim'. Resamples missing s19 are single-class
+        # on both sides (kappa 0/0); all others have kappa 0.
+        expert = {f's{i}': 'claim' for i in range(20)}
+        expert['s19'] = 'other'
+        llm = {f's{i}': 'claim' for i in range(20)}
+        r = rows(g01.run(random.Random(3), dict(CONFIG, expert=expert, llm=llm,
+                                                n_resamples=200)))['kappa_expert_llm']
+        self.assertGreater(r['degenerate_resamples'], 0)
+        self.assertEqual(r['interval'], [0.0, 0.0])
+
+    def test_interval_percentiles_bracket_estimate(self):
+        r = rows(g01.run(random.Random(1), CONFIG))['kappa_expert_llm']
+        lo, hi = r['interval']
+        self.assertLess(lo, r['value'])
+        self.assertGreater(hi, r['value'])
+        self.assertLessEqual(hi, 1.0)
+
 
 if __name__ == '__main__':
     unittest.main()
