@@ -15,6 +15,7 @@ Colour is the expert's main channel into the pattern model. Revision 2 replaces 
 
 - [ ] **LG-01** `[H]` Colour per move, chosen with the expert (`todo-09` MV-04)
 - [ ] **LG-02** `[A]` Legend stored in the genre file, never computed at runtime (invariant I3) — check: test that two documents of one genre render a move identically
+  - partial (R163/A1, PR #411, merge 0138995): `editor/src/legend.js` legendCss(genre) emits one `--signal-color` rule per move in genre.moves order plus `other`, colours copied from the genre file (validation mirrors service/genre.py). seen: editor/test/legend.test.js 10 tests incl. two documents of one genre render a move with the same colour (jsdom, LLM-built synthetic fixture), npm test 219/219 and gate 1594 OK at head b5a8675 (rerun by planner). Stays partial: unwired by design until AP-01/LG-07 load the genre file and link the stylesheet.
 - [ ] **LG-03** `[A]` Palette validation: minimum pairwise colour difference, in normal vision and three colour-blind simulations — check: automated, fails the build below threshold
   - partial (R32/A1, PR #84): validator `service/palette.py` (CIEDE2000, Machado CVD sims, CLI exits 1 below threshold) merged; MIN_DELTA_E=20 provisional for the expert under G-09; unwired until LG-02/LG-05; no palette until LG-01 [H], no CI wiring
 - [ ] **LG-04** `[A]` Contrast floor: tinted text stays above a set contrast ratio in light and dark themes — check: automated contrast test
@@ -32,6 +33,7 @@ Colour is the expert's main channel into the pattern model. Revision 2 replaces 
 - [ ] **RE-02** `[A]` Viewport-scoped decoration: visible nodes plus a margin — check: build time under 16 ms for a viewport
 - [ ] **RE-03** `[A]` Section level: margin ribbon showing the move sequence, with markers for missing, misplaced and foreign moves
 - [ ] **RE-04** `[A]` Paragraph and sentence level: tint by move
+  - partial (R163/A2, PR #412, merge ff3a0dd): `editor/src/signals.css` tints paragraph/sentence signals with color-mix(var(--signal-color, transparent) 18%) (18% provisional under G-09; no section tint; no literal colour, I3); RE-08 colour ban narrowed to the strength rules. seen: editor/test/signals-css.test.js 6 tests, npm test 215/215 and gate 1594 OK at head 17e9a62 (rerun by planner); combined main ff3a0dd npm 225/225, gate OK. Stays partial: unwired until RE-10/app shell links signals.css with LG-02's legend.
 - [ ] **RE-05** `[A]` Second channel for fit: underline or saturation for off-register, unsupported and out-of-place passages. Shape and colour both carry it, never colour alone
 - [ ] **RE-06** `[A]` Provisional vs confirmed: fast-layer results lighter or outlined, confirmed results solid — check: visual regression test for both states
 - [ ] **RE-07** `[A]` Transition from provisional to confirmed without layout shift or flicker — check: no reflow on state change
