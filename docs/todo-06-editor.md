@@ -20,6 +20,7 @@ A native writing surface over Markdown: the expert sees formatted text, shortcut
 - [ ] **ED-04** `[A]` Source view toggle showing the raw Markdown
   - partial (R127/A1, PR #323, merge 504c297): `createEditor` handle gains `showSource()`, `showRich()`, `isSourceView()` (editor/src/source.js); textarea `md-source` holds `serializeMarkdown` output, `showRich` parses with docmodel `parseMarkdown` in one undoable transaction, a throwing parse keeps source view. Ran on Claude (D-008). Tests: planner rerun at head befc91e: editor 63/63 under jsdom, docmodel 256/256, Python gate 1455 OK. Unwired by design: stays partial until AP-01 shell adds the toggle control; not yet seen in the app. Residuals: no CSS, no keyboard shortcut; editor tests not in CI.
 - [ ] **ED-05** `[A]` Autosave with atomic writes — check: kill the process mid-save, file is intact
+  - partial (R128/A1, PR #325, merge 8951fae): editor/src/autosave.js exports `atomicWrite(path, text)` (same-dir temp, fsync, rename, dir fsync; temp removed on failure) and `createAutosave({ getMarkdown, write, delayMs })` (debounced, serialized, failed write stays dirty). Ran on Claude (D-008). Check: test spawns a child writing several-MB text and SIGKILLs it across 8 iterations; target always equals a whole old or new text. Planner rerun at head 4456e99: editor 72/72, docmodel 256/256, Python gate 1455 OK. Unwired by design until AP-01 owns file I/O; not yet seen in the app. Residuals: editor tests not in CI.
 
 ---
 
