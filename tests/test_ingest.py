@@ -371,6 +371,56 @@ class IngestTest(unittest.TestCase):
         self.assertEqual(calls, [50, 50, 20])
         self.assertEqual(len(res), 120)
 
+class MarkdownEscapeTest(unittest.TestCase):
+    """R155/A1: source text never becomes Markdown syntax it was not."""
+
+    def docx(self, body):
+        d = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, d)
+        doc = f'<?xml version="1.0"?><w:document {W}><w:body>{body}</w:body></w:document>'
+        with zipfile.ZipFile(d / "e.docx", "w") as z:
+            z.writestr("word/document.xml", doc)
+        return ingest.convert_docx(d / "e.docx")
+
+    def test_docx_inline_specials_escaped_bold_kept(self):
+        md = self.docx(_p("a*b*c_d") + _p("x", bold=True))
+        self.assertEqual(md, "a\\*b\\*c\\_d\n\n**x**\n")
+
+    def test_docx_line_start_heading_escaped(self):
+        self.assertEqual(self.docx(_p("# not heading")), "\\# not heading\n")
+        self.assertEqual(self.docx(_p("Real", style="Heading1")), "# Real\n")
+
+    def test_txt_list_markers_escaped(self):
+        md = ingest.convert_txt("1. not list\n\n- not bullet\n\n2) also\n+ plus\n---\n> q\n")
+        self.assertEqual(md, "1\\. not list\n\n\\- not bullet\n\n"
+                             "2\\) also\n\\+ plus\n\\---\n\\> q\n")
+
+    def test_txt_backslash_and_code(self):
+        self.assertEqual(ingest.convert_txt("a\\b `c` <d> [e]"),
+                         "a\\\\b \\`c\\` \\<d\\> \\[e\\]\n")
+
+    def test_html_text_escaped_real_bold_kept(self):
+        md = ingest.convert_html("<p>[x](y) &lt;b&gt; <b>real</b></p><h2>T</h2><ul><li>i</li></ul>")
+        self.assertEqual(md, "\\[x\\](y) \\<b\\> **real**\n\n## T\n\n- i\n")
+
+    def test_html_line_start_escaped(self):
+        self.assertEqual(ingest.convert_html("<p># no</p>"), "\\# no\n")
+
+    def test_pdf_headings_kept_body_escaped(self):
+        md = ingest.pdf_text_to_markdown(["1. Intro\nSome *body* text here.\n\n- dash para."])
+        self.assertTrue(md.startswith("## 1. Intro\n"), md)
+        self.assertIn("Some \\*body\\* text here.", md)
+        self.assertIn("\\- dash para.", md)
+
+    def test_md_passthrough_unchanged(self):
+        d = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, d)
+        (d / "s").mkdir()
+        (d / "s" / "b.md").write_text("# K\n\na*b*\n")
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            ingest.main(["convert", str(d / "s"), str(d / "o"), "--no-check"])
+        self.assertEqual((d / "o" / "b.md").read_text(), "# K\n\na*b*\n")
+
 
 if __name__ == "__main__":
     unittest.main()
