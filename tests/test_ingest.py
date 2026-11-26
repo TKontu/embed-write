@@ -412,6 +412,41 @@ class MarkdownEscapeTest(unittest.TestCase):
         self.assertIn("Some \\*body\\* text here.", md)
         self.assertIn("\\- dash para.", md)
 
+    # R156/A1: entity refs, pipes, ~~~ fences, indented code, table-cell escapes.
+    def test_entity_refs_escaped(self):
+        self.assertEqual(self.docx(_p("a &amp;amp; b &amp;#123; &amp;#x1F; &amp; c")),
+                         "a \\&amp; b \\&#123; \\&#x1F; & c\n")
+        self.assertEqual(ingest.convert_txt("x &copy; &#9; y & z"), "x \\&copy; \\&#9; y & z\n")
+        self.assertEqual(ingest.convert_html("<p>&amp;lt;b&amp;gt; &amp;#65; a &amp; b</p>"),
+                         "\\&lt;b\\&gt; \\&#65; a & b\n")
+
+    def test_pipes_escaped_outside_tables(self):
+        self.assertEqual(self.docx(_p("a | b | c")), "a \\| b \\| c\n")
+        self.assertEqual(ingest.convert_txt("| a | b |\n|---|---|"), "\\| a \\| b \\|\n\\|---\\|---\\|\n")
+        self.assertEqual(ingest.convert_html("<p>a|b</p>"), "a\\|b\n")
+
+    def test_table_cell_pipe_escaped_once(self):
+        md = ingest.convert_html("<table><tr><td>a|b</td><td>c</td></tr></table>")
+        self.assertEqual(md, "| a\\|b | c |\n| --- | --- |\n")
+        md = self.docx("<w:tbl><w:tr>" + _cell("a|b") + _cell("c") + "</w:tr></w:tbl>")
+        self.assertEqual(md, "| a\\|b | c |\n| --- | --- |\n")
+
+    def test_tilde_fence_escaped(self):
+        self.assertEqual(self.docx(_p("~~~ python")), "\\~~~ python\n")
+        self.assertEqual(ingest.convert_txt("~~~\ncode\n~~~"), "\\~~~\ncode\n\\~~~\n")
+        self.assertEqual(ingest.convert_txt("```x"), "\\`\\`\\`x\n")
+
+    def test_indented_code_neutralised(self):
+        self.assertEqual(ingest.convert_txt("    code line\n\tcode2"), "code line\ncode2\n")
+        self.assertEqual(ingest.convert_txt("  two spaces"), "  two spaces\n")
+        self.assertEqual(self.docx('<w:p><w:r><w:tab/><w:t xml:space="preserve">    x</w:t></w:r></w:p>'),
+                         "x\n")
+
+    def test_docx_table_cells_no_line_start_escapes(self):
+        md = self.docx("<w:tbl><w:tr>" + _cell("# h") + _cell("- d") + _cell("1. n")
+                       + "</w:tr></w:tbl>")
+        self.assertEqual(md, "| # h | - d | 1. n |\n| --- | --- | --- |\n")
+
     def test_md_passthrough_unchanged(self):
         d = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, d)
