@@ -97,6 +97,20 @@ def _fence_close(line, fence):
                 and not m.group(2).strip())
 
 
+def _fence_left(line, fence):
+    """True when ``line`` leaves the container of ``fence`` (a fence is never lazy).
+
+    A blockquote fence ends at a line of lower quote depth (a blank line included); a
+    list-item fence ends at a non-blank line not indented to its column. Top-level
+    fences (depth 0, col 0) never end this way.
+    """
+    _, _, depth, col = fence
+    got, rest = _unquote(line)
+    if got < depth:
+        return True
+    return bool(col and rest.strip() and rest[:col] != ' ' * col)
+
+
 def _sections(markdown, headings):
     """Yield (section_type, heading_text, section_index, paragraph) per blank-line paragraph."""
     current, heading, index, para = UNKNOWN, None, 0, []
@@ -112,6 +126,13 @@ def _sections(markdown, headings):
                 start = i + 1
                 break
     for line in lines[start:]:
+        if fence and _fence_left(line, fence):
+            fence = None
+            while para and not para[-1].strip():
+                para.pop()
+            if para:
+                yield current, heading, index, '\n'.join(para)
+            para, fenced = [], False
         if fence:
             para.append(line)
             if _fence_close(line, fence):
