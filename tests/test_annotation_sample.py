@@ -363,3 +363,34 @@ class EmptyAtxTests(unittest.TestCase):
                 f.write(md)
             report = corpus_stats.build_report(d)
         self.assertEqual(report['per_document']['a.md']['sentences'], len(rows))
+
+
+class AtxClosingSequenceTests(unittest.TestCase):
+    # CommonMark: a closing '#' run counts only after a space or tab (or as whole content).
+    CASES = (('# foo#', 'foo#'), ('# foo #', 'foo'), ('# foo ##  ', 'foo'), ('#', ''),
+             ('### ###', ''), ('# foo \\#', 'foo \\#'), ('## a#b ##', 'a#b'))
+
+    def heading(self, line):
+        rows = a.document_sentences('d.md', f'Lead one.\n{line}\nBody two.\n', {})
+        return rows[-1]['heading']
+
+    def test_heading_text(self):
+        for line, want in self.CASES:
+            self.assertEqual(self.heading(line), want, line)
+
+    def test_genre_heading_with_trailing_hash_maps(self):
+        h = {'foo#': 'methods'}
+        self.assertEqual([t for t, _, _ in types('# foo#\n\nAlpha one.\n')], ['unknown'])
+        rows = [r['section_type'] for r in a.document_sentences('d.md', '# foo#\n\nAlpha one.\n', h)]
+        self.assertEqual(rows, ['methods'])
+        rows = [r['section_type'] for r in a.document_sentences('d.md', '# foo\n\nAlpha one.\n', h)]
+        self.assertEqual(rows, ['unknown'])
+
+    def test_agrees_with_corpus_stats(self):
+        from experiments import corpus_stats as cs
+        # Empty closed headings ('### ###') are a corpus_stats residual (it keeps '###').
+        for line, text in self.CASES:
+            if not text:
+                continue
+            want = cs._heading_text(cs._ATX.match(line).group(2))
+            self.assertEqual(self.heading(line).casefold(), want, line)

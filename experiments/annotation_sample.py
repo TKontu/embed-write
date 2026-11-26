@@ -49,7 +49,8 @@ SCHEMA_VERSION = 1
 UNKNOWN = 'unknown'
 MEMORY_BOUND = ('O(test sentences) candidate tuples (doc_id, section_type, sentence_id, '
                 'ordinal); one document text at a time; no sentence text retained')
-_HEADING = re.compile(r'^ {0,3}(#{1,6})(?:[ \t]+(.*?)[ \t#]*)?$')  # may be empty: '#', '## ##'
+_HEADING = re.compile(r'^ {0,3}(#{1,6})(?:[ \t]+(.*?))?[ \t]*$')  # may be empty: '#', '## ##'
+_CLOSING = re.compile(r'(?:^|[ \t]+)#+$')  # closing run needs a space/tab before it: '# foo#' keeps '#'
 _SETEXT = re.compile(r'^ {0,3}(=+|-+)[ \t]*$')
 _FENCE = re.compile(r'^ {0,3}(`{3,}|~{3,})(.*)$')
 _QUOTE = re.compile(r'^ {0,3}> ?')
@@ -170,7 +171,7 @@ def _sections(markdown, headings):
                 text, level = ' '.join(p.strip() for p in para), 1 if '=' in line else 2
                 para = []
             elif atx:
-                text, level = atx.group(2) or '', len(atx.group(1))
+                text, level = _CLOSING.sub('', atx.group(2) or '').rstrip(), len(atx.group(1))
             if para:
                 yield current, heading, index, '\n'.join(para)
                 para = []
