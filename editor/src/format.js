@@ -4,6 +4,7 @@
 // FM-03: block input rules (lists, task items, quotes, code fences, thematic breaks).
 // FM-04: inline input rules (*em*, _em_, **strong**, __strong__, `code`).
 // FM-06: escape hatch — Backspace right after an input rule restores the typed text.
+// FM-07: command-made marks follow the document's prevailing marker; typed rules keep what was typed.
 // Production caller: createEditor (itself unwired by design until AP-01).
 import { keymap, keydownHandler } from '@milkdown/prose/keymap';
 import { toggleMark, setBlockType } from '@milkdown/prose/commands';
@@ -12,13 +13,51 @@ import { TextSelection, Plugin, PluginKey } from '@milkdown/prose/state';
 import { schema } from 'docmodel';
 
 /**
+ * FM-07: the marker most used by the document's existing marks (or bullet_list nodes), so a
+ * command follows the file's convention; schema default when the document has none. One doc walk,
+ * run only when a formatting command is applied, not while typing. FM-03's list rules are input
+ * rules and keep the marker the writer typed, so they never call this.
+ * @param {import('prosemirror-model').Node} doc
+ * @param {'em'|'strong'|'bullet_list'} name
+ * @returns {string}
+ */
+function prevailingMarker(doc, name) {
+  /** @type {Map<string, number>} */
+  const counts = new Map();
+  const bump = (/** @type {string} */ m) => counts.set(m, (counts.get(m) ?? 0) + 1);
+  if (name === 'bullet_list') {
+    doc.descendants((n) => { if (n.type.name === 'bullet_list') bump(n.attrs.marker); });
+  } else {
+    const type = schema.marks[name];
+    doc.descendants((n) => {
+      if (!n.isText) return;
+      const m = type.isInSet(n.marks);
+      if (m) bump(m.attrs.marker);
+    });
+  }
+  let best = name === 'bullet_list'
+    ? schema.nodes.bullet_list.spec.attrs.marker.default
+    : schema.marks[name].spec.attrs.marker.default;
+  let bestCount = 0;
+  for (const [marker, count] of counts) {
+    if (count > bestCount) { best = marker; bestCount = count; }
+  }
+  return best;
+}
+
+/**
  * @param {{ isRich?: () => boolean, onLinkRequest?: (text: string) => string | null | Promise<string | null> }} [opts]
  * @returns {import('prosemirror-state').Plugin}
  */
 export function formatKeymap({ isRich = () => true, onLinkRequest } = {}) {
   /** @param {string} name @returns {import('prosemirror-state').Command} */
-  const mark = (name) => (state, dispatch) =>
-    isRich() && toggleMark(state.schema.marks[name])(state, dispatch);
+  const mark = (name) => (state, dispatch) => {
+    if (!isRich()) return false;
+    const attrs = dispatch && (name === 'em' || name === 'strong')
+      ? { marker: prevailingMarker(state.doc, name) }
+      : undefined;
+    return toggleMark(state.schema.marks[name], attrs)(state, dispatch);
+  };
 
   /** @type {import('prosemirror-state').Command} */
   const link = (state, dispatch, view) => {

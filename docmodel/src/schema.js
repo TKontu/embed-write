@@ -30,7 +30,7 @@ export const schema = new Schema({
       group: 'block', content: 'text*', marks: '', code: true, defining: true,
       attrs: { lang: { default: null }, fence: { default: '```' }, id: ID },
     },
-    thematic_break: { group: 'block', attrs: { id: ID } },
+    thematic_break: { group: 'block', attrs: { marker: { default: '***' }, id: ID } },
     html_block: { group: 'block', atom: true, attrs: { value: { default: '' }, id: ID } },
     table: { group: 'block', content: 'table_row+', attrs: { id: ID } },
     table_row: { content: 'table_cell+', attrs: { id: ID } },
