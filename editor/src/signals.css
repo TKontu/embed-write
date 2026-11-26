@@ -16,3 +16,7 @@
 .signal[data-signal-level="sentence"] {
   background-color: color-mix(in srgb, var(--signal-color, transparent) 18%, transparent);
 }
+
+/* LG-06: neutral cases. Kind "other" takes legend.other from the legend stylesheet. Unlabeled text
+   (no signal) carries no .signal class, and a kind that is neither a genre move nor "other" gets no
+   --signal-color; both fall back to transparent above, so no colour is invented (I3). */
