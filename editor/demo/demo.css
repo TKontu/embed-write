@@ -1,0 +1,126 @@
+/* DE-02: demo layout and provisional move styling. Colour values come from legend.json through
+   the decoration's --move-colour custom property; the permanent legend is LG-01's job. */
+:root {
+  color-scheme: light dark;
+  font: 15px/1.5 system-ui, -apple-system, Segoe UI, sans-serif;
+}
+
+body {
+  margin: 0;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid #8884;
+  position: sticky;
+  top: 0;
+  background: Canvas;
+  z-index: 1;
+}
+
+.bar button,
+.bar select {
+  font: inherit;
+  padding: 0.25rem 0.5rem;
+}
+
+#status[data-bad="1"] {
+  color: #c0504d;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 18rem;
+  gap: 1.5rem;
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 1.25rem;
+}
+
+.editor {
+  min-height: 60vh;
+}
+
+.editor .ProseMirror {
+  outline: none;
+  padding: 0.5rem 0.75rem;
+}
+
+.editor .ProseMirror:focus {
+  outline: 2px solid #4f7cac55;
+  border-radius: 4px;
+}
+
+.legend {
+  border: 1px solid #8884;
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  align-self: start;
+  position: sticky;
+  top: 4.25rem;
+}
+
+.legend h2 {
+  font-size: 1rem;
+  margin: 0 0 0.35rem;
+}
+
+.legend .provisional {
+  font-weight: 600;
+  margin: 0 0 0.35rem;
+}
+
+.legend .note {
+  font-size: 0.85rem;
+  opacity: 0.75;
+  margin: 0 0 0.6rem;
+}
+
+.legend ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.legend li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.legend .swatch {
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 3px;
+  border: 1px solid #0003;
+  flex: none;
+}
+
+/* One decoration per labelled block carries these classes and the legend colour. */
+.move {
+  box-shadow: inset 3px 0 0 var(--move-colour);
+  padding-left: 0.55rem;
+}
+
+.md-source {
+  width: 100%;
+  min-height: 60vh;
+  font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  box-sizing: border-box;
+}
+
+@media (max-width: 52rem) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+
+  .legend {
+    position: static;
+    order: -1;
+  }
+}
