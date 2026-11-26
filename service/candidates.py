@@ -1,7 +1,7 @@
 """Candidate embedding models for G-03 and a local ONNX adapter (EM-02).
 
-Unwired by design until the G-03 runner (and later SV-02) loads a candidate;
-G-03 chooses the default, not this module. Nothing is downloaded: model files
+Production caller: ``experiments.move_discovery`` (``--embedder onnx``, MV-02);
+the G-03 runner and SV-02 come next. G-03 chooses the default, not this module. Nothing is downloaded: model files
 come from a local, gitignored model_dir. onnxruntime and tokenizers are
 imported only inside the loader, so importing this module stays stdlib-only.
 Memory per call is O(batch * max_tokens * hidden) for the session output;
@@ -39,6 +39,8 @@ class CandidateModel:
     query_prefix: str = ''
     passage_prefix: str = ''
     extra_inputs: tuple[tuple[str, int], ...] = ()
+    pad_token_id: int = 0
+    end_token_id: int | None = None
 
     def __post_init__(self):
         if self.pooling not in POOLINGS:
@@ -53,7 +55,9 @@ class CandidateModel:
 
 
 CANDIDATES: tuple[CandidateModel, ...] = (
-    CandidateModel('BAAI/bge-m3', 'hf-unpinned', 1024, (1024,), 8192, 'cls'),
+    # XLM-R vocabulary: <pad> = 1, </s> = 2 (tokenizer.json of the bge-m3 snapshot).
+    CandidateModel('BAAI/bge-m3', 'hf-unpinned', 1024, (1024,), 8192, 'cls',
+                   pad_token_id=1, end_token_id=2),
     CandidateModel('jinaai/jina-embeddings-v3', 'hf-unpinned', 1024,
                    (32, 64, 128, 256, 512, 768, 1024), 8194, 'mean',
                    extra_inputs=(('task_id', 4),)),
@@ -114,17 +118,26 @@ class OnnxEmbedder:
                                              providers=['CPUExecutionProvider']),
                 numpy)
 
+    def _truncate(self, ids):
+        """Cut to max_tokens; keep the end token when the candidate has one."""
+        c = self.candidate
+        if len(ids) <= c.max_tokens:
+            return ids
+        if c.end_token_id is None:
+            return ids[:c.max_tokens]
+        return ids[:c.max_tokens - 1] + [c.end_token_id]
+
     def embed(self, texts: Sequence[str], level: Level) -> list[LevelVector]:
         if not texts:
             return []
         self._load()
         c = self.candidate
         encodings = self._tokenizer.encode_batch([c.passage_prefix + t for t in texts])
-        ids = [list(e.ids)[:c.max_tokens] for e in encodings]
+        ids = [self._truncate(list(e.ids)) for e in encodings]
         masks = [list(e.attention_mask)[:c.max_tokens] for e in encodings]
         width = max(len(row) for row in ids)
         feeds = {
-            'input_ids': [row + [0] * (width - len(row)) for row in ids],
+            'input_ids': [row + [c.pad_token_id] * (width - len(row)) for row in ids],
             'attention_mask': [row + [0] * (width - len(row)) for row in masks],
         }
         for name, value in c.extra_inputs:

@@ -1,0 +1,6 @@
+# Export-time tooling for scripts/export_onnx.py only; never a runtime dependency.
+# Installed with: python3 -m pip install --target ~/.cache/embed-write/export-deps -r requirements-export.txt
+# (then drop the duplicate numpy) and run the exporter with PYTHONPATH=~/.cache/embed-write/export-deps.
+# torch and transformers come from the system python3 (torch 2.11, transformers 5.17).
+onnx==1.20.0
+onnxruntime==1.32.0
