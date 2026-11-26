@@ -114,3 +114,15 @@ Append-only record of operator rulings and architecture decisions.
   vision; nothing else does until those results exist.
 - **Planner duty:** re-rank `docs/todo.md`'s critical path to this order in the next reconcile,
   and report each round which item of 1–3 it advanced.
+
+## D-010 — The planner merges decisions, architecture and config too (2026-11-25, operator)
+
+- **Ruling:** the operator is not needed for routine merges of any kind. D-002's operator-only
+  list shrinks to three paths: `.claude/` (permission rules), `scripts/merge_guard.py` (the guard
+  itself) and `experiments/results/G-*` (gate verdicts). Everything else, including
+  `docs/decisions.md`, `docs/architecture.md` and `.agent/config.toml`, merges through
+  `scripts/merge_guard.py` after independent review, like any PR.
+- **Still never by an agent:** deciding an `[H]` item or marking a gate passed (AGENTS.md); an
+  agent may record an operator ruling in `docs/decisions.md` only when the operator gave it.
+- **Why:** rulings sat as open PRs waiting for the operator (PR #246) while the planner already
+  acted on them.
