@@ -35,6 +35,7 @@ A native writing surface over Markdown: the expert sees formatted text, shortcut
 - [ ] **FM-04** `[A]` Inline input rules: typing `*text*` converts live
 - [ ] **FM-05** `[A]` Paste: Markdown pastes as formatted content, rich HTML converts to Markdown-representable structure, plain text stays plain
 - [ ] **FM-06** `[A]` Escape hatch: literal `*` can be typed; one backspace undoes an input rule
+  - partial (R132/A1, PR #335, merge 549f746): editor/src/format.js `escapeKeymap({ isRich })` wired first in createEditor's plugins: Backspace right after an FM-02/FM-03 input rule inverts the rule and the transactions appended after it (docmodel idPlugin) and restores the typed literal text; a second Backspace deletes normally; inactive in source view. Ran on Claude (D-008). Check: editor/test/escape.test.js (jsdom, 11 tests, 7 failed before impl). Planner rerun at head 7a51cd6: editor 121/121; lane docmodel 256/256; combined main 549f746 Python 1460 OK. Unwired by design until AP-01; not yet seen in the app. Residuals: after undoing ```` ``` ```` + space the trailing space does not round-trip byte for byte (docmodel drops it on parse); FM-04 inline rules not yet present, so the literal `*` half is tested only against block rules; jsdom-simulated typing only; editor tests not in CI.
 - [ ] **FM-07** `[A]` Style preservation: new formatting follows the file's existing conventions — check: edit-and-save diff touches only the edited lines
 
 ---
