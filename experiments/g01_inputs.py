@@ -1,11 +1,16 @@
 """G-01.5 build the experiments.gates.g01 config from stored annotations and LLM pre-labels.
 
-``build_config(store, genre, manifest, prelabel_path, *, annotator=None, model_id=None)``
-returns ``{expert, [expert_repeat], llm, labels, other_label, doc_of}``:
+``build_config(store, genre, manifest, prelabel_path, *, annotator=None, model_id=None,
+include_non_blind=False)`` returns ``{expert, [expert_repeat], llm, labels, other_label, doc_of,
+non_blind}``:
 
 * ``expert`` / ``expert_repeat``: ``annotate.labels_for_pass`` for the ``first`` / ``repeat``
   pass, restricted to ``annotate.pass_ids(manifest, pass)``. Retracted (undone) labels are absent.
-  ``expert_repeat`` is omitted when the repeat pass has no labels.
+  ``expert_repeat`` is omitted when the repeat pass has no labels. A label record carrying a
+  ``prelabel`` field (annotate's opt-in pre-label mode) was made with the LLM label shown, so it
+  is non-blind (D-009 item 3): excluded unless ``include_non_blind=True``
+  (``--include-non-blind``). Excluded labels are dropped before the one-annotator check.
+* ``non_blind``: ``{'first'|'repeat': {'excluded': N, 'included': M}}`` non-blind label counts.
 * ``llm``: ``prelabel.llm_labels`` over the prelabel JSONL records under the genre's version key
   (and ``model_id`` when given), restricted to first-pass ids. The file is streamed; a torn or
   unparsable line is skipped as prelabel resume does.
@@ -21,7 +26,7 @@ Memory: maps are O(manifest sample size); the store and prelabel file are stream
 Production caller: the G-01.6 result run. Unwired by design until then (G-01.6 wires it).
 
 CLI: ``python -m experiments.g01_inputs --store S --genre G --manifest M --prelabel P
-[--annotator A] [--model-id ID] --out CONFIG.json`` writes the config (label maps only) and prints
+[--annotator A] [--model-id ID] [--include-non-blind] --out CONFIG.json`` writes the config (label maps only) and prints
 counts.
 """
 from __future__ import annotations
@@ -39,13 +44,17 @@ class G01InputsError(ValueError):
     """Stored labels cannot form one-label-per-id g01 maps."""
 
 
-def _expert(store, genre, manifest, pass_name, annotator):
+def _expert(store, genre, manifest, pass_name, annotator, include_non_blind, tally):
     ids = annotate.pass_ids(manifest, pass_name)
     out = {}
     for r in annotate.labels_for_pass(store, genre, pass_name, annotator):
         sid = r['sentence_id']
         if sid not in ids:
             continue
+        if 'prelabel' in r:
+            tally['included' if include_non_blind else 'excluded'] += 1
+            if not include_non_blind:
+                continue
         if sid in out:
             raise G01InputsError(
                 f'{pass_name}-pass sentence {sid!r} labelled by several annotators; '
@@ -54,7 +63,12 @@ def _expert(store, genre, manifest, pass_name, annotator):
     return out
 
 
-def _llm_records(prelabel_path, genre, model_id, ids):
+def iter_llm_records(prelabel_path, genre, model_id, ids):
+    """Stream prelabel records for ``ids`` under the genre version key (and ``model_id``).
+
+    Torn lines skipped; raises ``G01InputsError`` on two labels for one id.
+    Production callers: ``build_config`` and ``annotate.load_prelabels``.
+    """
     key = version_key(genre)
     seen = {}
     for r in prelabel._parsed_lines(prelabel_path):
@@ -78,23 +92,32 @@ def _llm_records(prelabel_path, genre, model_id, ids):
         yield r
 
 
-def build_config(store, genre, manifest, prelabel_path, *, annotator=None, model_id=None) -> dict:
+_llm_records = iter_llm_records  # backward-compatible alias
+
+
+def build_config(store, genre, manifest, prelabel_path, *, annotator=None, model_id=None,
+                 include_non_blind=False) -> dict:
     annotate._check_version(manifest, genre)
     first = annotate.pass_ids(manifest, 'first')
-    cfg = {'expert': _expert(store, genre, manifest, 'first', annotator)}
-    repeat = _expert(store, genre, manifest, 'repeat', annotator)
+    nb = {p: {'excluded': 0, 'included': 0} for p in ('first', 'repeat')}
+    cfg = {'expert': _expert(store, genre, manifest, 'first', annotator, include_non_blind,
+                             nb['first'])}
+    repeat = _expert(store, genre, manifest, 'repeat', annotator, include_non_blind, nb['repeat'])
     if repeat:
         cfg['expert_repeat'] = repeat
-    cfg['llm'] = prelabel.llm_labels(_llm_records(prelabel_path, genre, model_id, first))
+    cfg['llm'] = prelabel.llm_labels(iter_llm_records(prelabel_path, genre, model_id, first))
     cfg['labels'] = prelabel.valid_labels(genre)
     cfg['other_label'] = OTHER
     cfg['doc_of'] = {e['sentence_id']: e['doc_id'] for e in manifest['entries']}
+    cfg['non_blind'] = nb
     return cfg
 
 
 def counts(cfg) -> dict:
     return {'n expert': len(cfg['expert']), 'n repeat': len(cfg.get('expert_repeat', {})),
-            'n llm': len(cfg['llm']), 'n paired': len(cfg['expert'].keys() & cfg['llm'].keys())}
+            'n llm': len(cfg['llm']), 'n paired': len(cfg['expert'].keys() & cfg['llm'].keys()),
+            **{f'non-blind {p}': f"excluded {c['excluded']}, included {c['included']}"
+               for p, c in cfg.get('non_blind', {}).items()}}
 
 
 def main(argv=None) -> int:
@@ -105,6 +128,8 @@ def main(argv=None) -> int:
     ap.add_argument('--prelabel', required=True)
     ap.add_argument('--annotator')
     ap.add_argument('--model-id')
+    ap.add_argument('--include-non-blind', action='store_true',
+                    help='keep expert labels made with an LLM pre-label shown (default: exclude)')
     ap.add_argument('--out', required=True)
     a = ap.parse_args(argv)
     genre = load_genre(a.genre)
@@ -112,7 +137,8 @@ def main(argv=None) -> int:
         manifest = json.load(fh)
     try:
         cfg = build_config(AnnotationStore(a.store), genre, manifest, a.prelabel,
-                           annotator=a.annotator, model_id=a.model_id)
+                           annotator=a.annotator, model_id=a.model_id,
+                           include_non_blind=a.include_non_blind)
     except (annotate.AnnotateError, G01InputsError) as e:
         print(f'error: {e}', file=sys.stderr)
         return 2

@@ -129,7 +129,7 @@ def labels_for_pass(store, genre, pass_name, annotator=None):
 def load_prelabels(path, genre, ids, *, model_id=None):
     """sentence_id -> {'label', 'model'} for ``ids`` from a prelabel JSONL (streamed once).
 
-    Reuses ``g01_inputs._llm_records`` (version-key/model filter, torn lines skipped). A
+    Reuses ``g01_inputs.iter_llm_records`` (version-key/model filter, torn lines skipped). A
     pre-label that is not a valid move of ``genre`` is not shown. Memory: O(len(ids)).
     Production caller: ``main`` (``--prelabels``).
     """
@@ -137,7 +137,7 @@ def load_prelabels(path, genre, ids, *, model_id=None):
     allowed = {m['id'] for m in genre['moves']} | {OTHER}
     out = {}
     try:
-        for r in g01_inputs._llm_records(path, genre, model_id, set(ids)):
+        for r in g01_inputs.iter_llm_records(path, genre, model_id, set(ids)):
             if r.get('label') in allowed:
                 out[r['sentence_id']] = {'label': r['label'], 'model': r.get('model') or ''}
     except g01_inputs.G01InputsError as exc:

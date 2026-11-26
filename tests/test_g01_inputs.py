@@ -44,10 +44,12 @@ def lab(n):
     return (MOVES + ['other'])[n % (len(MOVES) + 1)]
 
 
-def put(store, sid, label, pass_name='first', annotator='ann', retracted=False):
+def put(store, sid, label, pass_name='first', annotator='ann', retracted=False, prelabel=None):
     e = next(e for e in ENTRIES if e['sentence_id'] == sid)
     rec = {'sentence_id': sid, 'annotator': annotator, 'timestamp': '2026-11-26T00:00:00Z',
            'pass': pass_name, 'doc_id': e['doc_id'], 'section_type': e['section_type']}
+    if prelabel is not None:
+        rec['prelabel'], rec['prelabel_model'] = prelabel, 'm1'
     if retracted:
         rec['retracted'] = True
     else:
@@ -139,6 +141,71 @@ class BuildConfigTest(Fixture):
         bad = dict(MANIFEST, genre={'genre_version': 'v-old', 'genre_hash': 'h'})
         with self.assertRaises(AnnotateError):
             gi.build_config(self.store, GENRE, bad, self.pre_path)
+
+
+class NonBlindTest(unittest.TestCase):
+    """Labels shown an LLM pre-label (``prelabel`` field) are non-blind (D-009 item 3)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        d = self.tmp.name
+        self.store = AnnotationStore(os.path.join(d, 'labels.jsonl'))
+        self.pre_path = os.path.join(d, 'pre.jsonl')
+        open(self.pre_path, 'w').close()
+        first = [s for s in IDS if s not in REPEAT]
+        self.blind, self.nb = first[0], first[1]
+        put(self.store, self.blind, lab(0))
+        put(self.store, self.nb, lab(1), prelabel=lab(1))
+        put(self.store, REPEAT[0], lab(2), pass_name='repeat', prelabel=lab(2))
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def build(self, **kw):
+        return gi.build_config(self.store, GENRE, MANIFEST, self.pre_path, **kw)
+
+    def test_excluded_by_default(self):
+        cfg = self.build()
+        self.assertEqual(cfg['expert'], {self.blind: lab(0)})
+        self.assertNotIn('expert_repeat', cfg)
+        self.assertEqual(cfg['non_blind'], {'first': {'excluded': 1, 'included': 0},
+                                            'repeat': {'excluded': 1, 'included': 0}})
+
+    def test_included_on_request(self):
+        cfg = self.build(include_non_blind=True)
+        self.assertEqual(cfg['expert'], {self.blind: lab(0), self.nb: lab(1)})
+        self.assertEqual(cfg['expert_repeat'], {REPEAT[0]: lab(2)})
+        self.assertEqual(cfg['non_blind'], {'first': {'excluded': 0, 'included': 1},
+                                            'repeat': {'excluded': 0, 'included': 1}})
+
+    def test_excluded_label_does_not_count_as_second_annotator(self):
+        put(self.store, self.blind, lab(3), annotator='other-ann', prelabel=lab(3))
+        cfg = self.build()
+        self.assertEqual(cfg['expert'], {self.blind: lab(0)})
+        self.assertEqual(cfg['non_blind']['first']['excluded'], 2)
+        with self.assertRaisesRegex(gi.G01InputsError, 'annotator'):
+            self.build(include_non_blind=True)
+
+    def test_cli_flag_and_counts(self):
+        manifest_path = os.path.join(self.tmp.name, 'manifest.json')
+        with open(manifest_path, 'w', encoding='utf-8') as fh:
+            json.dump(MANIFEST, fh)
+        out = os.path.join(self.tmp.name, 'cfg.json')
+        base = ['--store', self.store.path, '--genre', GENRE_PATH, '--manifest', manifest_path,
+                '--prelabel', self.pre_path, '--out', out]
+        for extra, n_exp, frag in (([], 1, 'non-blind first: excluded 1, included 0'),
+                                   (['--include-non-blind'], 2,
+                                    'non-blind first: excluded 0, included 1')):
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                self.assertEqual(gi.main(base + extra), 0)
+            with open(out, encoding='utf-8') as fh:
+                self.assertEqual(len(json.load(fh)['expert']), n_exp)
+            self.assertIn(frag, buf.getvalue())
+            self.assertIn('non-blind repeat:', buf.getvalue())
+
+    def test_iter_llm_records_public_alias(self):
+        self.assertIs(gi._llm_records, gi.iter_llm_records)
 
 
 class CliTest(Fixture):
