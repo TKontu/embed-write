@@ -111,12 +111,13 @@ BRANCH = project_section(CONFIG).get("default_branch", "main")
 
 
 def permission_args(config: dict[str, Any]) -> tuple[str, str]:
-    """`--permission-mode` args; a non-string or blank value warns once and uses `auto`."""
+    """`--permission-mode` args; surrounding whitespace is stripped; a non-string or
+    blank value warns once and uses `auto`."""
     mode = supervisor_section(config).get("permission_mode", "auto")
     if not (isinstance(mode, str) and mode.strip()):
-        warn_once(f"[supervisor] permission_mode must be a non-empty string, got {mode!r}; using auto")
-        mode = "auto"
-    return ("--permission-mode", mode)
+        warn_once(f"[supervisor] permission_mode must be a non-blank string, got {mode!r}; using auto")
+        return ("--permission-mode", "auto")
+    return ("--permission-mode", mode.strip())
 
 
 PERMISSION_ARGS = permission_args(CONFIG)

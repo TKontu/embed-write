@@ -423,10 +423,14 @@ class StateTests(unittest.TestCase):
                 lines = err.getvalue().splitlines()
                 self.assertEqual(len(lines), 1)
                 self.assertIn("permission_mode", lines[0])
+                self.assertIn("must be a non-blank string", lines[0])
         with mock.patch("sys.stderr", new_callable=io.StringIO) as err:
             cfg = {"supervisor": {"permission_mode": "acceptEdits"}}
             self.assertEqual(rs.permission_args(cfg), ("--permission-mode", "acceptEdits"))
             self.assertEqual(rs.permission_args({}), ("--permission-mode", "auto"))
+            self.assertEqual(rs.permission_args({"supervisor": {"permission_mode": "auto"}}), ("--permission-mode", "auto"))
+            padded = {"supervisor": {"permission_mode": " auto "}}
+            self.assertEqual(rs.permission_args(padded), ("--permission-mode", "auto"))
         self.assertEqual(err.getvalue(), "")
 
     def test_strong_model_warning_prints_once_per_process(self):
