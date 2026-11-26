@@ -6,7 +6,7 @@ import { isMoveOverlayOn, moveOverlayPlugin, selectedMoveGranularity, selectedMo
 import { DEFAULT_GRANULARITY, DEFAULT_OFF_SHORTCUT, DEFAULT_OVERLAY, OVERLAYS } from '../src/decorations.js';
 import { legendCss, renderLegendPanel } from '../src/legend.js';
 import { mountCollapsibleMinimap } from '../src/minimap.js';
-import { mountComparison } from '../src/comparison.js';
+import { blockEvidence, moveSequence, mountComparison, transitionStats } from '../src/comparison.js';
 import { openIssues, renderIssues } from '../src/issues.js';
 import { Plugin, Selection } from '@milkdown/prose/state';
 import { inspectorPlugin, mountInspector, renderMethodTexts } from '../src/inspector.js';
@@ -140,7 +140,9 @@ async function load(name) {
   });
   // IN-01 (D-009 slice): hover or selection inside a move mark fills the inspector panel.
   inspector?.destroy();
-  inspector = mountInspector(editor.view.dom, inspectorMount(), () => genre);
+  // IN-02 (D-009 slice): plus the sample support for (previous move -> this move).
+  inspector = mountInspector(editor.view.dom, inspectorMount(), () => genre,
+    (el) => evidenceFor(editor.view, el));
   const current = inspector;
   editor.view.updateState(editor.view.state.reconfigure({
     plugins: [...editor.view.state.plugins, plugin, inspectorPlugin(Plugin, () => current)],
@@ -177,6 +179,17 @@ function mountComparisonStrip() {
     ui.minimap.after(comparisonMount);
   }
   mountComparison(comparisonMount, moves, sampleMoves, genre);
+}
+
+/** IN-02: transition stats over all demo samples (synthetic, LLM-built), built once in init(). */
+let sampleStats = transitionStats([]);
+
+/** IN-02: the top-level block index of a decorated element, then its sequence evidence. */
+function evidenceFor(/** @type {any} */ view, /** @type {Element} */ el) {
+  try {
+    const block = view.state.doc.resolve(view.posAtDOM(el, 0)).index(0);
+    return blockEvidence(sampleStats, moves, block, genre);
+  } catch { return null; }
 }
 
 /** @param {string[]} names */
@@ -287,6 +300,7 @@ async function init() {
       return;
     }
     sampleMoves = await loadSampleMoves(listing.samples);
+    sampleStats = transitionStats(sampleMoves.map(moveSequence));
     ui.samples.addEventListener('change', () => {
       load(ui.samples.value).catch((err) => setStatus(`Load failed: ${err.message}`, true));
     });

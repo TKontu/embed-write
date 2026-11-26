@@ -13,6 +13,7 @@ It starts collapsed; "Show minimap" expands it and the choice survives switching
 Below it, a comparison strip (OV-02) shows this draft's move order beside the typical order built from transition counts over all demo samples (synthetic, LLM-built; whole document = one section type), with a caption per step — pattern fit, not a verdict.
 Below that, an open-issues list (OV-03) names each genre move missing from the labels and each unlabeled passage; clicking a passage selects and scrolls to it.
 Hovering a move mark, or putting the cursor in one, fills the signal inspector (IN-01) beside the editor: signal, value, confidence, layer and a "Method" link to that move's genre definition (pattern fit, not a verdict).
+The inspector also shows sequence evidence (IN-02): "<move> follows <previous move> in K of N samples" (or "opens the report"), counted over the synthetic, LLM-built demo samples — pattern fit, not a verdict.
 
 ## One real report (DE-05 swap, D-011)
 
