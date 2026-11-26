@@ -124,5 +124,59 @@ class CliTests(unittest.TestCase):
             'd0.md', 'sub/d1.md', 'd2.md', 'sub/d3.md', 'd4.md', 'sub/d5.md'}), 0)
 
 
+H = {'methods': 'methods', 'results': 'results'}
+
+
+def types(md):
+    return [(r['section_type'], r['section_index'], r['text'])
+            for r in a.document_sentences('d.md', md, H)]
+
+
+class SectionTypingTests(unittest.TestCase):
+    def test_fenced_hash_lines_are_not_headings(self):
+        for fence, close in (('```', '```'), ('~~~', '~~~~~'), ('   ```', '````')):
+            md = f'# Methods\n\nAlpha one.\n\n{fence}\n# Results\n{close}\n\nBeta two.\n'
+            rows = types(md)
+            self.assertTrue(all(t == 'methods' and ix == 1 for t, ix, _ in rows), (fence, rows))
+            self.assertIn('Beta two.', [s for *_, s in rows])
+
+    def test_setext_headings(self):
+        rows = types('Methods\n=======\n\nAlpha one.\n\nResults\n-------\n\nBeta two.\n')
+        self.assertEqual([(t, ix) for t, ix, _ in rows], [('methods', 1), ('results', 2)])
+        self.assertEqual([s for *_, s in rows], ['Alpha one.', 'Beta two.'])
+
+    def test_thematic_break_after_blank_is_not_heading(self):
+        rows = types('# Methods\n\nAlpha one.\n\n---\n\nBeta two.\n')
+        self.assertTrue(rows and all((t, ix) == ('methods', 1) for t, ix, _ in rows), rows)
+
+    def test_unmapped_subheading_inherits(self):
+        md = ('# Methods\n\nA one.\n\n## Sample details\n\nB two.\n\n# Results\n\nC three.\n\n'
+              '# Odd thing\n\nD four.\n')
+        self.assertEqual([t for t, *_ in types(md)], ['methods', 'methods', 'results', 'unknown'])
+
+    def test_same_level_mapped_replaces_and_setext_levels(self):
+        md = ('## Methods\n\nA one.\n\n### Detail\n\nB two.\n\n## Results\n\nC three.\n\n'
+              'Other\n-----\n\nD four.\n')
+        self.assertEqual([t for t, *_ in types(md)], ['methods', 'methods', 'results', 'unknown'])
+
+    def test_front_matter_skipped(self):
+        for end in ('---', '...'):
+            rows = types(f'---\ntitle: x\n{end}\n\n# Methods\n\nAlpha.')
+            self.assertEqual(rows, [('methods', 1, 'Alpha.')], end)
+
+    def test_list_item_then_rule_is_not_heading(self):
+        for first in ('- item', '* item', '+ item', '1. item', '2) item', '  - item'):
+            rows = types(f'# Methods\n\n{first}\n---\n\nAlpha.')
+            self.assertTrue(rows and all((t, ix) == ('methods', 1) for t, ix, _ in rows), (first, rows))
+
+    def test_fence_then_rule_is_not_heading(self):
+        rows = types('# Methods\n\n```\ncode\n```\n---\n\nAlpha.')
+        self.assertTrue(rows and all((t, ix) == ('methods', 1) for t, ix, _ in rows), rows)
+
+    def test_blockquote_then_rule_is_not_heading(self):
+        rows = types('# Methods\n\n> quote\n---\n\nAlpha.')
+        self.assertTrue(rows and all((t, ix) == ('methods', 1) for t, ix, _ in rows), rows)
+
+
 if __name__ == '__main__':
     unittest.main()

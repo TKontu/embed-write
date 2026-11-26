@@ -6,9 +6,14 @@ sentence, ``(doc_id, section_type, sentence_id, ordinal)``, i.e. O(number of
 test sentences) ids, no text. Every document must be in the split's test set
 (``SplitLeakError`` otherwise).
 
-Each sentence takes the section type of its nearest preceding ATX heading,
-mapped through the genre's ``section_types`` aliases with ``normalize_heading``;
-text before any heading or under an unmapped heading is ``unknown`` (counted).
+Headings are ATX (``#``..``######``, level = ``#`` count) or setext (a paragraph
+underlined by ``===``, level 1, or ``---``, level 2); lines inside ``` or ~~~ code
+fences are never headings. Heading text is mapped through the genre's
+``section_types`` aliases with ``normalize_heading``. Each sentence takes the type
+of the nearest enclosing mapped heading: an unmapped heading deeper than the
+current mapped one inherits its type, while any heading at the same or a higher
+level closes it. Text before any heading, or under an unmapped heading with no
+enclosing mapped heading, is ``unknown`` (counted).
 
 Allocation over (report, section type) strata: if n >= number of non-empty
 section types, each type first receives one seat in a seeded-random stratum of
@@ -41,7 +46,10 @@ SCHEMA_VERSION = 1
 UNKNOWN = 'unknown'
 MEMORY_BOUND = ('O(test sentences) candidate tuples (doc_id, section_type, sentence_id, '
                 'ordinal); one document text at a time; no sentence text retained')
-_HEADING = re.compile(r'^ {0,3}#{1,6}[ \t]+(.*?)[ \t#]*$')
+_HEADING = re.compile(r'^ {0,3}(#{1,6})[ \t]+(.*?)[ \t#]*$')
+_SETEXT = re.compile(r'^ {0,3}(=+|-+)[ \t]*$')
+_FENCE = re.compile(r'^ {0,3}(`{3,}|~{3,})(.*)$')
+_NOT_SETEXT_START = re.compile(r'^ {0,3}(?:[-*+]|\d+[.)])[ \t]|^ {0,3}>')
 
 
 def _heading_map(genre):
@@ -52,15 +60,50 @@ def _heading_map(genre):
 def _sections(markdown, headings):
     """Yield (section_type, heading_text, section_index, paragraph) per blank-line paragraph."""
     current, heading, index, para = UNKNOWN, None, 0, []
-    for line in markdown.splitlines():
-        m = _HEADING.match(line)
-        if m or not line.strip():
+    mapped = []  # stack of (level, section_type) for enclosing mapped headings
+    fence = None  # (char, length) of the open code fence
+    fenced = False  # pending paragraph text includes a code fence
+    lines = markdown.splitlines()
+    start = 0
+    if lines and lines[0] == '---':  # YAML front matter: skip through closing ---/...
+        for i in range(1, len(lines)):
+            if lines[i] in ('---', '...'):
+                start = i + 1
+                break
+    for line in lines[start:]:
+        if fence:
+            para.append(line)
+            m = _FENCE.match(line)
+            if m and m.group(1)[0] == fence[0] and len(m.group(1)) >= fence[1] \
+                    and not m.group(2).strip():
+                fence = None
+            continue
+        m = _FENCE.match(line)
+        if m and not (m.group(1)[0] == '`' and '`' in m.group(2)):
+            fence = (m.group(1)[0], len(m.group(1)))
+            fenced = True
+            para.append(line)
+            continue
+        promotable = para and not fenced and not _NOT_SETEXT_START.match(para[0])
+        atx, setext = _HEADING.match(line), promotable and _SETEXT.match(line)
+        if atx or setext or not line.strip():
+            if setext:
+                text, level = ' '.join(p.strip() for p in para), 1 if '=' in line else 2
+                para = []
+            elif atx:
+                text, level = atx.group(2), len(atx.group(1))
             if para:
                 yield current, heading, index, '\n'.join(para)
                 para = []
-            if m:
-                heading = m.group(1)
-                current = headings.get(normalize_heading(heading), UNKNOWN)
+            fenced = False
+            if atx or setext:
+                heading = text
+                while mapped and mapped[-1][0] >= level:
+                    mapped.pop()
+                section = headings.get(normalize_heading(text))
+                if section is not None:
+                    mapped.append((level, section))
+                current = mapped[-1][1] if mapped else UNKNOWN
                 index += 1
         else:
             para.append(line)
