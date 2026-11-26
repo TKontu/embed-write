@@ -145,3 +145,22 @@ body {
     order: -1;
   }
 }
+
+/* OV-01: document minimap strip. Segment colour is legendCss's --signal-color; gaps stay blank. */
+.minimap-mount {
+  grid-column: 1 / -1;
+}
+
+.minimap {
+  display: flex;
+  height: 0.75rem;
+  border: 1px solid #8884;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.minimap-segment {
+  flex-basis: 0;
+  min-width: 1px;
+  background: var(--signal-color, transparent);
+}

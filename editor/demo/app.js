@@ -5,6 +5,7 @@ import { isMoveOverlayOn, moveOverlayPlugin, selectedMoveGranularity, selectedMo
   setMoveGranularity, setMoveOverlaySelection, toggleMoveOverlay, updateOverlayButton } from './overlay.js';
 import { DEFAULT_GRANULARITY, DEFAULT_OFF_SHORTCUT, DEFAULT_OVERLAY, OVERLAYS } from '../src/decorations.js';
 import { legendCss, renderLegendPanel } from '../src/legend.js';
+import { mountMinimap } from '../src/minimap.js';
 
 const byId = (id) => /** @type {HTMLElement} */ (document.getElementById(id));
 const ui = {
@@ -16,6 +17,7 @@ const ui = {
   overlaySelect: /** @type {HTMLSelectElement} */ (byId('overlay-select')),
   status: byId('status'),
   root: byId('editor'),
+  minimap: byId('minimap'),
   legendMount: byId('legend-panel'),
   legendStyle: /** @type {HTMLStyleElement} */ (byId('legend-css')),
 };
@@ -138,6 +140,8 @@ async function load(name) {
   // idPlugin assigns block ids on this transaction; the overlay then has nodes to decorate.
   editor.view.dispatch(editor.view.state.tr.setMeta('demo:loaded', true));
   state.editor = editor;
+  // OV-01: the move-sequence strip for this sample, coloured by the legendCss rules (I3).
+  mountMinimap(ui.minimap, moves, editor.view.state.doc.childCount, genre);
   ui.samples.value = name;
   updateSourceButton();
   updateOverlayButton(ui.overlay, isMoveOverlayOn(editor.view.state));

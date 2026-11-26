@@ -8,7 +8,7 @@ npm run demo
 
 The server prints its localhost URL. Open it; the page lists the `.md` files in the sample
 folder, loads one into the editor, shows the provisional move overlay and saves edits through
-`atomicWrite`.
+`atomicWrite`. A strip above the editor is the document minimap (OV-01): one segment per run of same-move blocks, coloured by legendCss.
 
 ## One real report (DE-05 swap, D-011)
 
