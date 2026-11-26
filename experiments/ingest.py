@@ -127,33 +127,68 @@ def _docx_para_text(p) -> str:
     return "".join(parts).replace("****", "")
 
 
-def _docx_numbering(z: zipfile.ZipFile) -> dict[str, dict[int, str]]:
-    """numId -> {ilvl: numFmt} from word/numbering.xml; {} when absent/unreadable."""
+def _lvl_props(lvl, base: tuple[str, int] = ("", 1)) -> tuple[str, int]:
+    """(numFmt, start) of a <w:lvl>, inheriting missing values from base."""
+    fmt, start = base
+    f, st = lvl.find(WNS + "numFmt"), lvl.find(WNS + "start")
+    if f is not None:
+        fmt = f.get(WNS + "val", "")
+    if st is not None:
+        try:
+            start = int(st.get(WNS + "val", ""))
+        except ValueError:
+            pass
+    return fmt, start
+
+
+def _docx_numbering(z: zipfile.ZipFile) -> dict[str, dict[int, tuple[str, int]]]:
+    """numId -> {ilvl: (numFmt, start)} from word/numbering.xml; {} when absent/unreadable.
+
+    Honours abstractNum <w:start>, and per-num <w:lvlOverride> (<w:startOverride>, <w:lvl>).
+    """
     try:
         root = ET.fromstring(z.read("word/numbering.xml"))
     except (KeyError, ET.ParseError):
         return {}
-    abstract: dict[str, dict[int, str]] = {}
+    abstract: dict[str, dict[int, tuple[str, int]]] = {}
     for an in root.findall(WNS + "abstractNum"):
         levels = {}
         for lvl in an.findall(WNS + "lvl"):
-            fmt = lvl.find(WNS + "numFmt")
             try:
-                levels[int(lvl.get(WNS + "ilvl", "0"))] = (
-                    fmt.get(WNS + "val", "") if fmt is not None else "")
+                levels[int(lvl.get(WNS + "ilvl", "0"))] = _lvl_props(lvl)
             except ValueError:
                 continue
         abstract[an.get(WNS + "abstractNumId", "")] = levels
-    nums: dict[str, dict[int, str]] = {}
+    nums: dict[str, dict[int, tuple[str, int]]] = {}
     for num in root.findall(WNS + "num"):
         ref = num.find(WNS + "abstractNumId")
-        if ref is not None:
-            nums[num.get(WNS + "numId", "")] = abstract.get(ref.get(WNS + "val", ""), {})
+        if ref is None:
+            continue
+        levels = dict(abstract.get(ref.get(WNS + "val", ""), {}))
+        for ov in num.findall(WNS + "lvlOverride"):
+            try:
+                ilvl = int(ov.get(WNS + "ilvl", "0"))
+            except ValueError:
+                continue
+            props = levels.get(ilvl, ("", 1))
+            lvl = ov.find(WNS + "lvl")
+            if lvl is not None:
+                props = _lvl_props(lvl, props)
+            so = ov.find(WNS + "startOverride")
+            if so is not None:
+                try:
+                    props = (props[0], int(so.get(WNS + "val", "")))
+                except ValueError:
+                    pass
+            levels[ilvl] = props
+        nums[num.get(WNS + "numId", "")] = levels
     return nums
 
 
 def _ordered_fmt(fmt: str) -> bool:
-    return fmt.startswith("decimal")
+    """Any counting format (decimal, letters, roman, ordinal, ...) -> ordered; CommonMark
+    ordered items carry digits only, so the number is emitted in decimal."""
+    return fmt not in ("", "bullet", "none")
 
 
 def convert_docx(path: Path) -> str:
@@ -190,8 +225,9 @@ def convert_docx(path: Path) -> str:
                         ilvl = 0
                 for key in [k for k in counters if k[0] == num_id and k[1] > ilvl]:
                     del counters[key]  # a shallower item restarts deeper levels
-                if _ordered_fmt(numbering.get(num_id, {}).get(ilvl, "")):
-                    n = counters.get((num_id, ilvl), 0) + 1
+                fmt, start = numbering.get(num_id, {}).get(ilvl, ("", 1))
+                if _ordered_fmt(fmt):
+                    n = counters[(num_id, ilvl)] + 1 if (num_id, ilvl) in counters else start
                     counters[(num_id, ilvl)] = n
                     marker = f"{n}. "
                 else:
