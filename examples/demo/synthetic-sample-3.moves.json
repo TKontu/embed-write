@@ -13,5 +13,9 @@
   { "block": 4, "move": "gap", "level": "section" },
   { "block": 10, "move": "finding", "level": "section" },
   { "block": 1, "move": "context", "level": "sentence", "sentence": 0 },
-  { "block": 11, "move": "finding", "level": "sentence", "sentence": 0 }
+  { "block": 11, "move": "finding", "level": "sentence", "sentence": 0 },
+  { "block": 2, "overlay": "register", "kind": "formal" },
+  { "block": 8, "overlay": "register", "kind": "informal" },
+  { "block": 11, "overlay": "support", "kind": "unsupported-claim" },
+  { "block": 5, "overlay": "redundancy", "kind": "repeats-earlier" }
 ]

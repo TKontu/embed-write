@@ -58,10 +58,16 @@ for (const name of samples) {
       assert.ok(Number.isInteger(entry.block) && entry.block >= 0 && entry.block < topLevel,
         `block ${entry.block} out of range 0..${topLevel - 1}`);
       // RE-09: a block may carry one label per level (and per sentence).
-      const key = `${entry.block}/${entry.level ?? 'paragraph'}/${entry.sentence ?? ''}`;
+      // RE-10: and one per overlay; only 'moves' (the default) entries name legend moves.
+      const overlay = entry.overlay ?? 'moves';
+      const key = `${overlay}/${entry.block}/${entry.level ?? 'paragraph'}/${entry.sentence ?? ''}`;
       assert.ok(!blocks.has(key), `duplicate block ${key}`);
       blocks.add(key);
-      assert.ok(Object.hasOwn(legend.moves, entry.move), `move ${entry.move} missing from legend.json`);
+      if (overlay === 'moves') {
+        assert.ok(Object.hasOwn(legend.moves, entry.move), `move ${entry.move} missing from legend.json`);
+      } else {
+        assert.match(entry.kind, /^[a-z][a-z0-9-]*$/);
+      }
     }
   });
 }

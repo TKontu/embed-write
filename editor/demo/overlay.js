@@ -6,7 +6,8 @@
 import { Decoration, DecorationSet } from '@milkdown/prose/view';
 import { Plugin, PluginKey } from '@milkdown/prose/state';
 import { keydownHandler } from '@milkdown/prose/keymap';
-import { DEFAULT_GRANULARITY, DEFAULT_OFF_SHORTCUT, DEFAULT_OVERLAY, DEFAULT_WEAK_BELOW, GRANULARITIES } from '../src/decorations.js';
+import { DEFAULT_GRANULARITY, DEFAULT_OFF_SHORTCUT, DEFAULT_OVERLAY, DEFAULT_WEAK_BELOW, GRANULARITIES,
+  OVERLAYS } from '../src/decorations.js';
 
 export const moveOverlayKey = new PluginKey('demoMoveOverlay');
 
@@ -38,6 +39,23 @@ function checkLevel(level) {
     throw new Error(`sidecar level must be one of ${GRANULARITIES.join(', ')}: ${level}`);
   }
   return name;
+}
+
+/** RE-10: an overlay name from OVERLAYS; undefined means DEFAULT_OVERLAY. @param {unknown} overlay @returns {string} */
+function checkOverlay(overlay) {
+  const name = overlay === undefined ? DEFAULT_OVERLAY : overlay;
+  if (typeof name !== 'string' || !OVERLAYS.includes(name)) {
+    throw new Error(`sidecar overlay must be one of ${OVERLAYS.join(', ')}: ${overlay}`);
+  }
+  return name;
+}
+
+/** RE-10: a non-moves entry's kind; a lower-case slug, not checked against the genre file. @param {unknown} kind */
+function checkKind(kind) {
+  if (typeof kind !== 'string' || !/^[a-z][a-z0-9-]*$/.test(kind)) {
+    throw new Error(`sidecar kind must be a lower-case slug: ${kind}`);
+  }
+  return kind;
 }
 
 /**
@@ -94,15 +112,20 @@ function blockText(node, offset) {
  * - sentence: one inline decoration over sentence `sentence` (0-based, splitSentences) of the block.
  * A block without an id yet (idPlugin assigns ids on the first transaction) is skipped; the plugin
  * recomputes decorations after that transaction.
+ * RE-10: an entry's `overlay` (default 'moves') must be in OVERLAYS; only entries of `overlay`
+ * decorate. 'moves' entries carry a genre `move`; other entries carry a slug `kind` and get no
+ * legend colour (neutral; I3).
  * @param {import('prosemirror-model').Node} doc
- * @param {{ block: number, move: string, level?: string, sentence?: number }[]} moves
+ * @param {{ block: number, move?: string, kind?: string, overlay?: string, level?: string, sentence?: number }[]} moves
  * @param {Parameters<typeof genreMoveIds>[0]} genre
  * @param {string} [granularity]
+ * @param {string} [overlay]
  * @returns {DecorationSet}
  */
-export function moveDecorations(doc, moves, genre, granularity = DEFAULT_GRANULARITY) {
+export function moveDecorations(doc, moves, genre, granularity = DEFAULT_GRANULARITY, overlay = DEFAULT_OVERLAY) {
   if (!Array.isArray(moves)) throw new Error('sidecar moves must be an array');
   const selected = checkLevel(granularity);
+  const selectedOverlay = checkOverlay(overlay);
   const known = new Set(genreMoveIds(genre));
   /** @type {{ node: import('prosemirror-model').Node, offset: number }[]} */
   const top = [];
@@ -113,8 +136,10 @@ export function moveDecorations(doc, moves, genre, granularity = DEFAULT_GRANULA
     if (!Number.isInteger(index) || index < 0 || index >= top.length) {
       throw new Error(`sidecar block index out of range: ${index} (doc has ${top.length} top-level blocks)`);
     }
-    const move = checkMove(entry.move);
-    if (!known.has(move)) throw new Error(`sidecar move has no genre entry: ${move}`);
+    const entryOverlay = checkOverlay(entry.overlay);
+    const isMove = entryOverlay === 'moves';
+    const kind = isMove ? checkMove(entry.move) : checkKind(entry.kind);
+    if (isMove && !known.has(kind)) throw new Error(`sidecar move has no genre entry: ${kind}`);
     const level = checkLevel(entry.level);
     const { node, offset } = top[index];
     /** @type {number[]} */
@@ -141,22 +166,23 @@ export function moveDecorations(doc, moves, genre, granularity = DEFAULT_GRANULA
       const [from, to] = sentences[n];
       range = [pos[from], pos[to - 1] + 1];
     }
-    if (level !== selected) continue;
+    if (level !== selected || entryOverlay !== selectedOverlay) continue;
     // Reuse the decorations module's rendering contract: provisional layer, default overlay and
     // its weak/strong threshold. The colour comes from legendCss's
     // `.signal[data-signal-kind="<move>"] { --signal-color }` rule, never from this decoration.
     const confidence = 1;
     const strength = confidence < DEFAULT_WEAK_BELOW ? 'weak' : 'strong';
+    /** @type {Record<string, string>} */
     const attrs = {
-      class: `signal signal-provisional signal-${strength} move move-${move}`,
-      'data-move': move,
-      'data-signal-kind': move,
+      class: `signal signal-provisional signal-${strength}${isMove ? ` move move-${kind}` : ''}`,
+      'data-signal-kind': kind,
       'data-signal-layer': 'provisional',
       'data-signal-confidence': String(confidence),
       'data-signal-strength': strength,
-      'data-signal-overlay': DEFAULT_OVERLAY,
+      'data-signal-overlay': entryOverlay,
       'data-signal-level': level,
     };
+    if (isMove) attrs['data-move'] = kind;
     if (range) {
       const id = node.attrs.id;
       if (typeof id !== 'string' || !id) continue;
@@ -223,28 +249,58 @@ export function setMoveGranularity(name) {
   };
 }
 
+/**
+ * RE-10: the overlay's selected overlay name; DEFAULT_OVERLAY when the plugin is absent.
+ * Production caller: editor/demo/app.js (status line, sample switching).
+ * @param {import('prosemirror-state').EditorState} state
+ * @returns {string}
+ */
+export function selectedMoveOverlaySelection(state) {
+  return moveOverlayKey.getState(state)?.overlay ?? DEFAULT_OVERLAY;
+}
+
+/**
+ * RE-10 command factory: select which overlay's entries are decorated (one at a time). Meta-only:
+ * no doc steps. Unknown names throw. Production caller: the demo's overlay select (editor/demo/app.js).
+ * @param {string} name
+ */
+export function setMoveOverlaySelection(name) {
+  const overlay = checkOverlay(name);
+  /**
+   * @param {import('prosemirror-state').EditorState} state
+   * @param {(tr: import('prosemirror-state').Transaction) => void} [dispatch]
+   */
+  return (state, dispatch) => {
+    const s = moveOverlayKey.getState(state);
+    if (!s) return false;
+    if (dispatch) dispatch(state.tr.setMeta(moveOverlayKey, { ...s, overlay }));
+    return true;
+  };
+}
+
 /** RE-11: the single off/on shortcut, shared with the library overlay (DEFAULT_OFF_SHORTCUT). */
 export const moveOverlayBindings = Object.freeze({ [DEFAULT_OFF_SHORTCUT]: toggleMoveOverlay });
 
 /**
  * Plugin wrapper: reads the sidecar and genre file through the getters so a loaded document's
- * decorations follow its current block ids. State is { on, granularity }; off renders no
- * decorations; on renders only the selected granularity's entries (RE-09).
- * @param {() => { block: number, move: string, level?: string, sentence?: number }[]} getMoves
+ * decorations follow its current block ids. State is { on, granularity, overlay }; off renders no
+ * decorations; on renders only the selected overlay's (RE-10) entries at the selected granularity (RE-09).
+ * @param {() => Parameters<typeof moveDecorations>[1]} getMoves
  * @param {() => Parameters<typeof genreMoveIds>[0]} getGenre
- * @param {{ initiallyOn?: boolean, initialGranularity?: string, onToggle?: (on: boolean) => void,
- *   onGranularity?: (name: string) => void }} [opts]
+ * @param {{ initiallyOn?: boolean, initialGranularity?: string, initialOverlay?: string,
+ *   onToggle?: (on: boolean) => void, onGranularity?: (name: string) => void, onOverlay?: (name: string) => void }} [opts]
  * @returns {Plugin}
  */
 export function moveOverlayPlugin(getMoves, getGenre, opts = {}) {
   const initiallyOn = opts.initiallyOn === undefined ? true : opts.initiallyOn;
   if (typeof initiallyOn !== 'boolean') throw new Error(`initiallyOn must be a boolean: ${initiallyOn}`);
   const initialGranularity = checkLevel(opts.initialGranularity);
-  const { onToggle, onGranularity } = opts;
+  const initialOverlay = checkOverlay(opts.initialOverlay);
+  const { onToggle, onGranularity, onOverlay } = opts;
   return new Plugin({
     key: moveOverlayKey,
     state: {
-      init: () => ({ on: initiallyOn, granularity: initialGranularity }),
+      init: () => ({ on: initiallyOn, granularity: initialGranularity, overlay: initialOverlay }),
       apply: (tr, prev) => tr.getMeta(moveOverlayKey) || prev,
     },
     view: () => ({
@@ -253,11 +309,14 @@ export function moveOverlayPlugin(getMoves, getGenre, opts = {}) {
         if (onToggle && on !== isMoveOverlayOn(prevState)) onToggle(on);
         const g = selectedMoveGranularity(view.state);
         if (onGranularity && g !== selectedMoveGranularity(prevState)) onGranularity(g);
+        const o = selectedMoveOverlaySelection(view.state);
+        if (onOverlay && o !== selectedMoveOverlaySelection(prevState)) onOverlay(o);
       },
     }),
     props: {
       decorations: (state) => (isMoveOverlayOn(state)
-        ? moveDecorations(state.doc, getMoves(), getGenre(), selectedMoveGranularity(state))
+        ? moveDecorations(state.doc, getMoves(), getGenre(), selectedMoveGranularity(state),
+          selectedMoveOverlaySelection(state))
         : DecorationSet.empty),
       handleKeyDown: keydownHandler(moveOverlayBindings),
     },
