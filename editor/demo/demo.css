@@ -213,3 +213,31 @@ body {
   margin-top: 0.75rem;
   font-size: 0.8rem;
 }
+
+/* OV-02: comparison strip (draft vs typical). Segment colours from legendCss only (I3). */
+.comparison-mount {
+  grid-column: 1 / -1;
+}
+
+.comparison {
+  margin: 0.25rem 0;
+  font-size: 0.8rem;
+}
+
+.comparison-row {
+  display: grid;
+  grid-template-columns: 16rem 1fr;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.comparison-steps {
+  margin: 0.25rem 0;
+  padding-left: 1.25rem;
+}
+
+.comparison-note {
+  margin: 0;
+  font-style: italic;
+}

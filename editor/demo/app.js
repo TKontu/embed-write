@@ -6,6 +6,7 @@ import { isMoveOverlayOn, moveOverlayPlugin, selectedMoveGranularity, selectedMo
 import { DEFAULT_GRANULARITY, DEFAULT_OFF_SHORTCUT, DEFAULT_OVERLAY, OVERLAYS } from '../src/decorations.js';
 import { legendCss, renderLegendPanel } from '../src/legend.js';
 import { mountCollapsibleMinimap } from '../src/minimap.js';
+import { mountComparison } from '../src/comparison.js';
 import { openIssues, renderIssues } from '../src/issues.js';
 import { Plugin, Selection } from '@milkdown/prose/state';
 import { inspectorPlugin, mountInspector, renderMethodTexts } from '../src/inspector.js';
@@ -149,6 +150,8 @@ async function load(name) {
   state.editor = editor;
   // OV-01/OV-04: the move-sequence strip (legendCss colours, I3), collapsed until toggled.
   mountCollapsibleMinimap(ui.minimap, moves, editor.view.state.doc.childCount, genre);
+  // OV-02 (D-009 slice): the draft's move order beside the typical order of all demo samples.
+  mountComparisonStrip();
   // OV-03 (D-009 slice): missing moves and unlabeled passages under the minimap.
   mountIssues(editor);
   ui.samples.value = name;
@@ -161,6 +164,30 @@ async function load(name) {
 
 /** @type {HTMLElement | null} */
 let issuesMount = null;
+/** @type {HTMLElement | null} */
+let comparisonMount = null;
+/** OV-02: every demo sample's labels (synthetic, LLM-built), fetched once in init(). */
+/** @type {Array<Array<{ block: number, move: string }>>} */
+let sampleMoves = [];
+
+function mountComparisonStrip() {
+  if (!comparisonMount) {
+    comparisonMount = document.createElement('div');
+    comparisonMount.className = 'comparison-mount';
+    ui.minimap.after(comparisonMount);
+  }
+  mountComparison(comparisonMount, moves, sampleMoves, genre);
+}
+
+/** @param {string[]} names */
+async function loadSampleMoves(names) {
+  const all = [];
+  for (const name of names) {
+    const res = await fetch(`/api/moves/${encodeURIComponent(name)}`);
+    if (res.ok) all.push(await res.json());
+  }
+  return all;
+}
 /** @type {ReturnType<typeof mountInspector> | null} */
 let inspector = null;
 /** @type {HTMLElement | null} */
@@ -259,6 +286,7 @@ async function init() {
       setStatus('No .md samples in the demo folder', true);
       return;
     }
+    sampleMoves = await loadSampleMoves(listing.samples);
     ui.samples.addEventListener('change', () => {
       load(ui.samples.value).catch((err) => setStatus(`Load failed: ${err.message}`, true));
     });
