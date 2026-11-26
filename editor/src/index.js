@@ -130,3 +130,4 @@ export { signalDecorations, signalDecorationsPlugin, DEFAULT_WEAK_BELOW, DEFAULT
   selectedSignalOverlay, GRANULARITIES, DEFAULT_GRANULARITY, setSignalGranularity,
   selectedSignalGranularity } from './decorations.js';
 export { pastePlugin, looksLikeMarkdown } from './paste.js';
+export { legendCss } from './legend.js';
