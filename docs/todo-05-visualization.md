@@ -75,6 +75,7 @@ Colour is the expert's main channel into the pattern model. Revision 2 replaces 
 - [ ] **OV-02** `[A]` Comparison strip: the typical sequence for this section type from the corpus, beside the draft's
 - [ ] **OV-03** `[A]` Open-issues list: missing moves, unsupported claims, off-register passages; click to navigate
 - [ ] **OV-04** `[A]` Collapsible; the prose keeps the space by default
+  - partial (R180/A1, PR #452, merge 21bd94e): `editor/src/minimap.js` mountCollapsibleMinimap; the OV-01 strip sits behind an aria-expanded toggle, collapsed by default, state kept on re-mount. seen: editor/test/minimap.test.js (jsdom), npm test 277/277 and gate 1630 OK at head d0be7d1 (rerun by planner). Stays partial: no browser run; app wiring owed to AP-01. Residual: state not persisted across reloads.
 
 ---
 
