@@ -24,6 +24,7 @@ Colour is the expert's main channel into the pattern model. Revision 2 replaces 
 - [ ] **LG-06** `[A]` Neutral rendering for `other` and for unlabeled text
   - partial (R164/A1, PR #414, merge dbbc5dc): tests only, no behaviour change (comment in `editor/src/signals.css`). `other` takes legend.other; unlabeled text and unknown kinds get no `--signal-color` and fall back to transparent (no invented colour, I3). seen: editor/test/neutral.test.js 4 tests (jsdom, LLM-built placeholder colours), npm test 229/229 and gate 1594 OK at head 55953f1 (rerun by planner); combined main dbbc5dc same. Residual: jsdom cannot paint color-mix, fallback rule checked instead. Stays partial: unwired until AP-01/LG-07 and RE-10 link the stylesheets in the app.
 - [ ] **LG-07** `[A]` Legend panel, always reachable, with each move's definition from the genre file
+  - partial (R165/A1, PR #416, merge 8c7b653): `editor/src/legend.js` renderLegendPanel(genre, { document }) builds an `<aside aria-label="Legend">` with one entry per move in genre.moves order (stored-colour swatch, name, definition via textContent) then `other`; validation shared with legendCss. seen: editor/test/legend-panel.test.js 6 tests (jsdom, LLM-built synthetic fixture), npm test 235/235 and gate 1594 OK at head dbbc53f (rerun by planner); combined main 8c7b653 same. Stays partial: unwired until AP-01/AP-03 load the genre file and RE-10 mounts it (always-reachable placement); no panel CSS (LG-05); colours placeholder (LG-01 [H]).
 
 ---
 
