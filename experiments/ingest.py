@@ -60,18 +60,22 @@ WNS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 _HEADING_RE = re.compile(r"^#{1,6}(\s|$)")
 
 
-_MD_INLINE_RE = re.compile(r"([\\`*_\[\]<>])")
+_MD_INLINE_RE = re.compile(r"([\\`*_\[\]<>|])")
+_MD_ENTITY_RE = re.compile(r"&(?=#[0-9]{1,7};|#[xX][0-9a-fA-F]{1,6};|[A-Za-z][A-Za-z0-9]{0,31};)")
 _MD_ORDERED_RE = re.compile(r"(\d{1,9})([.)])(?=\s|$)")
 
 
 def _md_escape_line_starts(text: str) -> str:
-    """Backslash-escape block markers (#, >, -/+ bullets, 1./1) ordered, ===/--- rules)
-    that open a line; inline specials are left to _md_escape."""
+    """Backslash-escape block markers (#, >, -/+ bullets, 1./1) ordered, ===/--- rules,
+    ~~~ fences) that open a line and drop indentation of 4+ columns (or any tab) that
+    would make an indented code block; inline specials are left to _md_escape."""
     out = []
     for line in text.split("\n"):
         rest = line.lstrip()
         lead = line[: len(line) - len(rest)]
-        if rest[:1] in ("#", ">") or re.match(r"[-+](\s|$)", rest) \
+        if "\t" in lead or len(lead) >= 4:
+            lead = ""
+        if rest[:1] in ("#", ">") or rest.startswith("~~~") or re.match(r"[-+](\s|$)", rest) \
                 or re.fullmatch(r"(=+|-+)\s*", rest):
             rest = "\\" + rest
         else:
@@ -86,11 +90,13 @@ def _md_escape(text: str, line_starts: bool = True) -> str:
     """Escape raw source text so CommonMark reads it literally. Apply before the converter
     adds its own markup; line_starts=False for fragments that do not open a line."""
     text = _MD_INLINE_RE.sub(r"\\\1", text)
+    text = _MD_ENTITY_RE.sub(r"\\&", text)
     return _md_escape_line_starts(text) if line_starts else text
 
 
 def _esc_cell(text: str) -> str:
-    return text.replace("|", "\\|").replace("\n", " ").strip()
+    """Cell text arrives escaped (pipes included); escape only pipes not already escaped."""
+    return re.sub(r"(?<!\\)((?:\\\\)*)\|", r"\1\\|", text).replace("\n", " ").strip()
 
 
 def _table(rows: list[list[str]]) -> str:
@@ -138,7 +144,7 @@ def _on(el) -> bool:
     return el.get(WNS + "val", "true") not in ("0", "false", "none")
 
 
-def _docx_para_text(p) -> str:
+def _docx_para_text(p, line_starts: bool = True) -> str:
     parts = []
     for r in p.iter(WNS + "r"):
         rpr = r.find(WNS + "rPr")
@@ -153,7 +159,8 @@ def _docx_para_text(p) -> str:
             elif child.tag in (WNS + "br", WNS + "cr"):
                 text += " "
         parts.append(_wrap(_md_escape(text, line_starts=False), bold, italic))
-    return _md_escape_line_starts("".join(parts).replace("****", "").strip())
+    text = "".join(parts).replace("****", "").strip()
+    return _md_escape_line_starts(text) if line_starts else text
 
 
 def _lvl_props(lvl, base: tuple[str, int] = ("", 1)) -> tuple[str, int]:
@@ -267,7 +274,7 @@ def convert_docx(path: Path) -> str:
                 if text:
                     counters.clear()
         elif el.tag == WNS + "tbl":
-            rows = [[" ".join(_docx_para_text(p).strip() for p in tc.iter(WNS + "p")).strip()
+            rows = [[" ".join(_docx_para_text(p, line_starts=False).strip() for p in tc.iter(WNS + "p")).strip()
                      for tc in tr.findall(WNS + "tc")]
                     for tr in el.findall(WNS + "tr")]
             blocks.append(("t", _table(rows)))
