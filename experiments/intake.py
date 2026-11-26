@@ -1,4 +1,4 @@
-"""CO-11: corpus intake, one command from a folder of reports to an annotation-ready set.
+"""CO-12: corpus intake, one command from a folder of reports to an annotation-ready set.
 
 Chains the existing steps in-process through their public functions (no subprocess, no
 duplicated logic):
@@ -10,6 +10,12 @@ duplicated logic):
 5. ``annotation_sample``: AN-02 ``split_documents`` + ``build_manifest`` -> OUT/manifest.json
 6. ``prelabel``: G-01.4 ``iter_prelabel`` over the manifest items (only with --model-url; else
    skipped) -> OUT/prelabels.jsonl
+7. ``discovery``: MV-02 ``move_discovery.make_embedder`` + ``build_report``/``write_report`` over
+   OUT/converted (only with --discover; else skipped) -> OUT/move_discovery.json. The embedder is
+   the development HashEmbedder unless EMBED_WRITE_MODEL_DIR names a local ONNX model directory,
+   then the real BGE-M3 OnnxEmbedder. The discovery report holds corpus sentences and stays under
+   OUT (private); intake_report.json records only its path, status and counts (clusters per
+   section type, sentences sampled/seen, whether the embedder is development-only).
 
 It writes OUT/intake_report.json: per step ``status`` (ok/failed/skipped), ``reason``, ``output``
 and counts only, then ``next_steps`` (exact expert command lines built from the actual paths).
@@ -35,13 +41,14 @@ Production caller: the expert/operator CLI.
 
 CLI: python -m experiments.intake run SRC OUT --genre GENRE.json [--metadata META.jsonl]
      [--split-seed N] [--test-fraction F] [--n N] [--seed N]
-     [--model-url URL --model-name NAME] [--force]
+     [--model-url URL --model-name NAME] [--discover] [--force]
 Exit 0 when every step is ok or skipped, 1 when any step failed, 2 on usage errors.
 """
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import shlex
 import shutil
 import sys
@@ -49,7 +56,7 @@ from collections import Counter
 from pathlib import Path
 
 from experiments import annotate, annotation_sample, conversion_quality, corpus_metadata
-from experiments import corpus_stats, ingest, prelabel
+from experiments import corpus_stats, ingest, move_discovery, prelabel
 from experiments.corpus import iter_documents
 from experiments.splits import split_documents
 from service.genre import load_genre
@@ -57,11 +64,15 @@ from service.genre import load_genre
 REPORT_NAME = "intake_report.json"
 CONVERTED = "converted"
 STEPS = ("ingest", "conversion_quality", "corpus_stats", "metadata", "annotation_sample",
-         "prelabel")
+         "prelabel", "discovery")
 DEPENDS = {"conversion_quality": "ingest", "corpus_stats": "ingest",
-           "annotation_sample": "ingest", "prelabel": "annotation_sample"}
+           "annotation_sample": "ingest", "prelabel": "annotation_sample",
+           "discovery": "corpus_stats"}
 NO_METADATA = "metadata owed by the expert (CO-06)"
 NO_MODEL = "no local model endpoint given"
+NO_DISCOVER = "not requested"
+DISCOVERY_NAME = "move_discovery.json"
+MODEL_DIR_ENV = "EMBED_WRITE_MODEL_DIR"
 
 
 def _code(exc: BaseException) -> str:
@@ -150,6 +161,19 @@ def _prelabel(converted: Path, out: Path, genre, model) -> dict:
                                          "labels": dict(sorted(labels.items()))})
 
 
+def _discover(converted: Path, out: Path, genre) -> dict:
+    model_dir = os.environ.get(MODEL_DIR_ENV) or None
+    embedder = move_discovery.make_embedder("onnx" if model_dir else "hash", model_dir)
+    report = move_discovery.build_report(converted, genre, embedder=embedder)
+    path = out / DISCOVERY_NAME
+    move_discovery.write_report(report, path, force=True)
+    return _step("ok", None, str(path), {
+        "clusters_per_section_type": {t: len(c) for t, c in sorted(report["clusters"].items())},
+        "sentences_sampled": report["sentences"]["sampled"],
+        "sentences_seen": report["sentences"]["seen"],
+        "development_only_embedder": report["embedder"]["development_only"]})
+
+
 def _editor_path(path: str) -> str:
     """The converted file as seen from editor/ (npm runs the demo there)."""
     return path if Path(path).is_absolute() else str(Path("..") / path)
@@ -213,6 +237,10 @@ def run(args, model=None) -> tuple[int, dict]:
         steps["prelabel"] = (_step("skipped", "blocked by annotation_sample")
                              if steps["annotation_sample"]["status"] != "ok"
                              else _step("skipped", NO_MODEL))
+    if args.discover:
+        attempt("discovery", _discover, converted, out, genre)
+    else:
+        steps["discovery"] = _step("skipped", NO_DISCOVER)
     report = {"schema_version": 1, "source": args.src, "out": args.out,
               "steps": {name: steps[name] for name in STEPS},
               "next_steps": _next_steps(steps, out, converted, args.genre, outputs)}
@@ -247,6 +275,9 @@ def main(argv: list[str] | None = None, model=None) -> int:
     r.add_argument("--seed", type=int, default=0)
     r.add_argument("--model-url", default=None)
     r.add_argument("--model-name", default="local")
+    r.add_argument("--discover", action="store_true",
+                   help="also write MV-02 move discovery to OUT (embedder from "
+                        f"{MODEL_DIR_ENV}, else development hash stub)")
     r.add_argument("--force", action="store_true", help="overwrite a non-empty OUT")
     args = parser.parse_args(argv)
     src, out = Path(args.src), Path(args.out)

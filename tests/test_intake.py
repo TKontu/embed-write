@@ -1,11 +1,13 @@
-"""CO-11 intake: chain, determinism, flags, isolation and the privacy rule (synthetic demo data)."""
+"""CO-12 intake: chain, determinism, flags, isolation and the privacy rule (synthetic demo data)."""
 import contextlib
 import io
+import os
 import json
 import re
 import shutil
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from experiments import intake
@@ -66,7 +68,7 @@ class IntakeTest(unittest.TestCase):
         st = {k: v["status"] for k, v in rep["steps"].items()}
         self.assertEqual(st, {"ingest": "ok", "conversion_quality": "ok", "corpus_stats": "ok",
                               "metadata": "skipped", "annotation_sample": "ok",
-                              "prelabel": "skipped"})
+                              "prelabel": "skipped", "discovery": "skipped"})
         self.assertEqual(rep["steps"]["metadata"]["reason"], intake.NO_METADATA)
         self.assertEqual(rep["steps"]["prelabel"]["reason"], intake.NO_MODEL)
         self.assertEqual(rep["steps"]["ingest"]["counts"]["documents"]["ok"], 3)
@@ -154,6 +156,50 @@ class IntakeTest(unittest.TestCase):
         demo = next(p for p in self.src.iterdir() if p.suffix == ".md")
         with self.assertRaises(AssertionError):
             self.assert_private(demo.read_text(encoding="utf-8"))
+
+    def test_discovery_skipped_by_default(self):
+        _, rep, _, _ = self.run_intake()
+        disc = rep["steps"]["discovery"]
+        self.assertEqual((disc["status"], disc["reason"]), ("skipped", intake.NO_DISCOVER))
+        self.assertFalse((self.out / intake.DISCOVERY_NAME).exists())
+
+    def test_discover_writes_private_report_counts_only(self):
+        with mock.patch.dict(os.environ, {intake.MODEL_DIR_ENV: ""}):
+            code, rep, text, printed = self.run_intake("--discover")
+        self.assertEqual(code, 0)
+        disc = rep["steps"]["discovery"]
+        self.assertEqual(disc["status"], "ok")
+        path = Path(disc["output"])
+        self.assertTrue(path.is_file())
+        self.assertEqual(path, self.out / intake.DISCOVERY_NAME)
+        counts = disc["counts"]
+        self.assertGreater(counts["sentences_sampled"], 0)
+        self.assertTrue(counts["clusters_per_section_type"])
+        self.assertTrue(counts["development_only_embedder"])
+        full = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(counts["clusters_per_section_type"],
+                         {t: len(c) for t, c in full["clusters"].items()})
+        self.assert_private(text, printed)
+
+    def test_discover_rerun_is_byte_identical(self):
+        with mock.patch.dict(os.environ, {intake.MODEL_DIR_ENV: ""}):
+            _, _, first, _ = self.run_intake("--discover")
+            disc_first = (self.out / intake.DISCOVERY_NAME).read_bytes()
+            _, _, second, _ = self.run_intake("--discover")
+        self.assertEqual(first, second)
+        self.assertEqual(disc_first, (self.out / intake.DISCOVERY_NAME).read_bytes())
+
+    def test_discover_bad_model_dir_fails_by_type_name(self):
+        with mock.patch.dict(os.environ, {intake.MODEL_DIR_ENV: str(self.tmp / "nomodel")}):
+            code, rep, text, printed = self.run_intake("--discover")
+        self.assertEqual(code, 1)
+        self.assertEqual(rep["steps"]["discovery"]["status"], "failed")
+        self.assertEqual(rep["steps"]["discovery"]["reason"], "DiscoveryError")
+        self.assert_private(text, printed)
+
+    def test_no_stale_row_id(self):
+        for p in (REPO / "experiments" / "intake.py", Path(__file__)):
+            self.assertNotIn("CO-" + "11", p.read_text(encoding="utf-8"), p)
 
     def test_usage_errors(self):
         self.out.mkdir()
