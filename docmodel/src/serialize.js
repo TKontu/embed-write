@@ -118,7 +118,8 @@ function block(node, ctx) {
       const rows = [];
       node.forEach((row) => {
         const cells = [];
-        row.forEach((cell) => cells.push(finishInline(inline(cell, ctx, true)).replace(/\n/g, ' ')));
+        // Cells hold inline content only: no block line-start escaping (DM-06).
+        row.forEach((cell) => cells.push(inline(cell, ctx, true).split(BREAK).join(' ').replace(/\n/g, ' ')));
         rows.push(`| ${cells.join(' | ')} |`);
       });
       const aligns = [];
