@@ -11,6 +11,7 @@ folder, loads one into the editor, shows the provisional move overlay and saves 
 `atomicWrite`. A strip above the editor is the document minimap (OV-01): one segment per run of same-move blocks, coloured by legendCss.
 It starts collapsed; "Show minimap" expands it and the choice survives switching samples (OV-04).
 Below it, a comparison strip (OV-02) shows this draft's move order beside the typical order built from transition counts over all demo samples (synthetic, LLM-built; whole document = one section type), with a caption per step — pattern fit, not a verdict.
+The inspector also shows "Register" (IN-04) with the named off-register feature (plus note/distance when given) for a block flagged in `<sample>.register.json` (synthetic, LLM-built; no register model runs) — pattern fit, not a verdict.
 Below that, an open-issues list (OV-03) names each genre move missing from the labels and each unlabeled passage; clicking a passage selects and scrolls to it.
 Hovering a move mark, or putting the cursor in one, fills the signal inspector (IN-01) beside the editor: signal, value, confidence, layer and a "Method" link to that move's genre definition (pattern fit, not a verdict).
 The inspector also shows sequence evidence (IN-02): "<move> follows <previous move> in K of N samples" (or "opens the report"), counted over the synthetic, LLM-built demo samples — pattern fit, not a verdict.

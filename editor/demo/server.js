@@ -501,6 +501,14 @@ async function handle(req, res, ctx) {
     return send(res, 200, MIME['.json'], await readFile(file, 'utf8'));
   }
 
+  if (!ctx.report && pathname.startsWith('/api/register/')) {
+    // IN-04 (D-009 slice): synthetic, LLM-built register flags, `<sample>.register.json`.
+    const name = checkSampleName(decodeURIComponent(pathname.slice('/api/register/'.length)));
+    const file = join(ctx.dir, name.replace(/\.md$/, '') + '.register.json');
+    if (!existsSync(file)) return sendError(res, 404, 'no register flags');
+    return send(res, 200, MIME['.json'], await readFile(file, 'utf8'));
+  }
+
   const mounts = [
     ['/@app/', EDITOR_DIR],
     ['/@docmodel/', DOCMODEL_DIR],
