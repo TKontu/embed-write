@@ -52,6 +52,13 @@ dry run.
 | A planner's `--outcome wait --cause C --until T` | up to 12 h | Wait for T, then diagnose again |
 | The same cause unresolved by 2 diagnosing rounds in a row (a planner's halt or wait cause, or the breaker's own `no-advance`/`recycled` when a diagnosing round left main unmoved) | | HALT and notify, with that cause |
 
+**Round kinds and models (D-014).**
+- **Diagnosing rounds** (below) and one **strategic round** every 24 h launch the planner on the strong model (`strong_model`, default `claude-fable-5-2`).
+- A strategic round starts with a preamble: re-read the architecture and decisions, check the priority still gives the earliest real feedback, and plan against the biggest reducible risk.
+- The last strategic round's time is kept in `.agent-runs/supervisor/strategic.json`.
+- Every other round uses the default model.
+- Independent reviews of high-risk PRs (the supervisor, merge guard, lane cleanup, `.claude/`, gate code) also run on the strong model.
+
 **Diagnosing rounds (D-012).** No progress and failed rounds are solved by reconciliation, not by
 retry. When the breaker trips, the next round gets a diagnosing preamble before the normal
 instructions:

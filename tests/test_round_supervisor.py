@@ -189,6 +189,20 @@ class PolicyTests(unittest.TestCase):
         out = rs.between_rounds(CFG, t, w, None, now=T0)
         self.assertEqual(out.until, T0 + CFG.wait_max_s)
 
+    def test_round_kind_puts_diagnosis_first_then_a_daily_strategic_round(self):
+        # D-014: Fable for diagnosing rounds and one strategic planning pass a day
+        day = CFG.strategic_every_s
+        self.assertEqual(rs.round_kind(tracker(diagnosing=True), T0, last_strategic=0.0, cfg=CFG), "diagnose")
+        self.assertEqual(rs.round_kind(tracker(), T0, last_strategic=0.0, cfg=CFG), "strategic")
+        self.assertEqual(rs.round_kind(tracker(), T0, last_strategic=T0 - day + 60, cfg=CFG), "normal")
+        self.assertEqual(rs.round_kind(tracker(), T0, last_strategic=T0 - day, cfg=CFG), "strategic")
+
+    def test_only_diagnosing_and_strategic_rounds_use_the_strong_model(self):
+        self.assertEqual(rs.model_args("normal", CFG), [])
+        for kind in ("diagnose", "strategic"):
+            self.assertEqual(rs.model_args(kind, CFG), ["--model", CFG.strong_model])
+        self.assertEqual(rs.model_args("strategic", rs.with_overrides(CFG, [])), ["--model", "claude-fable-5-2"])
+
     def test_overrides_shorten_timers_and_reject_unknown_keys(self):
         self.assertEqual(rs.with_overrides(CFG, ["silence_s=60"]).silence_s, 60)
         with self.assertRaises(TypeError):
@@ -248,6 +262,31 @@ class StateTests(unittest.TestCase):
         with mock.patch.object(rs.time, "sleep"):
             self.assertFalse(sup.wait_until(route))
         self.assertIn("operator stop", (self.tmp / "HALT").read_text())
+
+    def test_a_strategic_round_launches_fable_with_its_preamble_and_is_remembered(self):
+        sent, started = [], []
+
+        class Recording(FakeHerdr):
+            def new_tab(self):
+                return "t", "p"
+
+            def start(self, pane, session, round_no, extra):
+                started.append(list(extra))
+
+            def prompt(self, text):
+                sent.append(text)
+                return 0, ""
+
+        sup = rs.Supervisor(CFG, (), Recording([]))
+        sup.t = rs.Tracker()
+        with mock.patch.object(rs.time, "sleep"), mock.patch.object(rs, "main_sha", lambda _r: "a"):
+            sup.begin_round(1)  # no strategic round on record: this one is strategic
+            sup.begin_round(2)  # one already ran today: a normal round
+        self.assertIn("STRATEGIC ROUND", sent[0])
+        self.assertEqual(started[0][-2:], ["--model", CFG.strong_model])
+        self.assertNotIn("STRATEGIC ROUND", sent[1])
+        self.assertNotIn("--model", started[1])
+        self.assertTrue((self.tmp / "strategic.json").exists())
 
     def open_round(self, started):
         (self.tmp / "current.json").write_text(json.dumps({"round": 7, "started": started}))
