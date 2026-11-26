@@ -2,23 +2,26 @@
 
 Streams documents through experiments.corpus.iter_documents and flags, for the expert's review:
 
-* ``repeated``: a normalised passage (paragraph split on blank lines, plus each line of a
-  multi-line paragraph; lowercased, whitespace collapsed, digit runs masked as ``#``) occurring
+* ``repeated``: a normalised passage of at least ``min_words`` whitespace-separated tokens
+  (paragraphs and lines of multi-line paragraphs; lowercased, whitespace collapsed, digit runs
+  masked as ``#``; shorter passages such as common headings are ignored) occurring
   in at least ``min_docs`` distinct documents (templates, disclaimers, repeated headers/footers).
 * ``near_duplicate_docs``: document pairs whose word 5-gram shingle Jaccard similarity, estimated
   by a seeded MinHash (64 permutations) with LSH banding (16 bands x 4 rows), is >= threshold.
 
 Memory bound: document texts are never retained. State is one entry per distinct normalised
-passage (8-byte hash -> set of doc stems, sample text capped at 200 chars) plus one 64-integer
-MinHash signature per document, i.e. O(distinct passages x docs containing them + 64 x documents).
-The passage table grows with distinct passages and is not capped (untested at full scale).
-Documents are identified by path stem; duplicate stems in subdirectories merge.
+passage (8-byte hash -> set of doc ids, sample text capped at 200 chars) plus one 64-integer
+MinHash signature per document, i.e. O(min(distinct passages, max_passages) x docs containing
+them + 64 x documents). Once the passage table holds ``max_passages`` entries no new passages are
+inserted (existing ones still count); ``totals.passage_table_capped`` records whether that happened.
+Documents are identified by their POSIX path relative to CORPUS_DIR without suffix (``a/x.md`` ->
+``a/x``), so same-stem files in different subdirectories stay distinct.
 
 Output is deterministic: same input -> byte-identical JSON. Production caller is the CLI;
 unwired otherwise by design.
 
 CLI: python -m experiments.boilerplate report CORPUS_DIR OUT.json
-     [--min-docs N] [--threshold T] [--force]
+     [--min-docs N] [--threshold T] [--min-words N] [--max-passages N] [--force]
 """
 from __future__ import annotations
 
@@ -82,16 +85,27 @@ def _signature(text: str) -> tuple[int, ...] | None:
     return tuple(min((a * h + b) % _PRIME for h in hashes) for a, b in _PERMS)
 
 
-def build_report(corpus_dir: str | os.PathLike, min_docs: int = 3, threshold: float = 0.8) -> dict:
+def build_report(corpus_dir: str | os.PathLike, min_docs: int = 3, threshold: float = 0.8,
+                 min_words: int = 4, max_passages: int = 1_000_000) -> dict:
     """Build the flag report; documents are streamed and never retained."""
-    passages: dict[int, list] = {}  # hash -> [sample text, set of stems]
+    passages: dict[int, list] = {}  # hash -> [sample text, set of doc ids]
     signatures: dict[str, tuple[int, ...]] = {}
     stems: set[str] = set()
+    capped = False
+    root = Path(corpus_dir)
     for document in iter_documents(corpus_dir):
-        stem = document.path.stem
+        stem = document.path.relative_to(root).with_suffix("").as_posix()
         stems.add(stem)
-        for norm in set(_passages(document.text)):
-            entry = passages.setdefault(_hash(norm), [norm[:TEXT_CAP], set()])
+        for norm in sorted(set(_passages(document.text))):
+            if len(norm.split()) < min_words:
+                continue
+            key = _hash(norm)
+            entry = passages.get(key)
+            if entry is None:
+                if len(passages) >= max_passages:
+                    capped = True
+                    continue
+                entry = passages[key] = [norm[:TEXT_CAP], set()]
             entry[1].add(stem)
         sig = _signature(document.text)
         if sig is not None:
@@ -121,11 +135,13 @@ def build_report(corpus_dir: str | os.PathLike, min_docs: int = 3, threshold: fl
     flags.sort(key=lambda f: (f["kind"], -f["count"], f.get("text", ""), f["documents"]))
     by_kind = {k: sum(f["kind"] == k for f in flags) for k in ("near_duplicate_docs", "repeated")}
     return {
-        "params": {"min_docs": min_docs, "threshold": threshold, "num_perm": NUM_PERM,
+        "params": {"min_docs": min_docs, "threshold": threshold, "min_words": min_words,
+                   "max_passages": max_passages, "num_perm": NUM_PERM,
                    "bands": BANDS, "shingle": SHINGLE, "seed": SEED},
         "flags": flags,
         "totals": {"documents": len(stems), "distinct_passages": len(passages),
-                   "flags": len(flags), "by_kind": by_kind},
+                   "flags": len(flags), "by_kind": by_kind,
+                   "passage_table_capped": capped},
     }
 
 
@@ -144,6 +160,8 @@ def main(argv: list[str] | None = None) -> int:
     report.add_argument("out")
     report.add_argument("--min-docs", type=int, default=3)
     report.add_argument("--threshold", type=float, default=0.8)
+    report.add_argument("--min-words", type=int, default=4)
+    report.add_argument("--max-passages", type=int, default=1_000_000)
     report.add_argument("--force", action="store_true", help="overwrite an existing OUT")
     args = parser.parse_args(argv)
     if not Path(args.corpus).is_dir():
@@ -153,7 +171,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {args.out} exists; use --force to overwrite", file=sys.stderr)
         return 1
     try:
-        result = build_report(args.corpus, min_docs=args.min_docs, threshold=args.threshold)
+        result = build_report(args.corpus, min_docs=args.min_docs, threshold=args.threshold,
+                              min_words=args.min_words, max_passages=args.max_passages)
         write_report(result, args.out, force=args.force)
     except FileExistsError:
         print(f"error: {args.out} exists; use --force to overwrite", file=sys.stderr)
