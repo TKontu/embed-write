@@ -8,3 +8,11 @@
 .signal-weak {
   opacity: 0.55;
 }
+
+/* RE-04: paragraph and sentence level signals are tinted by move. The hue comes only from
+   --signal-color, set per data-signal-kind by the genre legend stylesheet (LG-02, I3); unset means
+   no tint. Section level is not tinted here (RE-03 ribbon). The 18% mix is provisional under G-09. */
+.signal[data-signal-level="paragraph"],
+.signal[data-signal-level="sentence"] {
+  background-color: color-mix(in srgb, var(--signal-color, transparent) 18%, transparent);
+}

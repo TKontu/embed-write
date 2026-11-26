@@ -99,7 +99,11 @@ test('signals.css is opacity-only, weak lower than strong', () => {
   const bare = css.replace(/\/\*[\s\S]*?\*\//g, '');
   assert.doesNotMatch(bare, /#[0-9a-f]{3,8}\b/i);
   assert.doesNotMatch(bare, /\b(rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\s*\(/i);
-  assert.doesNotMatch(bare, /(^|[\s;{])(color|background(-color)?|border(-color)?|outline(-color)?|fill|stroke)\s*:/im);
+  // RE-04 adds a --signal-color tint for paragraph/sentence levels; the RE-08 strength rules stay opacity-only.
+  for (const cls of ['signal-strong', 'signal-weak']) {
+    const body = bare.match(new RegExp(`\\.${cls}\\s*\\{([^}]*)\\}`))[1];
+    assert.doesNotMatch(body, /(^|[\s;{])(color|background(-color)?|border(-color)?|outline(-color)?|fill|stroke)\s*:/im);
+  }
   const op = (cls) => {
     const m = bare.match(new RegExp(`\\.${cls}\\s*\\{([^}]*)\\}`));
     assert.ok(m, cls);
