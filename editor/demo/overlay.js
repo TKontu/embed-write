@@ -5,7 +5,8 @@
 // DE-06: colours come from the genre file's stored legend via legendCss, not from here.
 import { Decoration, DecorationSet } from '@milkdown/prose/view';
 import { Plugin, PluginKey } from '@milkdown/prose/state';
-import { DEFAULT_OVERLAY, DEFAULT_WEAK_BELOW } from '../src/decorations.js';
+import { keydownHandler } from '@milkdown/prose/keymap';
+import { DEFAULT_OFF_SHORTCUT, DEFAULT_OVERLAY, DEFAULT_WEAK_BELOW } from '../src/decorations.js';
 
 export const moveOverlayKey = new PluginKey('demoMoveOverlay');
 
@@ -75,15 +76,70 @@ export function moveDecorations(doc, moves, genre) {
 }
 
 /**
+ * RE-11: whether the demo overlay is on. False when the plugin is absent.
+ * @param {import('prosemirror-state').EditorState} state
+ */
+export function isMoveOverlayOn(state) {
+  return moveOverlayKey.getState(state)?.on === true;
+}
+
+/**
+ * RE-11 command: flip the overlay on/off. A meta-only transaction: no doc steps.
+ * Production callers: the demo's overlay button and its keymap (editor/demo/app.js, below).
+ * @param {import('prosemirror-state').EditorState} state
+ * @param {(tr: import('prosemirror-state').Transaction) => void} [dispatch]
+ */
+export function toggleMoveOverlay(state, dispatch) {
+  const s = moveOverlayKey.getState(state);
+  if (!s) return false;
+  if (dispatch) dispatch(state.tr.setMeta(moveOverlayKey, { on: !s.on }));
+  return true;
+}
+
+/** RE-11: the single off/on shortcut, shared with the library overlay (DEFAULT_OFF_SHORTCUT). */
+export const moveOverlayBindings = Object.freeze({ [DEFAULT_OFF_SHORTCUT]: toggleMoveOverlay });
+
+/**
  * Plugin wrapper: reads the sidecar and genre file through the getters so a loaded document's
- * decorations follow its current block ids.
+ * decorations follow its current block ids. State is { on }; off renders no decorations.
  * @param {() => { block: number, move: string }[]} getMoves
  * @param {() => Parameters<typeof genreMoveIds>[0]} getGenre
+ * @param {{ initiallyOn?: boolean, onToggle?: (on: boolean) => void }} [opts]
  * @returns {Plugin}
  */
-export function moveOverlayPlugin(getMoves, getGenre) {
+export function moveOverlayPlugin(getMoves, getGenre, opts = {}) {
+  const initiallyOn = opts.initiallyOn === undefined ? true : opts.initiallyOn;
+  if (typeof initiallyOn !== 'boolean') throw new Error(`initiallyOn must be a boolean: ${initiallyOn}`);
+  const { onToggle } = opts;
   return new Plugin({
     key: moveOverlayKey,
-    props: { decorations: (state) => moveDecorations(state.doc, getMoves(), getGenre()) },
+    state: {
+      init: () => ({ on: initiallyOn }),
+      apply: (tr, prev) => tr.getMeta(moveOverlayKey) || prev,
+    },
+    view: () => ({
+      update: (view, prevState) => {
+        const on = isMoveOverlayOn(view.state);
+        if (onToggle && on !== isMoveOverlayOn(prevState)) onToggle(on);
+      },
+    }),
+    props: {
+      decorations: (state) => (isMoveOverlayOn(state)
+        ? moveDecorations(state.doc, getMoves(), getGenre())
+        : DecorationSet.empty),
+      handleKeyDown: keydownHandler(moveOverlayBindings),
+    },
   });
+}
+
+/**
+ * RE-11: the demo button's label and aria-pressed follow the overlay state (pressed = off).
+ * Production caller: editor/demo/app.js.
+ * @param {HTMLButtonElement} button
+ * @param {boolean} on
+ */
+export function updateOverlayButton(button, on) {
+  button.textContent = on ? 'Overlay off' : 'Overlay on';
+  button.setAttribute('aria-pressed', on ? 'false' : 'true');
+  button.title = `${on ? 'Hide' : 'Show'} the provisional overlay (${DEFAULT_OFF_SHORTCUT})`;
 }
