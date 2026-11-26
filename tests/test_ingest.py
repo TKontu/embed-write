@@ -351,6 +351,65 @@ class IngestTest(unittest.TestCase):
         make_numbered_docx(self.src / "e.docx", body, numbering_xml({1: ["decimal"]}))
         self.assertEqual(ingest.convert_docx(self.src / "e.docx"), "1. a\n2. b\n\nx\n\n1. c\n")
 
+    def _styled_docx(self, name, body, numbering, styles):
+        make_numbered_docx(self.src / name, body, numbering)
+        with zipfile.ZipFile(self.src / name, "a") as z:
+            if styles is not None:
+                z.writestr("word/styles.xml", f'<?xml version="1.0"?><w:styles {W}>{styles}</w:styles>')
+        return ingest.convert_docx(self.src / name)
+
+    def test_docx_style_inherited_numbering(self):
+        styles = ('<w:style w:styleId="NumBase"><w:pPr><w:numPr><w:ilvl w:val="1"/><w:numId w:val="1"/>'
+                  '</w:numPr></w:pPr></w:style>'
+                  '<w:style w:styleId="Child"><w:basedOn w:val="NumBase"/></w:style>'
+                  '<w:style w:styleId="LoopA"><w:basedOn w:val="LoopB"/></w:style>'
+                  '<w:style w:styleId="LoopB"><w:basedOn w:val="LoopA"/></w:style>')
+        body = _p("a", style="Child") + _p("b", style="Child") + _p("c", style="LoopA")
+        out = self._styled_docx("st.docx", body, numbering_xml({1: ["decimal", "decimal"]}), styles)
+        self.assertEqual(out, "   1. a\n   2. b\n\nc\n")
+
+    def test_docx_style_numbering_missing_or_bad_styles(self):
+        body = _p("a", style="Child") + _np("b", 1)
+        num = numbering_xml({1: ["decimal"]})
+        self.assertEqual(self._styled_docx("ms.docx", body, num, None), "a\n\n1. b\n")
+        make_numbered_docx(self.src / "bad.docx", body, num)
+        with zipfile.ZipFile(self.src / "bad.docx", "a") as z:
+            z.writestr("word/styles.xml", "<not xml")
+        self.assertEqual(ingest.convert_docx(self.src / "bad.docx"), "a\n\n1. b\n")
+
+    def test_docx_num_style_link_resolved(self):
+        num = (f'<?xml version="1.0"?><w:numbering {W}>'
+               '<w:abstractNum w:abstractNumId="20"><w:numStyleLink w:val="ListNums"/></w:abstractNum>'
+               '<w:abstractNum w:abstractNumId="21"><w:styleLink w:val="ListNums"/>'
+               '<w:lvl w:ilvl="0"><w:start w:val="4"/><w:numFmt w:val="decimal"/></w:lvl></w:abstractNum>'
+               '<w:abstractNum w:abstractNumId="22"><w:numStyleLink w:val="Cyc"/></w:abstractNum>'
+               '<w:num w:numId="1"><w:abstractNumId w:val="20"/></w:num>'
+               '<w:num w:numId="2"><w:abstractNumId w:val="21"/></w:num>'
+               '<w:num w:numId="3"><w:abstractNumId w:val="22"/></w:num>'
+               '</w:numbering>')
+        styles = ('<w:style w:type="numbering" w:styleId="ListNums"><w:pPr><w:numPr>'
+                  '<w:numId w:val="2"/></w:numPr></w:pPr></w:style>'
+                  '<w:style w:type="numbering" w:styleId="Cyc"><w:pPr><w:numPr>'
+                  '<w:numId w:val="3"/></w:numPr></w:pPr></w:style>')
+        body = _np("a", 1) + _np("b", 1) + _p("x") + _np("c", 3)
+        self.assertEqual(self._styled_docx("sl.docx", body, num, styles), "4. a\n5. b\n\nx\n\n- c\n")
+
+    def test_docx_lvl_restart(self):
+        num = self._num_raw('<w:lvl w:ilvl="0"><w:numFmt w:val="decimal"/></w:lvl>'
+                            '<w:lvl w:ilvl="1"><w:numFmt w:val="decimal"/><w:lvlRestart w:val="0"/></w:lvl>'
+                            '<w:lvl w:ilvl="2"><w:numFmt w:val="decimal"/><w:lvlRestart w:val="1"/></w:lvl>')
+        body = (_np("a", 1) + _np("a1", 1, 1) + _np("a1i", 1, 2) + _np("a2", 1, 1) + _np("a2i", 1, 2)
+                + _np("b", 1) + _np("b1", 1, 1) + _np("b1i", 1, 2))
+        make_numbered_docx(self.src / "r.docx", body, num)
+        self.assertEqual(ingest.convert_docx(self.src / "r.docx"),
+                         "1. a\n   1. a1\n      1. a1i\n   2. a2\n      2. a2i\n"
+                         "2. b\n   3. b1\n      1. b1i\n")
+
+    def test_docx_empty_numbered_paragraph_no_number(self):
+        body = _np("a", 1) + _np("", 1) + _np("b", 1)
+        make_numbered_docx(self.src / "en.docx", body, numbering_xml({1: ["decimal"]}))
+        self.assertEqual(ingest.convert_docx(self.src / "en.docx"), "1. a\n2. b\n")
+
     @unittest.skipUnless(ingest.node_available(), "node unavailable")
     def test_numbered_docx_roundtrip(self):
         body = _p("T", style="Heading1") + _np("a", 1) + _np("a1", 1, 1) + _np("b", 1)
