@@ -57,8 +57,10 @@ for (const name of samples) {
     for (const entry of sidecar) {
       assert.ok(Number.isInteger(entry.block) && entry.block >= 0 && entry.block < topLevel,
         `block ${entry.block} out of range 0..${topLevel - 1}`);
-      assert.ok(!blocks.has(entry.block), `duplicate block ${entry.block}`);
-      blocks.add(entry.block);
+      // RE-09: a block may carry one label per level (and per sentence).
+      const key = `${entry.block}/${entry.level ?? 'paragraph'}/${entry.sentence ?? ''}`;
+      assert.ok(!blocks.has(key), `duplicate block ${key}`);
+      blocks.add(key);
       assert.ok(Object.hasOwn(legend.moves, entry.move), `move ${entry.move} missing from legend.json`);
     }
   });

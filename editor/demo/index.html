@@ -20,6 +20,13 @@
     <button id="save-btn" type="button">Save</button>
     <button id="source-btn" type="button">Source view</button>
     <button id="overlay-btn" type="button" aria-pressed="false" aria-keyshortcuts="Control+Shift+O Meta+Shift+O">Overlay off</button>
+    <label class="picker">Granularity
+      <select id="granularity-select" aria-label="Label granularity">
+        <option value="section">Section</option>
+        <option value="paragraph" selected>Paragraph</option>
+        <option value="sentence">Sentence</option>
+      </select>
+    </label>
     <span id="status" role="status"></span>
   </header>
   <main class="layout">

@@ -9,5 +9,9 @@
   { "block": 8, "move": "method" },
   { "block": 9, "move": "method" },
   { "block": 10, "move": "finding" },
-  { "block": 11, "move": "finding" }
+  { "block": 11, "move": "finding" },
+  { "block": 4, "move": "gap", "level": "section" },
+  { "block": 10, "move": "finding", "level": "section" },
+  { "block": 1, "move": "context", "level": "sentence", "sentence": 0 },
+  { "block": 11, "move": "finding", "level": "sentence", "sentence": 0 }
 ]
