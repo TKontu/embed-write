@@ -128,7 +128,7 @@ export { formatKeymap, headingKeymap, headingInputRule, blockInputRules, inlineI
 export { signalDecorations, signalDecorationsPlugin, DEFAULT_WEAK_BELOW, DEFAULT_OFF_SHORTCUT,
   signalOverlayKey, toggleSignalOverlay, isSignalOverlayOn, OVERLAYS, DEFAULT_OVERLAY, setSignalOverlay,
   selectedSignalOverlay, GRANULARITIES, DEFAULT_GRANULARITY, setSignalGranularity,
-  selectedSignalGranularity, setSignals } from './decorations.js';
+  selectedSignalGranularity, setSignals, updateSignalOverlay } from './decorations.js';
 export { analysisRequestPlugin } from './analysis.js';
 export { pastePlugin, looksLikeMarkdown } from './paste.js';
 export { legendCss, renderLegendPanel } from './legend.js';

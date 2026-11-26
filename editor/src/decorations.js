@@ -85,7 +85,7 @@ export function signalDecorations(doc, signals, opts = {}) {
 // RE-10 / the app shell installs signalDecorationsPlugin.
 export const DEFAULT_OFF_SHORTCUT = 'Mod-Shift-o';
 const RESERVED = new Set(['mod-shift-p']); // UX-03 proposal request (request.js)
-/** @type {PluginKey<{ on: boolean, overlay: string, granularity: string, signals?: Signal[] }>} */
+/** @type {PluginKey<{ on: boolean, overlay: string, granularity: string, signals?: Signal[], decorations?: DecorationSet }>} */
 export const signalOverlayKey = new PluginKey('signalOverlay');
 
 /** @param {import('prosemirror-state').EditorState} state @returns {boolean} */
@@ -106,13 +106,7 @@ export function selectedSignalOverlay(state) {
  * @returns {(state: import('prosemirror-state').EditorState, dispatch?: (tr: import('prosemirror-state').Transaction) => void) => boolean}
  */
 export function setSignalOverlay(name) {
-  const overlay = checkOverlay(name, 'overlay');
-  return (state, dispatch) => {
-    const s = signalOverlayKey.getState(state);
-    if (!s) return false;
-    if (dispatch) dispatch(state.tr.setMeta(signalOverlayKey, { ...s, overlay }));
-    return true;
-  };
+  return updateSignalOverlay({ overlay: name });
 }
 
 /** @param {import('prosemirror-state').EditorState} state @returns {string | undefined} */
@@ -128,13 +122,7 @@ export function selectedSignalGranularity(state) {
  * @returns {(state: import('prosemirror-state').EditorState, dispatch?: (tr: import('prosemirror-state').Transaction) => void) => boolean}
  */
 export function setSignalGranularity(name) {
-  const granularity = checkGranularity(name, 'granularity');
-  return (state, dispatch) => {
-    const s = signalOverlayKey.getState(state);
-    if (!s) return false;
-    if (dispatch) dispatch(state.tr.setMeta(signalOverlayKey, { ...s, granularity }));
-    return true;
-  };
+  return updateSignalOverlay({ granularity: name });
 }
 
 /**
@@ -146,8 +134,7 @@ export function setSignalGranularity(name) {
 export function toggleSignalOverlay(state, dispatch) {
   const s = signalOverlayKey.getState(state);
   if (!s) return false;
-  if (dispatch) dispatch(state.tr.setMeta(signalOverlayKey, { ...s, on: !s.on }));
-  return true;
+  return updateSignalOverlay({ on: !s.on })(state, dispatch);
 }
 
 /**
@@ -161,23 +148,58 @@ export function toggleSignalOverlay(state, dispatch) {
  * @returns {(state: import('prosemirror-state').EditorState, dispatch?: (tr: import('prosemirror-state').Transaction) => void) => boolean}
  */
 export function setSignals(signals) {
+  return updateSignalOverlay({ signals });
+}
+
+/** @param {unknown} signals @returns {Signal[]} validated copy */
+const checkSignals = (signals) => {
   if (!Array.isArray(signals)) throw new Error('signals must be an array');
   for (const s of signals) {
     checkSignalValues(s);
     checkOverlay(s.overlay === undefined ? DEFAULT_OVERLAY : s.overlay, 'signal overlay');
     checkGranularity(s.level === undefined ? DEFAULT_GRANULARITY : s.level, 'signal level');
   }
-  const stored = signals.slice();
+  return signals.slice();
+};
+
+const PATCH_KEYS = new Set(['on', 'overlay', 'granularity', 'signals']);
+
+/**
+ * FP-01: build a ProseMirror command applying several overlay settings in exactly one transaction
+ * (one meta, so one DecorationSet rebuild). `patch` may hold any of on (boolean), overlay,
+ * granularity and signals, validated like the single-setting commands; unknown keys or invalid
+ * values throw here, before any dispatch. Settings absent from the patch are preserved.
+ * Unwired by design until the app shell (AP-01 / RE-10) installs signalDecorationsPlugin.
+ * @param {{ on?: boolean, overlay?: string, granularity?: string, signals?: Signal[] }} patch
+ * @returns {(state: import('prosemirror-state').EditorState, dispatch?: (tr: import('prosemirror-state').Transaction) => void) => boolean}
+ */
+export function updateSignalOverlay(patch) {
+  if (!patch || typeof patch !== 'object' || Array.isArray(patch)) throw new Error('patch must be an object');
+  for (const k of Object.keys(patch)) if (!PATCH_KEYS.has(k)) throw new Error(`unknown overlay setting: ${k}`);
+  /** @type {{ on?: boolean, overlay?: string, granularity?: string, signals?: Signal[] }} */
+  const clean = {};
+  if (patch.on !== undefined) {
+    if (typeof patch.on !== 'boolean') throw new Error(`on must be a boolean: ${patch.on}`);
+    clean.on = patch.on;
+  }
+  if (patch.overlay !== undefined) clean.overlay = checkOverlay(patch.overlay, 'overlay');
+  if (patch.granularity !== undefined) clean.granularity = checkGranularity(patch.granularity, 'granularity');
+  if (patch.signals !== undefined) clean.signals = checkSignals(patch.signals);
   return (state, dispatch) => {
     const s = signalOverlayKey.getState(state);
     if (!s) return false;
-    if (dispatch) dispatch(state.tr.setMeta(signalOverlayKey, { ...s, signals: stored }));
+    if (dispatch) dispatch(state.tr.setMeta(signalOverlayKey, { ...s, ...clean }));
     return true;
   };
 }
 
 /**
- * @param {() => Signal[]} getSignals used while no signals were stored by setSignals
+ * FP-01: the DecorationSet is kept in plugin state (`decorations`). It is rebuilt only on init and
+ * when a signalOverlayKey meta arrives; any other transaction maps it through `tr.mapping`, so a
+ * keystroke costs O(decorations) and never re-reads signals. props.decorations returns the stored set.
+ * @param {() => Signal[]} getSignals used while no signals were stored by setSignals; read only at a
+ *   rebuild (init or overlay meta), not per view update — a changed getSignals result shows only
+ *   after the next overlay meta
  * @param {{ weakBelow?: number, initiallyOn?: boolean, offShortcut?: string, initialOverlay?: string, initialGranularity?: string }} [opts]
  * @returns {Plugin}
  */
@@ -192,17 +214,27 @@ export function signalDecorationsPlugin(getSignals, opts = {}) {
   const initialGranularity = checkGranularity(
     opts.initialGranularity === undefined ? DEFAULT_GRANULARITY : opts.initialGranularity, 'initialGranularity');
   const { weakBelow } = opts;
+  /** @param {import('prosemirror-model').Node} doc @param {{ on: boolean, overlay: string, granularity: string, signals?: Signal[], decorations?: DecorationSet }} v */
+  const build = (doc, v) => {
+    const { decorations: _old, ...rest } = v;
+    const decorations = rest.on
+      ? signalDecorations(doc, rest.signals ?? getSignals(), { weakBelow, overlay: rest.overlay, granularity: rest.granularity })
+      : DecorationSet.empty;
+    return { ...rest, decorations };
+  };
   return new Plugin({
     key: signalOverlayKey,
     state: {
-      init: () => ({ on: initiallyOn, overlay: initialOverlay, granularity: initialGranularity }),
-      apply: (tr, prev) => tr.getMeta(signalOverlayKey) || prev,
+      init: (_config, state) => build(state.doc, { on: initiallyOn, overlay: initialOverlay, granularity: initialGranularity }),
+      apply: (tr, prev) => {
+        const meta = tr.getMeta(signalOverlayKey);
+        if (meta) return build(tr.doc, meta);
+        if (!tr.docChanged || !prev.decorations) return prev;
+        return { ...prev, decorations: prev.decorations.map(tr.mapping, tr.doc) };
+      },
     },
     props: {
-      decorations: (state) => (isSignalOverlayOn(state)
-        ? signalDecorations(state.doc, signalOverlayKey.getState(state)?.signals ?? getSignals(), { weakBelow, overlay: selectedSignalOverlay(state),
-          granularity: selectedSignalGranularity(state) })
-        : DecorationSet.empty),
+      decorations: (state) => signalOverlayKey.getState(state)?.decorations ?? DecorationSet.empty,
       handleKeyDown: keydownHandler({ [shortcut]: toggleSignalOverlay }),
     },
   });
