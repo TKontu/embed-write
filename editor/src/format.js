@@ -10,6 +10,7 @@ import { keymap, keydownHandler } from '@milkdown/prose/keymap';
 import { toggleMark, setBlockType } from '@milkdown/prose/commands';
 import { inputRules, textblockTypeInputRule, wrappingInputRule, InputRule } from '@milkdown/prose/inputrules';
 import { TextSelection, Plugin, PluginKey } from '@milkdown/prose/state';
+import { closeHistory } from '@milkdown/prose/history';
 import { schema } from 'docmodel';
 
 /**
@@ -46,6 +47,15 @@ function prevailingMarker(doc, name) {
 }
 
 /**
+ * BH-07: run `cmd` so each transaction it dispatches is its own undo step: closeHistory stops it
+ * joining the typing run before it, and the next typed character starts a fresh group.
+ * Used by formatKeymap and headingKeymap (production caller: createEditor).
+ * @param {import('prosemirror-state').Command} cmd @returns {import('prosemirror-state').Command}
+ */
+const ownStep = (cmd) => (state, dispatch, view) =>
+  cmd(state, dispatch && ((tr) => dispatch(closeHistory(tr))), view);
+
+/**
  * @param {{ isRich?: () => boolean, onLinkRequest?: (text: string) => string | null | Promise<string | null> }} [opts]
  * @returns {import('prosemirror-state').Plugin}
  */
@@ -74,12 +84,12 @@ export function formatKeymap({ isRich = () => true, onLinkRequest } = {}) {
     Promise.resolve(onLinkRequest(state.doc.textBetween(from, to))).then((href) => {
       // Apply only to the document the request was made on; a later edit cancels it.
       if (!href || view.isDestroyed || view.state.doc !== doc0) return;
-      view.dispatch(view.state.tr.addMark(from, to, type.create({ href })));
+      view.dispatch(closeHistory(view.state.tr.addMark(from, to, type.create({ href }))));
     }, () => {});
     return true;
   };
 
-  return keymap({ 'Mod-b': mark('strong'), 'Mod-i': mark('em'), 'Mod-e': mark('code'), 'Mod-k': link });
+  return keymap({ 'Mod-b': ownStep(mark('strong')), 'Mod-i': ownStep(mark('em')), 'Mod-e': ownStep(mark('code')), 'Mod-k': ownStep(link) });
 }
 
 /**
@@ -102,7 +112,7 @@ export function headingKeymap({ isRich = () => true } = {}) {
   };
   /** @type {Record<string, import('prosemirror-state').Command>} */
   const keys = {};
-  for (let n = 1; n <= 6; n++) keys[`Mod-${n}`] = heading(n);
+  for (let n = 1; n <= 6; n++) keys[`Mod-${n}`] = ownStep(heading(n));
   return keymap(keys);
 }
 
