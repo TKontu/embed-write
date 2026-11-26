@@ -49,6 +49,7 @@ MEMORY_BOUND = ('O(test sentences) candidate tuples (doc_id, section_type, sente
 _HEADING = re.compile(r'^ {0,3}(#{1,6})[ \t]+(.*?)[ \t#]*$')
 _SETEXT = re.compile(r'^ {0,3}(=+|-+)[ \t]*$')
 _FENCE = re.compile(r'^ {0,3}(`{3,}|~{3,})(.*)$')
+_NOT_SETEXT_START = re.compile(r'^ {0,3}(?:[-*+]|\d+[.)])[ \t]|^ {0,3}>')
 
 
 def _heading_map(genre):
@@ -61,7 +62,15 @@ def _sections(markdown, headings):
     current, heading, index, para = UNKNOWN, None, 0, []
     mapped = []  # stack of (level, section_type) for enclosing mapped headings
     fence = None  # (char, length) of the open code fence
-    for line in markdown.splitlines():
+    fenced = False  # pending paragraph text includes a code fence
+    lines = markdown.splitlines()
+    start = 0
+    if lines and lines[0] == '---':  # YAML front matter: skip through closing ---/...
+        for i in range(1, len(lines)):
+            if lines[i] in ('---', '...'):
+                start = i + 1
+                break
+    for line in lines[start:]:
         if fence:
             para.append(line)
             m = _FENCE.match(line)
@@ -72,9 +81,11 @@ def _sections(markdown, headings):
         m = _FENCE.match(line)
         if m and not (m.group(1)[0] == '`' and '`' in m.group(2)):
             fence = (m.group(1)[0], len(m.group(1)))
+            fenced = True
             para.append(line)
             continue
-        atx, setext = _HEADING.match(line), para and _SETEXT.match(line)
+        promotable = para and not fenced and not _NOT_SETEXT_START.match(para[0])
+        atx, setext = _HEADING.match(line), promotable and _SETEXT.match(line)
         if atx or setext or not line.strip():
             if setext:
                 text, level = ' '.join(p.strip() for p in para), 1 if '=' in line else 2
@@ -84,6 +95,7 @@ def _sections(markdown, headings):
             if para:
                 yield current, heading, index, '\n'.join(para)
                 para = []
+            fenced = False
             if atx or setext:
                 heading = text
                 while mapped and mapped[-1][0] >= level:

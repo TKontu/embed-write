@@ -124,10 +124,6 @@ class CliTests(unittest.TestCase):
             'd0.md', 'sub/d1.md', 'd2.md', 'sub/d3.md', 'd4.md', 'sub/d5.md'}), 0)
 
 
-if __name__ == '__main__':
-    unittest.main()
-
-
 H = {'methods': 'methods', 'results': 'results'}
 
 
@@ -162,3 +158,25 @@ class SectionTypingTests(unittest.TestCase):
         md = ('## Methods\n\nA one.\n\n### Detail\n\nB two.\n\n## Results\n\nC three.\n\n'
               'Other\n-----\n\nD four.\n')
         self.assertEqual([t for t, *_ in types(md)], ['methods', 'methods', 'results', 'unknown'])
+
+    def test_front_matter_skipped(self):
+        for end in ('---', '...'):
+            rows = types(f'---\ntitle: x\n{end}\n\n# Methods\n\nAlpha.')
+            self.assertEqual(rows, [('methods', 1, 'Alpha.')], end)
+
+    def test_list_item_then_rule_is_not_heading(self):
+        for first in ('- item', '* item', '+ item', '1. item', '2) item', '  - item'):
+            rows = types(f'# Methods\n\n{first}\n---\n\nAlpha.')
+            self.assertTrue(rows and all((t, ix) == ('methods', 1) for t, ix, _ in rows), (first, rows))
+
+    def test_fence_then_rule_is_not_heading(self):
+        rows = types('# Methods\n\n```\ncode\n```\n---\n\nAlpha.')
+        self.assertTrue(rows and all((t, ix) == ('methods', 1) for t, ix, _ in rows), rows)
+
+    def test_blockquote_then_rule_is_not_heading(self):
+        rows = types('# Methods\n\n> quote\n---\n\nAlpha.')
+        self.assertTrue(rows and all((t, ix) == ('methods', 1) for t, ix, _ in rows), rows)
+
+
+if __name__ == '__main__':
+    unittest.main()
