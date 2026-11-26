@@ -13,6 +13,7 @@ import { history, undo as pmUndo, closeHistory } from '@milkdown/prose/history';
 import { views } from './render.js';
 import { proposalRequestKeymap } from './request.js';
 import { sourceView } from './source.js';
+import { pastePlugin } from './paste.js';
 import { formatKeymap, headingKeymap, headingInputRule, blockInputRules, inlineInputRules, escapeKeymap } from './format.js';
 
 const DocmodelSchemaReady = createTimer('DocmodelSchemaReady');
@@ -44,6 +45,7 @@ const entries = (om) => { /** @type {[string, any][]} */ const out = []; om.forE
  * FM-02: Mod-1..6 set/toggle heading level; `#`..`######` + space at paragraph start makes a heading.
  * FM-04: `*x*`, `_x_`, `**x**`, `__x__`, `` `x` `` convert live (inlineInputRules).
  * FM-06: Backspace right after an input rule restores the typed text (escapeKeymap).
+ * FM-05: paste converts Markdown text / HTML to schema content; plain text stays literal (pastePlugin).
  * UX-03: when `onRequest` is given, Mod-Shift-p on a selection calls it (proposalRequestKeymap).
  * @param {{ root: HTMLElement, markdown: string, onRequest?: (req: { from: number, to: number, text: string }) => void, onLinkRequest?: (text: string) => string | null | Promise<string | null> }} opts
  * @returns {Promise<{ editor: Editor, view: import('prosemirror-view').EditorView, getMarkdown: () => string, destroy: () => Promise<void>, showSource: () => void, showRich: () => void, isSourceView: () => boolean }>}
@@ -71,6 +73,7 @@ export async function createEditor({ root, markdown, onRequest, onLinkRequest })
         headingInputRule({ isRich: () => !srcRef?.isSourceView() }),
         ...blockInputRules({ isRich: () => !srcRef?.isSourceView() }),
         inlineInputRules({ isRich: () => !srcRef?.isSourceView() }),
+        pastePlugin({ isRich: () => !srcRef?.isSourceView() }),
         ...(onRequest ? [proposalRequestKeymap({ onRequest })] : []),
       ]);
       ctx.update(nodeViewCtx, (xs) => [...xs, .../** @type {any[]} */ (nodeViews)]);
@@ -126,3 +129,4 @@ export { signalDecorations, signalDecorationsPlugin, DEFAULT_WEAK_BELOW, DEFAULT
   signalOverlayKey, toggleSignalOverlay, isSignalOverlayOn, OVERLAYS, DEFAULT_OVERLAY, setSignalOverlay,
   selectedSignalOverlay, GRANULARITIES, DEFAULT_GRANULARITY, setSignalGranularity,
   selectedSignalGranularity } from './decorations.js';
+export { pastePlugin, looksLikeMarkdown } from './paste.js';
