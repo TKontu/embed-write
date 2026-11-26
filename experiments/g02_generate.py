@@ -30,7 +30,9 @@ the arm and hides both from the judge. Feed ``summarize(...)['complete']`` to de
 
 Resumable: ``(section_id, arm)`` pairs already in ``out_path`` under the same model id and
 ``PROMPT_VERSION`` are skipped, so a rerun after a change of prompts regenerates them.
-Memory: the exemplar pool and the done keys; sections stream one at a time.
+Memory: the exemplar pool, the done keys and the seen section ids; sections stream one at a time.
+A ``section_id`` repeated in the input raises ``ValueError`` before anything is written for the
+repeat (the CLI exits 2).
 
 Sampling: ``temperature`` (CLI ``--temperature``) is passed as ``model(prompt, temperature=t)``
 for arm C candidates only, so the k drafts can differ; arms A and B, and the default
@@ -204,8 +206,12 @@ def iter_generate(sections: Iterable[NotesRecord], pool: Iterable[Exemplar], mod
         retriever = partial(lexical_retriever, k=k_exemplars)
     model_id = getattr(model, 'model_id', 'unknown')
     done = _done_pairs(out_path, model_id, PROMPT_VERSION)
+    seen_ids = set()
     with open(out_path, 'a', encoding='utf-8') as fh:
         for record in sections:
+            if record['section_id'] in seen_ids:
+                raise ValueError(f"duplicate section_id in input sections: {record['section_id']!r}")
+            seen_ids.add(record['section_id'])
             exemplars = legal_exemplars(record, retriever(record, pool))
             base = {k: record.get(k) for k in ('section_id', 'report_id', 'section_type')}
             base.update(model=model_id, prompt_version=PROMPT_VERSION,
@@ -255,17 +261,22 @@ def summarize(records: Iterable[dict], *, expected_sections: int | None = 30,
 
     ``expected_sections=None`` checks arm completeness only. ``complete`` is the G-02.3 check;
     it also requires the target count when one is given. ``model`` / ``prompt_version``, when
-    given, restrict the count to that run's records; others are ignored entirely.
+    given, restrict the count to that run's records; others are ignored entirely. ``models`` and
+    ``prompt_versions`` list the distinct values among counted records; more than one of either
+    makes ``complete`` false (a mixed set is not one run).
     """
     per_pair = Counter()
     order = {}
     leaked = set()
+    models, versions = set(), set()
     for r in records:
         if model is not None and r.get('model') != model:
             continue
         if prompt_version is not None and r.get('prompt_version') != prompt_version:
             continue
         per_pair[(r['section_id'], r['arm'])] += 1
+        models.add(r.get('model'))
+        versions.add(r.get('prompt_version'))
         order.setdefault(r['section_id'], True)
         if r.get('report_id') in (r.get('exemplar_report_ids') or []):
             leaked.add(r['section_id'])
@@ -274,12 +285,16 @@ def summarize(records: Iterable[dict], *, expected_sections: int | None = 30,
                      if per_pair[(sid, arm)] == 0)
     duplicates = sorted(pair for pair, n in per_pair.items() if n > 1)
     arm_counts = {arm: sum(n for (sid, a), n in per_pair.items() if a == arm) for arm in ARMS}
+    models = sorted(models, key=str)
+    versions = sorted(versions, key=str)
     complete = (not missing and not duplicates and not leaked
+                and len(models) <= 1 and len(versions) <= 1
                 and (expected_sections is None or len(section_ids) == expected_sections))
     return {'n_sections': len(section_ids), 'n_records': sum(per_pair.values()),
             'expected_sections': expected_sections, 'arm_counts': arm_counts,
             'missing': missing, 'duplicates': duplicates,
-            'same_report_exemplars': sorted(leaked), 'complete': complete}
+            'same_report_exemplars': sorted(leaked), 'models': models,
+            'prompt_versions': versions, 'complete': complete}
 
 
 def read_jsonl(path) -> Iterator[dict]:
@@ -308,8 +323,13 @@ def main(argv=None, *, model: Model | None = None, critic: Critic | None = None)
         model = local_model(a.model_url, model=a.model_name)
     if critic is None:
         critic = model_critic(model)
-    records = generate(read_jsonl(a.notes), list(read_jsonl(a.pool)), model, out_path=a.out,
-                       critic=critic, k_exemplars=a.k_exemplars, n_candidates=a.n_candidates, temperature=a.temperature)
+    try:
+        records = generate(read_jsonl(a.notes), list(read_jsonl(a.pool)), model, out_path=a.out,
+                           critic=critic, k_exemplars=a.k_exemplars, n_candidates=a.n_candidates,
+                           temperature=a.temperature)
+    except ValueError as exc:
+        print(f'error: {exc}', file=sys.stderr)
+        return 2
     summary = summarize(read_jsonl(a.out), expected_sections=a.expected_sections,
                         model=getattr(model, 'model_id', 'unknown'), prompt_version=PROMPT_VERSION)
     summary['written'] = len(records)
