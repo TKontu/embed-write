@@ -9,7 +9,9 @@ test sentences) ids, no text. Every document must be in the split's test set
 Headings are ATX (``#``..``######``, level = ``#`` count) or setext (a paragraph
 underlined by ``===``, level 1, or ``---``, level 2); lines inside ``` or ~~~ code
 fences (also inside blockquotes and list items) are never headings and are excluded
-from the text, so fenced code (opener, body, closer) never yields a sentence. Heading text is
+from the text, so fenced code (opener, body, closer) never yields a sentence. A top-level
+line indented 4+ columns that does not continue paragraph text is indented code and is
+likewise dropped (indented code inside list items/blockquotes is not handled). Heading text is
 mapped through the genre's ``section_types`` aliases with ``normalize_heading``. Each sentence takes the type
 of the nearest enclosing mapped heading: an unmapped heading deeper than the
 current mapped one inherits its type, while any heading at the same or a higher
@@ -66,6 +68,19 @@ def _unquote(line):
     while (m := _QUOTE.match(line)):
         line, depth = line[m.end():], depth + 1
     return depth, line
+
+
+def _indent(line):
+    """Leading indentation width in columns (a tab advances to the next multiple of 4)."""
+    width = 0
+    for ch in line:
+        if ch == ' ':
+            width += 1
+        elif ch == '\t':
+            width += 4 - width % 4
+        else:
+            break
+    return width
 
 
 def _fence_open(line, cols):
@@ -142,6 +157,8 @@ def _sections(markdown, headings):
                 fence = None
             continue
         m, depth, col, cols = _fence_open(line, cols)
+        if not para and not cols and line.strip() and _indent(line) >= 4:
+            continue  # top-level indented code block (never lazy; blank lines inside fine)
         if m and not (m.group(1)[0] == '`' and '`' in m.group(2)):
             fence = (m.group(1)[0], len(m.group(1)), depth, col)
             fenced = True
