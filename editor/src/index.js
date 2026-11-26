@@ -13,7 +13,7 @@ import { history, undo as pmUndo, closeHistory } from '@milkdown/prose/history';
 import { views } from './render.js';
 import { proposalRequestKeymap } from './request.js';
 import { sourceView } from './source.js';
-import { formatKeymap } from './format.js';
+import { formatKeymap, headingKeymap, headingInputRule } from './format.js';
 
 const DocmodelSchemaReady = createTimer('DocmodelSchemaReady');
 
@@ -41,6 +41,7 @@ const entries = (om) => { /** @type {[string, any][]} */ const out = []; om.forE
  * Build a Milkdown editor in `root` holding `markdown`, parsed by docmodel.
  * One document in memory; no corpus loop.
  * FM-01: Mod-b/i/e/k format the selection (formatKeymap); `onLinkRequest(text)` supplies a link href.
+ * FM-02: Mod-1..6 set/toggle heading level; `#`..`######` + space at paragraph start makes a heading.
  * UX-03: when `onRequest` is given, Mod-Shift-p on a selection calls it (proposalRequestKeymap).
  * @param {{ root: HTMLElement, markdown: string, onRequest?: (req: { from: number, to: number, text: string }) => void, onLinkRequest?: (text: string) => string | null | Promise<string | null> }} opts
  * @returns {Promise<{ editor: Editor, view: import('prosemirror-view').EditorView, getMarkdown: () => string, destroy: () => Promise<void>, showSource: () => void, showRich: () => void, isSourceView: () => boolean }>}
@@ -62,6 +63,8 @@ export async function createEditor({ root, markdown, onRequest, onLinkRequest })
       ctx.update(prosePluginsCtx, (xs) => [
         ...xs, history(), overlayPlugin(), idPlugin(),
         formatKeymap({ isRich: () => !srcRef?.isSourceView(), onLinkRequest }),
+        headingKeymap({ isRich: () => !srcRef?.isSourceView() }),
+        headingInputRule({ isRich: () => !srcRef?.isSourceView() }),
         ...(onRequest ? [proposalRequestKeymap({ onRequest })] : []),
       ]);
       ctx.update(nodeViewCtx, (xs) => [...xs, .../** @type {any[]} */ (nodeViews)]);
@@ -111,7 +114,7 @@ export function undo({ view }) {
 export { renderDiff } from './diff.js';
 export { showProposal } from './proposal.js';
 export { proposalRequestKeymap } from './request.js';
-export { formatKeymap } from './format.js';
+export { formatKeymap, headingKeymap, headingInputRule } from './format.js';
 export { signalDecorations, signalDecorationsPlugin, DEFAULT_WEAK_BELOW, DEFAULT_OFF_SHORTCUT,
   signalOverlayKey, toggleSignalOverlay, isSignalOverlayOn, OVERLAYS, DEFAULT_OVERLAY, setSignalOverlay,
   selectedSignalOverlay, GRANULARITIES, DEFAULT_GRANULARITY, setSignalGranularity,
