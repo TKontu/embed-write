@@ -200,6 +200,123 @@ class SessionTests(unittest.TestCase):
         self.assertNotIn('Invented', r.stdout)
 
 
+from service.genre import version_key as _vk
+
+
+def write_prelabels(path, pairs, model='m-test'):
+    with open(path, 'w', encoding='utf-8') as fh:
+        for sid, label in pairs:
+            fh.write(json.dumps(dict(_vk(GENRE), sentence_id=sid, label=label,
+                                     model=model)) + '\n')
+        fh.write(json.dumps(dict(_vk(GENRE), sentence_id='x:torn', label='alpha',
+                                 model=model))[:20])  # torn last line, skipped
+
+
+class PrelabelTests(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.store = AnnotationStore(os.path.join(self.dir.name, 'labels.jsonl'))
+        self.its = items()[:3]
+        self.ppath = os.path.join(self.dir.name, 'pre.jsonl')
+        write_prelabels(self.ppath, [(self.its[0]['sentence_id'], 'beta'),
+                                     (self.its[1]['sentence_id'], 'alpha')])
+        self.pre = an.load_prelabels(self.ppath, GENRE, [i['sentence_id'] for i in self.its])
+
+    def tearDown(self):
+        self.dir.cleanup()
+
+    def lines(self):
+        if not os.path.exists(self.store.path):
+            return []
+        with open(self.store.path, encoding='utf-8') as fh:
+            return [json.loads(l) for l in fh]
+
+    def run_session(self, keys):
+        s = Script(keys)
+        an.AnnotationSession(self.its, self.store, GENRE, 'ann', 'first', input_fn=s.input,
+                             output_fn=s.output, clock=clock, prelabels=self.pre).run()
+        return s
+
+    def test_loader_filters_ids_and_skips_torn(self):
+        self.assertEqual(set(self.pre), {self.its[0]['sentence_id'], self.its[1]['sentence_id']})
+        self.assertEqual(self.pre[self.its[0]['sentence_id']],
+                         {'label': 'beta', 'model': 'm-test'})
+        only = an.load_prelabels(self.ppath, GENRE, [self.its[0]['sentence_id']])
+        self.assertEqual(list(only), [self.its[0]['sentence_id']])
+        self.assertEqual(an.load_prelabels(self.ppath, GENRE, [self.its[0]['sentence_id']],
+                                           model_id='other'), {})
+
+    def test_enter_confirms(self):
+        s = self.run_session(['', 'y'])
+        recs = self.lines()
+        self.assertIn('LLM suggests: beta', '\n'.join(s.out))
+        self.assertEqual([r['label'] for r in recs], ['beta', 'alpha'])
+        for r in recs:
+            self.assertEqual(r['label'], r['prelabel'])
+            self.assertEqual(r['prelabel_model'], 'm-test')
+
+    def test_number_key_overturns(self):
+        self.run_session(['1'])
+        r, = self.lines()
+        self.assertEqual((r['label'], r['prelabel']), ('alpha', 'beta'))
+
+    def test_enter_without_prelabel_is_unknown(self):
+        s = self.run_session(['s', 's', ''])
+        self.assertEqual(self.lines(), [])
+        self.assertIn("unknown key ''", s.out)
+        self.assertNotIn('LLM suggests', s.out[-2])
+
+    def test_label_without_prelabel_has_no_fields(self):
+        self.run_session(['s', 's', '2'])
+        r, = self.lines()
+        self.assertNotIn('prelabel', r)
+        self.assertNotIn('prelabel_model', r)
+
+    def test_undo_after_confirm(self):
+        self.run_session(['', 'u', '1'])
+        out = an.export(self.store, GENRE, MANIFEST, 'first')
+        by_id = {r['sentence_id']: r for r in out}
+        r = by_id[self.its[0]['sentence_id']]
+        self.assertEqual((r['label'], r['prelabel']), ('alpha', 'beta'))
+
+    def test_undo_then_quit_retracts_confirm(self):
+        self.run_session(['', 'u', 'q'])
+        self.assertEqual(an.labels_for_pass(self.store, GENRE, 'first'), [])
+
+    def test_read_paths_accept_both_shapes(self):
+        self.run_session(['', 's', 's'])
+        session(self.its[1:2], self.store, ['1'])
+        self.assertEqual(len(self.store.read(GENRE)), 2)
+        self.assertEqual(len(an.labels_for_pass(self.store, GENRE, 'first')), 2)
+        self.assertEqual(len(an.export(self.store, GENRE, MANIFEST, 'first')), 2)
+        from experiments import g01_inputs
+        cfg = g01_inputs.build_config(self.store, GENRE, MANIFEST, self.ppath)
+        self.assertEqual(cfg['expert'][self.its[0]['sentence_id']], 'beta')
+
+    def test_cli_notice_and_default_blind(self):
+        corpus = os.path.join(self.dir.name, 'corpus')
+        os.mkdir(corpus)
+        for d, t in DOCS:
+            with open(os.path.join(corpus, d), 'w', encoding='utf-8') as fh:
+                fh.write(t)
+        mpath = os.path.join(self.dir.name, 'm.json')
+        samp.write_manifest(mpath, MANIFEST)
+        write_prelabels(self.ppath, [(IDS[0], 'beta')])
+        base = [sys.executable, '-m', 'experiments.annotate', '--manifest', mpath,
+                '--corpus', corpus, '--genre', GENRE_PATH, '--store', self.store.path,
+                '--annotator', 'ann']
+        r = subprocess.run(base, input='q\n', capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertNotIn('not blind', r.stderr)
+        self.assertNotIn('LLM suggests', r.stdout)
+        r = subprocess.run(base + ['--prelabels', self.ppath], input='\nq\n',
+                           capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn('pre-labels shown: labels from this session are not blind', r.stderr)
+        r0, = self.lines()
+        self.assertEqual((r0['label'], r0['prelabel']), ('beta', 'beta'))
+
+
 if __name__ == '__main__':
     unittest.main()
 

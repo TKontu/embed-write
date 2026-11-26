@@ -25,6 +25,14 @@ Passes: ``first`` (AN-03, all entries) and ``repeat`` (AN-04, manifest
 ``AnnotationStore.read()`` does not: it keeps one latest record per sentence
 across passes and annotators, so a repeat label hides the first-pass one
 there. Consumers needing a pass use ``labels_for_pass`` or ``export``.
+
+Pre-label mode (opt-in, D-009 item 3): ``--prelabels PATH [--model-id ID]`` loads LLM
+pre-labels (``experiments.prelabel`` JSONL, current genre version key only, torn lines skipped)
+for the session's sentences. A sentence with a pre-label shows ``LLM suggests: <move>``; Enter or
+``y`` confirms it, number keys / ``o`` overturn it. Every label written while a suggestion was
+shown carries ``prelabel`` and ``prelabel_model``; other labels carry neither. Sentences without
+a pre-label behave as without the flag. Labels from such a session are not blind (stderr notice);
+never the default.
 """
 from __future__ import annotations
 
@@ -118,13 +126,32 @@ def labels_for_pass(store, genre, pass_name, annotator=None):
     return list(_labelled(store, genre, pass_name, annotator).values())
 
 
+def load_prelabels(path, genre, ids, *, model_id=None):
+    """sentence_id -> {'label', 'model'} for ``ids`` from a prelabel JSONL (streamed once).
+
+    Reuses ``g01_inputs._llm_records`` (version-key/model filter, torn lines skipped). A
+    pre-label that is not a valid move of ``genre`` is not shown. Memory: O(len(ids)).
+    Production caller: ``main`` (``--prelabels``).
+    """
+    from experiments import g01_inputs  # lazy: g01_inputs imports this module
+    allowed = {m['id'] for m in genre['moves']} | {OTHER}
+    out = {}
+    try:
+        for r in g01_inputs._llm_records(path, genre, model_id, set(ids)):
+            if r.get('label') in allowed:
+                out[r['sentence_id']] = {'label': r['label'], 'model': r.get('model') or ''}
+    except g01_inputs.G01InputsError as exc:
+        raise AnnotateError(str(exc)) from exc
+    return out
+
+
 def _now():
     return datetime.now(timezone.utc).isoformat(timespec='seconds')
 
 
 class AnnotationSession:
     def __init__(self, items, store, genre, annotator, pass_name, *,
-                 input_fn=input, output_fn=print, clock=_now):
+                 input_fn=input, output_fn=print, clock=_now, prelabels=None):
         if pass_name not in PASSES:
             raise AnnotateError(f'unknown pass {pass_name!r}')
         self.items, self.store, self.genre = items, store, genre
@@ -132,6 +159,7 @@ class AnnotationSession:
         self.input, self.output, self.clock = input_fn, output_fn, clock
         self.keys = {str(k): m['id'] for k, m in enumerate(genre['moves'], 1)}
         self.keys['o'] = OTHER
+        self.prelabels = prelabels or {}
 
     def _show(self, it, n, total):
         c = it['context']
@@ -142,6 +170,9 @@ class AnnotationSession:
         if c['next']:
             lines.append(f'    {c["next"]}')
         lines.append('  '.join(f'[{k}] {v}' for k, v in self.keys.items()))
+        pre = self.prelabels.get(it['sentence_id'])
+        if pre:
+            lines.append(f'LLM suggests: {pre["label"]}   [Enter/y] confirm')
         lines.append('[u] undo  [s] skip  [q] quit')
         self.output('\n'.join(lines))
 
@@ -181,12 +212,18 @@ class AnnotationSession:
                         written -= 1
                     else:
                         self.output('nothing to undo')
-                elif key in self.keys:
-                    self.store.append(self.genre, {
-                        'sentence_id': it['sentence_id'], 'label': self.keys[key],
+                elif key in self.keys or (key in ('', 'y')
+                                          and it['sentence_id'] in self.prelabels):
+                    pre = self.prelabels.get(it['sentence_id'])
+                    rec = {
+                        'sentence_id': it['sentence_id'],
+                        'label': self.keys[key] if key in self.keys else pre['label'],
                         'annotator': self.annotator, 'timestamp': self.clock(),
                         'pass': self.pass_name, 'doc_id': it['doc_id'],
-                        'section_type': it['section_type']})
+                        'section_type': it['section_type']}
+                    if pre:
+                        rec['prelabel'], rec['prelabel_model'] = pre['label'], pre['model']
+                    self.store.append(self.genre, rec)
                     if undone == i:
                         undone = None
                     written += 1
@@ -236,6 +273,9 @@ def main(argv=None) -> int:
     p.add_argument('--annotator', required=True)
     p.add_argument('--pass', dest='pass_name', choices=PASSES, default='first')
     p.add_argument('--export', metavar='OUT')
+    p.add_argument('--prelabels', metavar='PATH',
+                   help='opt-in: show LLM pre-labels to confirm (labels are then not blind)')
+    p.add_argument('--model-id', help='with --prelabels: only this model\'s pre-labels')
     args = p.parse_args(argv)
     manifest = json.loads(Path(args.manifest).read_text(encoding='utf-8'))
     genre = load_genre(args.genre)
@@ -253,7 +293,14 @@ def main(argv=None) -> int:
             p.error(f'corpus directory not found: {root}')
         items = resolve_items(manifest, load_documents(root, manifest), genre,
                               only=pass_ids(manifest, args.pass_name))
-        AnnotationSession(list(items), store, genre, args.annotator, args.pass_name).run()
+        items = list(items)
+        pre = None
+        if args.prelabels:
+            pre = load_prelabels(args.prelabels, genre, [it['sentence_id'] for it in items],
+                                 model_id=args.model_id)
+            print('pre-labels shown: labels from this session are not blind', file=sys.stderr)
+        AnnotationSession(items, store, genre, args.annotator, args.pass_name,
+                          prelabels=pre).run()
     except AnnotateError as exc:
         print(f'error: {exc}', file=sys.stderr)
         return 2
