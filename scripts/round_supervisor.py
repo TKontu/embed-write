@@ -76,6 +76,15 @@ def supervisor_section(config: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
+def project_section(config: dict[str, Any]) -> dict[str, Any]:
+    """`[project]` as a table; a non-table value is treated as empty, with one warning."""
+    section = config.get("project", {})
+    if isinstance(section, dict):
+        return section
+    warn_once(f"[project] must be a table, got {section!r}; using defaults")
+    return {}
+
+
 def repo_names(root: Path, config: dict[str, Any]) -> dict[str, str]:
     """Herdr agent names are global across projects, so every name carries this repo's slug.
 
@@ -96,7 +105,7 @@ NAMES = repo_names(ROOT, CONFIG)
 AGENT = NAMES["agent"]
 TAB_LABEL = NAMES["agent"]
 LANE_PREFIX = NAMES["lane_prefix"]
-BRANCH = CONFIG.get("project", {}).get("default_branch", "main")
+BRANCH = project_section(CONFIG).get("default_branch", "main")
 # Unattended sessions cannot answer approval dialogs; `auto` lets the round run. Set
 # [supervisor] permission_mode in .agent/config.toml to choose another mode.
 PERMISSION_ARGS = (
