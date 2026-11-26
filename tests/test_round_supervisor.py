@@ -398,6 +398,27 @@ class StateTests(unittest.TestCase):
             rs.config_from({"supervisor": {"strong_model": "claude-opus-5-5"}})
         self.assertEqual(err.getvalue(), "")
 
+    def test_non_table_supervisor_section_is_empty_with_one_warning(self):
+        import io
+        rs._WARNED.clear()
+        with mock.patch("sys.stderr", new_callable=io.StringIO) as err:
+            names = rs.repo_names(Path("/x/My Repo"), {"supervisor": "x"})
+            cfg = rs.config_from({"supervisor": "x"})
+            self.assertEqual(rs.supervisor_section({"supervisor": ["a"]}), {})
+        self.assertEqual(names["slug"], "my-repo")
+        self.assertEqual(cfg.strong_model, "claude-fable-5-2")
+        lines = err.getvalue().splitlines()
+        self.assertEqual(len(lines), 2)  # one per distinct bad value, never repeated
+        self.assertIn("[supervisor]", lines[0])
+
+    def test_strong_model_warning_prints_once_per_process(self):
+        import io
+        rs._WARNED.clear()
+        with mock.patch("sys.stderr", new_callable=io.StringIO) as err:
+            rs.config_from({"supervisor": {"strong_model": 5}})
+            rs.config_from({"supervisor": {"strong_model": 5}})
+        self.assertEqual(len(err.getvalue().splitlines()), 1)
+
     def test_main_starts_a_strategic_round_with_the_configured_strong_model(self):
         (self.tmp / ".agent").mkdir()
         (self.tmp / ".agent/config.toml").write_text('[supervisor]\nstrong_model = "claude-opus-5-5"\n')
