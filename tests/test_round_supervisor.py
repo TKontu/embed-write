@@ -385,6 +385,36 @@ class StateTests(unittest.TestCase):
         self.assertEqual(cfg.strong_model, "claude-opus-5-5")
         self.assertEqual(rs.model_args("diagnose", cfg), ["--model", "claude-opus-5-5"])
 
+    def test_invalid_strong_model_warns_once_and_uses_the_default(self):
+        for bad in (5, ["m"], ""):
+            with self.subTest(value=bad), mock.patch("sys.stderr", new_callable=__import__("io").StringIO) as err:
+                cfg = rs.config_from({"supervisor": {"strong_model": bad}})
+                self.assertEqual(cfg.strong_model, "claude-fable-5-2")
+                lines = err.getvalue().splitlines()
+                self.assertEqual(len(lines), 1)
+                self.assertIn("strong_model", lines[0])
+        with mock.patch("sys.stderr", new_callable=__import__("io").StringIO) as err:
+            rs.config_from({"supervisor": {}})
+            rs.config_from({"supervisor": {"strong_model": "claude-opus-5-5"}})
+        self.assertEqual(err.getvalue(), "")
+
+    def test_main_starts_a_strategic_round_with_the_configured_strong_model(self):
+        (self.tmp / ".agent").mkdir()
+        (self.tmp / ".agent/config.toml").write_text('[supervisor]\nstrong_model = "claude-opus-5-5"\n')
+        sent, started = [], []
+        herdr = self.launcher(sent, started)
+        test = self
+
+        def one_round(sup, *, allow_other):
+            test.begin(sup, 1)
+
+        with mock.patch.object(rs, "Herdr", lambda *a, **k: herdr), mock.patch.object(
+            rs.Supervisor, "run", one_round
+        ):
+            self.assertEqual(rs.main(["run"]), 0)
+        self.assertIn("STRATEGIC ROUND", sent[0])
+        self.assertEqual(started[0][-2:], ["--model", "claude-opus-5-5"])
+
     def open_round(self, started):
         (self.tmp / "current.json").write_text(json.dumps({"round": 7, "started": started}))
 

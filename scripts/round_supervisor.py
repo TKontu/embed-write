@@ -1028,8 +1028,15 @@ def dry_run(cfg: Config) -> int:
 
 def config_from(project: dict[str, Any]) -> Config:
     """Config defaults, with `[supervisor] strong_model` from .agent/config.toml when set."""
-    strong = project.get("supervisor", {}).get("strong_model")
-    return Config(strong_model=strong) if isinstance(strong, str) and strong else Config()
+    supervisor = project.get("supervisor", {})
+    if "strong_model" not in supervisor:
+        return Config()
+    strong = supervisor["strong_model"]
+    if isinstance(strong, str) and strong:
+        return Config(strong_model=strong)
+    print(f"warning: [supervisor] strong_model must be a non-empty string, got {strong!r}; using default",
+          file=sys.stderr)  # fmt: skip
+    return Config()
 
 
 def with_overrides(cfg: Config, pairs: Sequence[str]) -> Config:
@@ -1080,7 +1087,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         extra = [f"--set={item}" for item in args.set]
         extra += ["--allow-other"] if args.allow_other else []
         return up([*extra, *([f"--prompt-file={args.prompt_file}"] if args.prompt_file else [])])
-    cfg = config_from(project_config())
+    cfg = config_from(project_config(ROOT))  # ROOT at call time, not import time
     if args.cmd == "run":
         cfg = with_overrides(cfg, args.set)
         if args.dry_run:
