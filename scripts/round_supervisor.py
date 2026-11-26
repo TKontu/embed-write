@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import dataclasses
+import datetime
 import fcntl
 import json
 import os
@@ -123,8 +124,30 @@ decisions in HANDOFF.md.
   phase change also run: note --kind stage --text "<phase>".
 - Your very last action, after every subagent has finished and handoff has validated:
     python3 {script} complete --outcome continue
-  Only for a reached goal, an operator instruction or an obstacle blocking all future lanes, use
-  --outcome halt --reason "<why>" instead. Then end your turn; a new session takes the next round.
+  If only an external event can unblock every lane, use --outcome wait --cause <code> --reason
+  "<why>" [--until <ISO time it clears>]. Only for a reached goal, an operator instruction or an
+  obstacle no lane can work around, use --outcome halt --cause <code> --reason "<why>"; the
+  supervisor then runs a diagnosing round first (D-012). Then end your turn; a new session takes
+  the next round.
+"""
+DIAGNOSE_PROMPT = """DIAGNOSING ROUND (D-012). The supervisor stopped normal planning because: {reason}.
+Do not retry the same plan. This round's job is to find out why the loop made no progress, and to
+fix that cause:
+1. Reconcile first (/reconcile): take over or record every lane, PR and ledger entry of the
+   failed or empty rounds, so nothing is left half-open.
+2. Classify the cause, with evidence from the repository, PRs, lane tabs and news:
+   executor-limit (usage limits, refused launches), backlog-exhausted (nothing plannable under
+   the current priorities), blocked-on-operator (an owed decision or input), tool-broken (a script,
+   gate or CI path fails), lanes-failing (lanes keep dying or returning nothing), or other.
+3. Act on it: switch harness, re-rank or split rows so something is plannable, plan a lane that
+   repairs a broken tool, or turn a block into a precise owed item with a dashboard `open` note.
+   Then plan and run whatever work that unlocks, as in a normal round.
+4. End with --outcome continue if you acted. If only an external event can unblock every lane,
+   end with --outcome wait --cause <code> --reason "<evidence>" [--until <ISO time>]. If no lane
+   can work around it, end with --outcome halt --cause <code> --reason "<evidence>". The same cause
+   twice in a row halts the loop for the operator.
+Then continue with the normal round instructions below.
+
 """
 SILENT_NUDGE = (
     "Supervisor: this session has been silent for {minutes} minutes and round {round} is not "
@@ -156,6 +179,8 @@ class Config:
     max_nudges: int = 3
     max_recycles: int = 2
     max_no_advance: int = 3
+    max_same_cause: int = 2  # D-012: the same unresolved cause twice in a row is a real halt
+    wait_max_s: int = 12 * 3600
     gap_s: int = 60
 
 
@@ -173,6 +198,10 @@ class Tracker:
     limited_since: float | None = None
     recycles: int = 0
     no_advance: int = 0
+    diagnosing: bool = False  # this round reconciles and diagnoses instead of planning (D-012)
+    diagnose_reason: str = ""
+    last_cause: str = ""
+    repeats: int = 0
     main_at_start: str = ""
 
 
@@ -189,8 +218,10 @@ class Observation:
 
 @dataclass(frozen=True)
 class Action:
-    kind: str  # wait|nudge_silent|nudge_progress|deny|next|recycle|halt
+    kind: str  # wait|nudge_silent|nudge_progress|deny|next|recycle|halt_requested|wait_requested|diagnose|halt
     reason: str = ""
+    cause: str = ""
+    until: float | None = None
 
 
 def decide(cfg: Config, t: Tracker, o: Observation) -> Action:
@@ -202,10 +233,15 @@ def decide(cfg: Config, t: Tracker, o: Observation) -> Action:
             t.done_since = t.done_since or o.now
             if o.now - t.done_since < cfg.settle_s:
                 return Action("wait", "sentinel written; agent settling")
-        if o.sentinel.get("outcome") == "halt":
-            return Action("halt", f"round asked to halt: {o.sentinel.get('reason', '')}")
         if o.stop_after_round:
             return Action("halt", "operator stop after round")
+        outcome, reason = o.sentinel.get("outcome"), str(o.sentinel.get("reason", ""))
+        cause = str(o.sentinel.get("cause") or "unspecified")  # stable, so repeats can count
+        if outcome == "halt":  # D-012: diagnosed first; only an unresolved repeat really halts
+            return Action("halt_requested", f"round asked to halt: {reason}", cause=cause)
+        if outcome == "wait":
+            until = o.sentinel.get("until")
+            return Action("wait_requested", reason, cause=cause, until=float(until) if until else None)
         return Action("next", "round complete")
     if o.status is None:
         return Action("recycle", "agent is gone without completing the round")
@@ -240,16 +276,60 @@ def decide(cfg: Config, t: Tracker, o: Observation) -> Action:
 
 
 def after_round(cfg: Config, t: Tracker, *, recycled: bool, main_sha: str) -> Action | None:
-    """Circuit breaker between rounds: halt rather than burn sessions on no effect."""
+    """Circuit breaker between rounds: a frozen main or repeated recycles call for a diagnosing
+    reconcile round (D-012), never a blind retry. An advance of main resets every counter."""
     advanced = bool(main_sha) and main_sha != t.main_at_start
     t.no_advance = 0 if advanced else t.no_advance + 1
     t.recycles = t.recycles + 1 if recycled else 0
+    if advanced:
+        t.last_cause, t.repeats = "", 0
     if t.recycles >= cfg.max_recycles:
-        return Action("halt", f"{t.recycles} consecutive recycled rounds")
+        return Action("diagnose", f"{t.recycles} consecutive failed (recycled) rounds", cause="recycled")
     if t.no_advance >= cfg.max_no_advance:
-        return Action("halt", f"main unchanged across {t.no_advance} rounds")
+        return Action("diagnose", f"main unchanged across {t.no_advance} rounds", cause="no-advance")
     return None
 
+
+def between_rounds(
+    cfg: Config, t: Tracker, ended: Action, breaker: Action | None, *, now: float | None = None
+) -> Action:
+    """Route the round that just ended: next round, a diagnosing round, a bounded wait for a
+    named external cause, or a real halt when the same cause stays unresolved (D-012).
+
+    Causes counted toward the halt: a planner's halt or wait cause, and the breaker's own cause
+    (`no-advance`, `recycled`) when a diagnosing round ended without moving main. A wait whose
+    `until` is still in the future is pending, not unresolved, so it never escalates. A round
+    that ends `continue` keeps the count; only an advance of main (after_round) resets it.
+    """
+    start = time.time() if now is None else now
+
+    def unresolved(cause: str) -> bool:
+        t.repeats = t.repeats + 1 if cause == t.last_cause else 1
+        t.last_cause = cause
+        return t.repeats >= cfg.max_same_cause
+
+    if ended.kind in ("halt_requested", "wait_requested"):
+        pending = ended.kind == "wait_requested" and (ended.until or 0) > start
+        if pending:
+            t.last_cause = ended.cause
+        elif unresolved(ended.cause):
+            t.diagnosing = False
+            return Action("halt", f"unresolved after diagnosis: {ended.cause} ({ended.reason})")
+        t.diagnosing = True
+        t.diagnose_reason = ended.reason
+        if ended.kind == "wait_requested":
+            until = min(ended.until or start + cfg.wait_max_s, start + cfg.wait_max_s)
+            until = max(until, start)
+            return Action("wait", ended.reason, cause=ended.cause, until=until)
+        return Action("diagnose", ended.reason, cause=ended.cause)
+    if breaker is not None:
+        if t.diagnosing and unresolved(breaker.cause):
+            t.diagnosing = False
+            return Action("halt", f"unresolved after diagnosis: {breaker.cause} ({breaker.reason})")
+        t.diagnosing, t.diagnose_reason = True, breaker.reason
+        return breaker
+    t.diagnosing = False
+    return Action("next", ended.reason)
 
 Run = Callable[[Sequence[str], float], tuple[int, str]]
 NOTE_MAX = 140
@@ -437,7 +517,10 @@ class Supervisor:
         self.t = Tracker(**keep)
         time.sleep(2)  # the new tab's shell must reach its prompt
         self.herdr.start(pane, self.session, round_no, self.extra)
-        rc, out = self.herdr.prompt(self.prompt.format(round=round_no, script=SELF, lane_prefix=LANE_PREFIX))
+        text = self.prompt.format(round=round_no, script=SELF, lane_prefix=LANE_PREFIX)
+        if self.t.diagnosing:
+            text = DIAGNOSE_PROMPT.format(reason=self.t.diagnose_reason, script=SELF) + text
+        rc, out = self.herdr.prompt(text)
         if rc:
             raise RuntimeError(f"round prompt refused: {out[:300]}")
         news("round", f"Round {round_no} started")
@@ -507,6 +590,22 @@ class Supervisor:
         news("halt", reason)
         self.herdr.notify(f"Round loop {NAMES['slug']} halted", reason[:200])
 
+    def wait_until(self, route: Action) -> bool:
+        """Wait for a named external cause to clear, obeying the stop controls; False = halted."""
+        until = route.until or time.time()
+        mins = max(0, int((until - time.time()) // 60))
+        log(f"wait {mins} min for {route.cause}: {route.reason}")
+        news("watchdog", f"Waiting {mins} min for {route.cause}, then diagnosing again"[:NOTE_MAX])
+        while time.time() < until:
+            if (STATE / "STOP").exists():
+                self.halt("operator stop")
+                return False
+            if stop_requested():
+                self.halt("operator stop after round")
+                return False
+            time.sleep(min(self.cfg.poll_s, max(0.0, until - time.time())))
+        return True
+
     def step(self) -> bool:
         """One poll; False ends the supervisor."""
         now = time.time()
@@ -533,17 +632,22 @@ class Supervisor:
         elif action.kind == "halt":
             self.halt(action.reason)
             return False
-        elif action.kind in ("next", "recycle"):
+        elif action.kind in ("next", "recycle", "halt_requested", "wait_requested"):
             if action.kind == "recycle":
                 news("watchdog", f"Replaced the planner session: {action.reason}")
             self.end_session()
             sha = main_sha(self.herdr.run)
-            stop = after_round(self.cfg, self.t, recycled=action.kind == "recycle", main_sha=sha)
-            if stop:
-                self.halt(stop.reason)
+            breaker = after_round(self.cfg, self.t, recycled=action.kind == "recycle", main_sha=sha)
+            route = between_rounds(self.cfg, self.t, action, breaker)
+            if route.kind == "halt":
+                self.halt(route.reason)
                 return False
             if stop_requested():
                 self.halt("operator stop after round")
+                return False
+            if route.kind == "diagnose":
+                news("watchdog", f"Next round diagnoses and reconciles: {route.reason}"[:NOTE_MAX])
+            if route.kind == "wait" and not self.wait_until(route):
                 return False
             time.sleep(self.cfg.gap_s)
             self.begin_round(self.t.round + 1)
@@ -792,7 +896,9 @@ def up(run_args: Sequence[str], herdr: Herdr | None = None) -> int:
     return 0
 
 
-def complete(outcome: str, reason: str, run: Run = _run) -> int:
+def complete(
+    outcome: str, reason: str, run: Run = _run, *, cause: str = "", until: str = ""
+) -> int:
     """Called by the orchestrator as its last action; refuses an unfinished handoff."""
     cur = _load(STATE / "current.json")
     if cur is None:
@@ -808,10 +914,24 @@ def complete(outcome: str, reason: str, run: Run = _run) -> int:
     if rc:
         print(f"HANDOFF.md is invalid:\n{out}", file=sys.stderr)
         return 1
-    if outcome == "halt" and not reason:
-        print("--outcome halt needs --reason", file=sys.stderr)
+    if outcome == "halt" and not (cause and reason):
+        print("--outcome halt needs --cause and --reason", file=sys.stderr)
+        return 2
+    if outcome == "wait" and not (cause and reason):
+        print("--outcome wait needs --cause and --reason", file=sys.stderr)
         return 2
     payload = {"round": cur["round"], "outcome": outcome, "reason": reason, "at": time.time()}
+    if cause:
+        payload["cause"] = cause
+    if until:
+        try:
+            stamp = datetime.datetime.fromisoformat(until.replace("Z", "+00:00"))
+        except ValueError:
+            print(f"--until is not an ISO time: {until!r}", file=sys.stderr)
+            return 2
+        if stamp.tzinfo is None:
+            stamp = stamp.replace(tzinfo=datetime.timezone.utc)
+        payload["until"] = stamp.timestamp()
     _dump(STATE / "complete.json", payload)
     news("round", f"Round {cur['round']} complete" + (f": halt, {reason}" if reason else ""))
     print(f"round {cur['round']} recorded complete ({outcome}); end your turn")
@@ -873,8 +993,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     note_p.add_argument("--ref", default="")
     note_p.add_argument("--close", default="")
     done_p = sub.add_parser("complete")
-    done_p.add_argument("--outcome", choices=("continue", "halt"), required=True)
+    done_p.add_argument("--outcome", choices=("continue", "wait", "halt"), required=True)
     done_p.add_argument("--reason", default="")
+    done_p.add_argument("--cause", default="", help="short cause code, e.g. executor-limit")
+    done_p.add_argument("--until", default="", help="wait: ISO time the cause clears")
     args = parser.parse_args(argv)
 
     if args.cmd == "note":
@@ -899,7 +1021,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         Supervisor(cfg, args.claude_arg, prompt=prompt).run(allow_other=args.allow_other)
         return 0
     if args.cmd == "complete":
-        return complete(args.outcome, args.reason)
+        return complete(args.outcome, args.reason, cause=args.cause, until=args.until)
     if args.cmd == "status":
         return status()
     STATE.mkdir(parents=True, exist_ok=True)

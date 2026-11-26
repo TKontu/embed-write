@@ -138,3 +138,17 @@ Append-only record of operator rulings and architecture decisions.
 - **Why:** with no corpus, the remaining D-009 enablers need real-data runs, so rounds found no
   plannable work and the supervisor halted repeatedly ("main unchanged across 3 rounds").
 - **Not changed:** results on synthetic data are never quoted as evidence for a gate (AGENTS.md).
+
+## D-012 — No progress is diagnosed and reconciled, not retried or halted (2026-11-26, operator)
+
+- **Ruling:** no-progress and failed rounds are solved by reconciliation, not by a timed retry.
+  When the breaker trips (default branch unchanged over 3 rounds, or 2 recycled rounds in a row),
+  and when a planner asks to halt, the supervisor runs a diagnosing round. That round reconciles
+  the failed or empty rounds, classifies the cause with evidence, and acts on it. It may end with
+  `wait` for a named external cause (capped at 12 h), after which it diagnoses again.
+- **Real halt:** only the operator's stop controls, or the same cause left unresolved by 2
+  diagnosing rounds in a row. That halt names the cause and its evidence.
+- **Why:** the loop halted on Codex limits and empty backlogs, and a session-bound heartbeat
+  restarted it blindly. The iknosreview loop ran a week unattended only because its main kept
+  moving.
+- **Supersedes:** PR #355, the timed cooldown.
