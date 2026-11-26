@@ -64,6 +64,7 @@ A native writing surface over Markdown: the expert sees formatted text, shortcut
 
 - [ ] **IA-01** `[A]` Transaction hook: compute the dirty set, dispatch a debounced request
 - [ ] **IA-02** `[A]` Results applied as decorations through plugin state, never by changing the document — check: document hash unchanged by any analysis result
+  - partial (R168/A1, PR #424, merge 383371c): `setSignals(signals)` in editor/src/decorations.js stores validated results in signalOverlayKey plugin state via a meta-only transaction (no steps); decorations use stored signals, else getSignals(). seen: editor/test/analysis-state.test.js 8 tests (LLM-built synthetic doc/signals; JSON and markdown hash unchanged), npm test 243/243 and gate 1609 OK at head 0ff74c3 (rerun by planner). Stays partial: unwired by design until IA-01 and RE-10/app shell; not re-exported from editor/src/index.js.
 - [ ] **IA-03** `[A]` Typing is never blocked by analysis — check: typing latency unchanged with the analysis service stopped, slow or erroring
 - [ ] **IA-04** `[A]` Selection hook: selecting a passage enables "propose rewrite" and shows its signals
 - [ ] **IA-05** `[A]` Edit-log hook: accept, reject and manual edits of machine text are reported to the edit log (invariant I7) — check: every provenance change produces a log entry
