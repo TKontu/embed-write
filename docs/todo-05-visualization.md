@@ -71,6 +71,7 @@ Colour is the expert's main channel into the pattern model. Revision 2 replaces 
 ## Overview
 
 - [ ] **OV-01** `[A]` Document minimap: the move sequence of the whole report as a strip
+  - partial (R179/A1, PR #450, merge 0c3148b): `editor/src/minimap.js` minimapSegments/renderMinimap/mountMinimap; one segment per run of same-move blocks, unlabeled gaps uncoloured, unknown ids -> other, colour only via legendCss data-signal-kind (I3); mounted above the editor in `npm run demo`. seen: editor/test/minimap.test.js (jsdom, LLM-built synthetic fixtures + examples/demo samples), npm test 276/276 and gate 1630 OK at head 7ddabbf (rerun by planner). Stays partial: no browser run; app wiring owed to AP-01. Residuals: first label per block wins; demo test mirrors app wiring.
 - [ ] **OV-02** `[A]` Comparison strip: the typical sequence for this section type from the corpus, beside the draft's
 - [ ] **OV-03** `[A]` Open-issues list: missing moves, unsupported claims, off-register passages; click to navigate
 - [ ] **OV-04** `[A]` Collapsible; the prose keeps the space by default
