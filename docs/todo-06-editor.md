@@ -38,6 +38,7 @@ A native writing surface over Markdown: the expert sees formatted text, shortcut
 - [ ] **FM-06** `[A]` Escape hatch: literal `*` can be typed; one backspace undoes an input rule
   - partial (R132/A1, PR #335, merge 549f746): editor/src/format.js `escapeKeymap({ isRich })` wired first in createEditor's plugins: Backspace right after an FM-02/FM-03 input rule inverts the rule and the transactions appended after it (docmodel idPlugin) and restores the typed literal text; a second Backspace deletes normally; inactive in source view. Ran on Claude (D-008). Check: editor/test/escape.test.js (jsdom, 11 tests, 7 failed before impl). Planner rerun at head 7a51cd6: editor 121/121; lane docmodel 256/256; combined main 549f746 Python 1460 OK. Unwired by design until AP-01; not yet seen in the app. Residuals: after undoing ```` ``` ```` + space the trailing space does not round-trip byte for byte (docmodel drops it on parse); literal `*` against inline rules now covered by escape.test.js (R133/A1); jsdom-simulated typing only; editor tests not in CI.
 - [ ] **FM-07** `[A]` Style preservation: new formatting follows the file's existing conventions — check: edit-and-save diff touches only the edited lines
+  - partial (R135/A1, PR #339, merge bbcc478): docmodel thematic_break gains attr `marker` (`---`/`***`/`___`, default `***`), kept by parse and written by serialize (a leading `---` falls back to `***` only when a later `---` line would close it as front matter); FM-03 rule records the typed marker; FM-01 Mod-b/Mod-i use the document's prevailing strong/em marker (one doc walk per command), schema default when none. Ran on OpenCode/DeepSeek (D-008). Check: editor/test/style.test.js (multi-convention synthetic fixture, one-paragraph edit, line diff touches only that paragraph), docmodel marker round-trip tests (failed first: docmodel 3, editor 4, blockrules 2). Planner rerun at head 1fde7ec: editor 150/150, docmodel 259/259, Python 1460 OK. Unwired by design until AP-01; not yet seen in the app. Residuals: spaced `- - -` rules fall back to `***`; editor tests not in CI.
 
 ---
 
@@ -80,6 +81,17 @@ A native writing surface over Markdown: the expert sees formatted text, shortcut
 - [ ] **AP-04** `[A]` Settings: models, overlay defaults, theme, performance tier, remote-model opt-in
 - [ ] **AP-05** `[A]` Debug panel: cache statistics, latency, layer disagreement rate, gate statuses
 - [ ] **AP-06** `[A]` Fully functional offline — check: test suite passes with the network disabled
+
+### Thin demo on synthetic samples (D-011, operator 2026-11-26)
+
+Widens D-009 item 2 while no corpus exists. Samples are synthetic and labelled as such in their
+text and file names; swapping in a real report must be the only step left when the corpus arrives.
+
+- [ ] **DE-01** `[A]` Synthetic sample reports under `examples/demo/` (file names and first line say "synthetic sample") with a provisional move-label sidecar per report — check: docmodel round-trips each byte for byte
+- [ ] **DE-02** `[A]` Browser demo harness: opens a sample, edits in the Milkdown editor (createEditor), saves through `atomicWrite`, shows the sidecar's move labels as a provisional overlay (decorations) with a legend marked provisional — check: a test opens, edits one paragraph, saves and the saved file differs only in that paragraph; overlay renders one decoration per labelled block
+- [ ] **DE-03** `[A]` One-command launch (`npm run demo` or a script) that serves the harness offline on localhost — check: the command starts, the page loads with no network beyond localhost
+- [ ] **DE-04** `[A]` Tauri wrapper of the DE-02 harness (D-007) — blocked: needs the operator's Rust toolchain + WebKitGTK approval (AP-01) — check: the app opens a sample and saves
+- [ ] **DE-05** `[A]` Real-report swap: the demo takes a path to any Markdown report plus an optional label sidecar — check: documented single step; run when the corpus exists
 
 ---
 
