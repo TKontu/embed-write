@@ -55,7 +55,8 @@ This is the core of revision 2. The pattern model is built and tested offline on
 
 - [ ] **EX-01** `[A]` Index corpus passages by genre, section type and move
 - [ ] **EX-02** `[A]` Retrieval: nearest passages performing the same move in the same section type, excluding the current document — check: retrieval test asserts the exclusion
-- [ ] **EX-03** `[A]` Diversity in the returned set, so one report does not dominate
+- [~] **EX-03** `[A]` Diversity in the returned set, so one report does not dominate
+  - partial (R162/A2, PR #408, merge 64fd6fa, reviewed head 3ea182f; OpenCode/DeepSeek lane per D-008): generation/exemplars.py `select_exemplars` and `render_prompt` take optional `max_per_document` (positive int or None; bool/0/non-int raise ValueError); single lazy pass in stream order, a candidate whose document already holds the cap is skipped, not deferred; memory O(limit). Default None unchanged. seen: tests/test_exemplars.py 6 new tests (LLM-built synthetic data); planner rerun at 3ea182f and combined main 64fd6fa: Python gate 1594 OK. Unwired by design until propose.py/EX-02 pass it. Residuals: no similarity-aware diversity; not measured on the real corpus (EX-04/G-03).
 - [ ] **EX-04** `[A]` Retrieval quality measured as part of G-03
 
 ---
