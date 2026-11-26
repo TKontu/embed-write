@@ -1,3 +1,5 @@
+import contextlib
+import io
 import json
 import os
 import tempfile
@@ -77,6 +79,72 @@ class PaletteTest(unittest.TestCase):
             self.assertEqual(p.main([good]), 0)
             self.assertEqual(p.main([bad]), 1)
             self.assertEqual(p.main([good, '--min-delta-e', '1000']), 1)
+
+
+def genre_obj(colors, other='#808080'):
+    """Synthetic LLM-built genre file with placeholder colours."""
+    ids = [k for k in colors if not k.startswith('_')]
+    return {
+        'genre': 'synthetic', 'version': 1,
+        'moves': [{'id': i, 'name': i, 'definition': 'd', 'near_miss': 'n',
+                   'positive_examples': ['e1', 'e2']} for i in ids],
+        'legend': {'colors': dict(colors), 'other': other},
+    }
+
+
+class GenrePaletteTest(unittest.TestCase):
+    def write(self, d, obj, name='genre.json'):
+        path = os.path.join(d, name)
+        with open(path, 'w') as f:
+            json.dump(obj, f)
+        return path
+
+    def run_main(self, argv):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = p.main(argv)
+        return code, out.getvalue(), err.getvalue()
+
+    def test_genre_palette(self):
+        obj = genre_obj({'_note': 'x', 'b': '#000000', 'a': '#ffffff'}, '#0072b2')
+        got = p.genre_palette(obj)
+        self.assertEqual(got, {'b': '#000000', 'a': '#ffffff', 'other': '#0072b2'})
+        self.assertEqual(list(got), ['b', 'a', 'other'])
+
+    def test_cli_genre_pass_and_fail(self):
+        with tempfile.TemporaryDirectory() as d:
+            good = self.write(d, genre_obj(
+                {'a': '#000000', 'b': '#ffffff', 'c': '#0072b2'}, '#e69f00'), 'g.json')
+            bad = self.write(d, genre_obj(
+                {'x': '#336699', 'y': '#336698'}, '#e69f00'), 'b.json')
+            self.assertEqual(self.run_main(['--genre', good])[0], 0)
+            code, out, _ = self.run_main(['--genre', bad])
+            self.assertEqual(code, 1)
+            self.assertIn('normal: x vs y', out)
+
+    def test_cli_genre_other_checked(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = self.write(d, genre_obj({'a': '#336699'}, '#336698'))
+            code, out, _ = self.run_main(['--genre', path])
+            self.assertEqual(code, 1)
+            self.assertIn('a vs other', out)
+
+    def test_cli_genre_invalid(self):
+        with tempfile.TemporaryDirectory() as d:
+            obj = genre_obj({'a': '#000000'}); obj['legend']['other'] = 'grey'
+            code, _, err = self.run_main(['--genre', self.write(d, obj)])
+            self.assertEqual(code, 2)
+            self.assertIn('legend.other', err)
+
+    def test_cli_both_modes_error(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = self.write(d, genre_obj({'a': '#000000'}))
+            with contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit) as cm:
+                    p.main([path, '--genre', path])
+                self.assertEqual(cm.exception.code, 2)
+                with self.assertRaises(SystemExit):
+                    p.main([])
 
 
 if __name__ == '__main__':
