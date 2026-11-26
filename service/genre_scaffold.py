@@ -102,6 +102,10 @@ def _cmd_new(a):
     except GenreFileError as exc:
         print(f'error: {exc}', file=sys.stderr)
         return 2
+    parent = os.path.dirname(a.out)
+    if parent and not os.path.isdir(parent):
+        print(f'error: parent directory not found: {parent}', file=sys.stderr)
+        return 2
     with open(a.out, 'w', encoding='utf-8', newline='\n') as fh:
         fh.write(dumps(obj))
     print(f'wrote {a.out}: {a.moves} placeholder moves; fill the TODO fields, then run check')

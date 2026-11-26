@@ -197,6 +197,51 @@ class IntakeTest(unittest.TestCase):
         self.assertEqual(rep["steps"]["discovery"]["reason"], "DiscoveryError")
         self.assert_private(text, printed)
 
+    def test_force_rerun_removes_stale_owned_outputs_only(self):
+        with mock.patch.dict(os.environ, {intake.MODEL_DIR_ENV: ""}):
+            self.run_intake("--discover")
+        self.assertTrue((self.out / intake.DISCOVERY_NAME).exists())
+        (self.out / "prelabels.jsonl").write_text("stale\n", encoding="utf-8")
+        (self.out / "annotations.jsonl").write_text("keep\n", encoding="utf-8")
+        (self.out / "notes.txt").write_text("keep\n", encoding="utf-8")
+        code, rep, _, _ = self.run_intake()
+        self.assertEqual(code, 0)
+        self.assertFalse((self.out / intake.DISCOVERY_NAME).exists())
+        self.assertFalse((self.out / "prelabels.jsonl").exists())
+        self.assertEqual((self.out / "annotations.jsonl").read_text(), "keep\n")
+        self.assertEqual((self.out / "notes.txt").read_text(), "keep\n")
+
+    def test_discover_flags_reach_move_discovery(self):
+        with mock.patch.dict(os.environ, {intake.MODEL_DIR_ENV: ""}):
+            _, rep, _, _ = self.run_intake("--discover", "--discover-k", "1",
+                                           "--discover-sample", "3")
+        counts = rep["steps"]["discovery"]["counts"]
+        self.assertEqual((counts["k"], counts["max_per_type"]), (1, 3))
+        self.assertTrue(all(n <= 1 for n in counts["clusters_per_section_type"].values()))
+        full = json.loads((self.out / intake.DISCOVERY_NAME).read_text(encoding="utf-8"))
+        for sec in full["sections"].values():
+            self.assertLessEqual(sec["sampled"], 3)
+        self.assertLessEqual(counts["sentences_sampled"],
+                             3 * len(counts["clusters_per_section_type"]))
+
+    def test_discover_defaults_unchanged(self):
+        with mock.patch.dict(os.environ, {intake.MODEL_DIR_ENV: ""}):
+            _, rep, first, _ = self.run_intake("--discover")
+            disc = (self.out / intake.DISCOVERY_NAME).read_bytes()
+            _, _, explicit, _ = self.run_intake(
+                "--discover", "--discover-k", str(intake.move_discovery.DEFAULT_K),
+                "--discover-sample", str(intake.move_discovery.DEFAULT_MAX_PER_TYPE))
+        self.assertNotIn("k", rep["steps"]["discovery"]["counts"])
+        self.assertEqual(disc, (self.out / intake.DISCOVERY_NAME).read_bytes())
+        self.assertNotEqual(first, explicit)  # explicit flags are recorded
+
+    def test_discover_flag_usage_errors(self):
+        se = io.StringIO()
+        with contextlib.redirect_stderr(se):
+            for flag in ("--discover-k", "--discover-sample"):
+                self.assertEqual(intake.main(["run", str(self.src), str(self.out), "--genre",
+                                              GENRE, "--force", flag, "0"]), 2)
+
     def test_no_stale_row_id(self):
         for p in (REPO / "experiments" / "intake.py", Path(__file__)):
             self.assertNotIn("CO-" + "11", p.read_text(encoding="utf-8"), p)

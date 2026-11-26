@@ -50,6 +50,14 @@ class ScaffoldTests(unittest.TestCase):
         self.assertEqual(len(obj['moves']), 5)
         self.assertEqual([t['id'] for t in obj['section_types']], ['intro', 'results'])
 
+    def test_new_missing_parent_exits_2(self):
+        out = os.path.join(self.tmp.name, 'nope', 'g.json')
+        code, _, err = run('new', out, '--name', 'g')
+        self.assertEqual(code, 2)
+        self.assertNotIn('Traceback', err)
+        self.assertEqual(len(err.strip().splitlines()), 1)
+        self.assertFalse(os.path.exists(out))
+
     def test_bad_move_count_rejected(self):
         for n in ('0', '11'):
             code, _, err = run('new', self.out, '--name', 'g', '--moves', n)
