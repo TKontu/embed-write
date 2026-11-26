@@ -139,6 +139,15 @@ class ResidualsTest(Base):
         rep = bp.build_report(self.corpus)
         self.assertEqual(rep["params"]["min_words"], 4)
 
+    def test_min_words_counts_word_tokens_only(self):
+        punct = "- - - | | Note"
+        finnish = "- Ääni ja öljy | yö -"
+        self.write({f"d{i}.md": f"{punct}\n\n{finnish}\n\n{b}\n"
+                    for i, b in enumerate(BODIES[:3])})
+        texts = [f["text"] for f in self.flags("repeated")]
+        self.assertNotIn(bp.normalize(punct), texts)
+        self.assertIn(bp.normalize(finnish), texts)
+
     def test_min_words_cli(self):
         self.write({f"d{i}.md": f"Executive Summary\n\n{b}\n" for i, b in enumerate(BODIES[:3])})
         out = self.root / "o.json"

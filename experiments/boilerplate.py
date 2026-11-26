@@ -2,9 +2,10 @@
 
 Streams documents through experiments.corpus.iter_documents and flags, for the expert's review:
 
-* ``repeated``: a normalised passage of at least ``min_words`` whitespace-separated tokens
-  (paragraphs and lines of multi-line paragraphs; lowercased, whitespace collapsed, digit runs
-  masked as ``#``; shorter passages such as common headings are ignored) occurring
+* ``repeated``: a normalised passage of at least ``min_words`` word tokens (whitespace-separated
+  tokens containing at least one Unicode letter or digit, a masked digit run ``#`` included;
+  punctuation-only tokens such as ``-`` or ``|`` do not count) (paragraphs and lines of
+  multi-line paragraphs; lowercased, whitespace collapsed, digit runs masked as ``#``; shorter passages such as common headings are ignored) occurring
   in at least ``min_docs`` distinct documents (templates, disclaimers, repeated headers/footers).
 * ``near_duplicate_docs``: document pairs whose word 5-gram shingle Jaccard similarity, estimated
   by a seeded MinHash (64 permutations) with LSH banding (16 bands x 4 rows), is >= threshold.
@@ -60,6 +61,11 @@ def normalize(text: str) -> str:
     return _DIGITS.sub("#", _WS.sub(" ", text.lower()).strip())
 
 
+def _word_tokens(text: str) -> int:
+    """Count whitespace tokens with at least one Unicode alphanumeric or '#' (a masked digit run)."""
+    return sum(1 for tok in text.split() if any(c.isalnum() or c == "#" for c in tok))
+
+
 def _hash(text: str, size: int = 8) -> int:
     return int.from_bytes(hashlib.blake2b(text.encode("utf-8"), digest_size=size).digest(), "big")
 
@@ -97,7 +103,7 @@ def build_report(corpus_dir: str | os.PathLike, min_docs: int = 3, threshold: fl
         stem = document.path.relative_to(root).with_suffix("").as_posix()
         stems.add(stem)
         for norm in sorted(set(_passages(document.text))):
-            if len(norm.split()) < min_words:
+            if _word_tokens(norm) < min_words:
                 continue
             key = _hash(norm)
             entry = passages.get(key)
@@ -160,7 +166,9 @@ def main(argv: list[str] | None = None) -> int:
     report.add_argument("out")
     report.add_argument("--min-docs", type=int, default=3)
     report.add_argument("--threshold", type=float, default=0.8)
-    report.add_argument("--min-words", type=int, default=4)
+    report.add_argument("--min-words", type=int, default=4,
+                        help="minimum word tokens for a repeated passage (tokens with a letter "
+                             "or digit; punctuation-only tokens are not counted)")
     report.add_argument("--max-passages", type=int, default=1_000_000)
     report.add_argument("--force", action="store_true", help="overwrite an existing OUT")
     args = parser.parse_args(argv)
