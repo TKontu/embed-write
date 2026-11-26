@@ -240,5 +240,35 @@ class SectionTypingTests(unittest.TestCase):
         self.assertTrue(all((t, ix) == ('methods', 1) for t, ix, _ in rows), rows)
         self.assertEqual(rows[-1][2], 'Tail.')
 
+    def test_nested_item_fence_at_column_four(self):
+        # LLM-built synthetic: nested item fence at column 4, closes at its own column
+        md = ('# Methods\n\n- outer\n  - inner\n    ```\n    # Results\n    ```\n\n'
+              'Beta two.\n')
+        rows = types(md)
+        self.assertTrue(all((t, ix) == ('methods', 1) for t, ix, _ in rows), rows)
+        self.assertTrue(all('```' in s for *_, s in rows if '# Results' in s), rows)
+        self.assertEqual(rows[-1][2], 'Beta two.')
+        # a ``` at the outer column does not close the inner fence, it leaves the item
+        paras = [p for *_, p in a._sections(
+            '- outer\n  - inner\n    ```\n    code\n  ```\n  # Results\n  ```\n', H)]
+        self.assertTrue(all('# Results' not in p or '```' in p for p in paras), paras)
+
+    def test_outer_continuation_fence_after_nested_item(self):
+        md = ('# Methods\n\n- outer\n  - inner\n\n  ```\n  # Results\n  ```\n\n'
+              'Beta two.\n')
+        rows = types(md)
+        self.assertTrue(all((t, ix) == ('methods', 1) for t, ix, _ in rows), rows)
+        self.assertEqual(rows[-1][2], 'Beta two.')
+        # that fence leaves at the outer column: an unindented heading is real
+        rows = types('# Methods\n\n- outer\n  - inner\n\n  ```\n  code\n'
+                     '## Results\n\nC three.\n')
+        self.assertEqual([(t, ix) for t, ix, _ in rows][-1], ('results', 2), rows)
+
+    def test_unindented_line_ends_all_items(self):
+        # after the unindented line, "  ```" is a top-level fence (col 0) that an
+        # unindented "# Results" does not leave
+        rows = types('# Methods\n\n- outer\n  - inner\n\nPlain.\n\n  ```\n# Results\n')
+        self.assertTrue(all((t, ix) == ('methods', 1) for t, ix, _ in rows), rows)
+
 if __name__ == '__main__':
     unittest.main()

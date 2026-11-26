@@ -67,23 +67,26 @@ def _unquote(line):
     return depth, line
 
 
-def _fence_open(line, item_col):
-    """Match a fence opener inside optional containers -> (match, depth, col, item_col).
+def _fence_open(line, cols):
+    """Match a fence opener inside optional containers -> (match, depth, col, cols).
 
-    ``col`` is the list content column the fence sits at (0 outside lists); ``item_col``
-    is the content column of the latest list item, kept so indented continuation lines
-    are recognised.
+    ``cols`` is the stack of open list items' content columns (outermost first). A
+    non-blank line indented less than a column closes that item and its nested ones;
+    list markers after the deepest kept column push new columns. ``col`` is the
+    content column the line's text (and any fence) sits at, 0 outside lists. State
+    stays O(nesting depth).
     """
     depth, rest = _unquote(line)
-    mark = _LIST_MARK.match(rest)
-    if mark:
-        item_col = mark.end()
-        return _FENCE.match(rest[item_col:]), depth, item_col, item_col
-    if item_col and rest[:item_col] == ' ' * item_col:
-        return _FENCE.match(rest[item_col:]), depth, item_col, item_col
-    if rest.strip() and not rest.startswith(' '):
-        item_col = 0  # unindented text ends the list item
-    return _FENCE.match(rest), depth, 0, item_col
+    if rest.strip():
+        keep = 0
+        while keep < len(cols) and rest[:cols[keep]] == ' ' * cols[keep]:
+            keep += 1
+        cols = cols[:keep]
+    col = cols[-1] if cols else 0
+    while (mark := _LIST_MARK.match(rest[col:])):
+        col += mark.end()
+        cols = cols + [col]
+    return _FENCE.match(rest[col:]), depth, col, cols
 
 
 def _fence_close(line, fence):
@@ -116,7 +119,7 @@ def _sections(markdown, headings):
     current, heading, index, para = UNKNOWN, None, 0, []
     mapped = []  # stack of (level, section_type) for enclosing mapped headings
     fence = None  # (char, length, quote depth, list column) of the open code fence
-    item_col = 0  # content column of the latest list item, for continuation lines
+    cols = []  # content columns of the open (nested) list items, outermost first
     fenced = False  # pending paragraph text includes a code fence
     lines = markdown.splitlines()
     start = 0
@@ -138,7 +141,7 @@ def _sections(markdown, headings):
             if _fence_close(line, fence):
                 fence = None
             continue
-        m, depth, col, item_col = _fence_open(line, item_col)
+        m, depth, col, cols = _fence_open(line, cols)
         if m and not (m.group(1)[0] == '`' and '`' in m.group(2)):
             fence = (m.group(1)[0], len(m.group(1)), depth, col)
             fenced = True
