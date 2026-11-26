@@ -40,8 +40,8 @@ Track E can start today. Track R decides whether the project continues.
 | `todo-06-editor.md` | Editor, app shell | 39 | 38 | 1 | 0 | 9 |
 | `todo-07-proposals.md` | Proposals, verification, edit log, automatic drafting | 46 | 43 | 3 | 0 | 8 |
 | `todo-08-evaluation.md` | Evaluation harness | 29 | 26 | 2 | 1 | 1 |
-| `todo-09-corpus.md` | Reference corpus, annotation, source items | 33 | 20 | 11 | 2 | 4 |
-| **Total** | | **334** | **279** | **38** | **17** | **60** |
+| `todo-09-corpus.md` | Reference corpus, annotation, source items | 34 | 21 | 11 | 2 | 4 |
+| **Total** | | **335** | **280** | **38** | **17** | **60** |
 
 The 38 `[H]` tasks are the critical path.
 
@@ -91,6 +91,15 @@ Thresholds are proposals until confirmed; see `todo-01-experiments.md`.
 3. **Anything that cuts the expert's effort per judgment.**
 
 Later-phase rows (proposals, generation, fine-tuning, distillation, extra signals) wait unless they are a direct dependency of 1-3. The tracks below remain the long-run shape.
+
+**Strategic re-rank (R195, 2026-11-26, D-014 strategic round):**
+
+- **Observed:** two real texts appeared under `input/` (locally excluded from git) on 2026-11-26. No genre, corpus or confidentiality decision is recorded for them (CO-01 to CO-03 are `[H]`). Until the operator rules, agents run local tools over `input/` and read counts and statuses only; no agent, lane or PR reads or quotes the text (I9: agent models are remote).
+- **Drift corrected:** R192 to R194 built pattern-model rows PT-01 to PT-04 on synthetic data. They are not dependencies of items 1-3, and "do not start the pattern model before G-01 returns" still stands. PT-05 and later PT rows wait.
+- **Biggest reducible risk:** nothing on the G-01 path had ever touched real text or a real model. Order within item 1 is now: (a) whatever lets real input reach the expert in one step (CO-12 intake, MV-02 with the real embedder, a genre file for the real genre once the expert seeds MV-01); (b) real-run readiness of pre-labels and G-02 generation against a local LLM endpoint (none exists on this host: owed to the operator); (c) residuals of rows the real run exposes.
+- **Takeoff duty:** each takeoff lists `input/` (names, sizes, dates only) and compares it with this section.
+- **Design question for the expert:** the real texts have almost no headings (one of two has none), while the pattern model assumes sections and section types (sequence per section, stratified sampling). Whether this genre has sections is the expert's call (MV-01/MV-03); the loop does not change the design.
+- **Loop tooling owed (no row yet in a subsystem file):** #480 residuals F1 to F6 in `scripts/round_supervisor.py` (strategic.json written before launch; no strong-model fallback on a diagnosing round; non-numeric `at` crashes begin_round; `--prompt-file` trials use the strategic slot; strong_model not configurable; decision numbering skips D-013). A lane for them needs a strong-model review (D-014).
 
 ```
 Track R (expert)                          Track E (agents, start now)
