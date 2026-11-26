@@ -5,19 +5,21 @@ Input items (``PrelabelItem``) are the shape AN-01's ``resolve_items`` yields (i
 an AN-02 manifest plus document root (``--manifest``/``--documents``/``--pass``, via
 ``experiments.annotate.resolve_items``) or from an items JSONL (``--items``). ``model`` is any callable ``prompt -> reply``; its
 ``model_id`` attribute (default ``"unknown"``) is recorded. Each prompt holds only the inventory
-(move id, name, definition), ``other``, the sentence's section type, its own context and its text:
+(per move, in genre-file order: id, name, definition, its ``positive_examples`` and its
+``near_miss``), ``other``, the sentence's section type, its own context and its text:
 never another report's text.
 
 Output: one JSONL record per sentence, appended and flushed as produced:
   {sentence_id, doc_id, label, invalid_reply, attempts, model, prompt_hash,
-   genre_version, genre_hash}
+   genre_version, genre_hash, prompt_version}
 ``llm_labels(records)`` gives the ``sentence_id -> label`` map that experiments.gates.g01 takes
 as ``config["llm"]``. Each item has one budget of ``max_retries + 1`` model calls shared by
 raising calls (retried after a bounded backoff) and replies that do not name exactly one valid
 label (retried at once); an item whose budget ends on invalid replies is recorded as ``other``
 with ``invalid_reply: true``, one whose last call raises re-raises.
 
-Resumable: ids already in ``out_path`` under the same genre version key and model are skipped. An
+Resumable: ids already in ``out_path`` under the same genre version key, model and
+``PROMPT_VERSION`` are skipped (a record without ``prompt_version`` counts as version 1). An
 unparsable line (a torn final write) is ignored, so its id is relabelled; appends then start on a
 fresh line.
 Memory: O(labelled ids) for the resume set; items are streamed one prompt at a time.
@@ -53,6 +55,10 @@ class PrelabelItem(TypedDict):
 
 Model = Callable[[str], str]
 
+# Bump whenever build_prompt's output changes shape, so a resumed run relabels older records.
+# 1: id/name/definition only (pre-LB-01). 2: adds positive examples and near-miss (LB-01).
+PROMPT_VERSION = 2
+
 
 def valid_labels(genre) -> list:
     return [m['id'] for m in genre['moves']] + [OTHER]
@@ -62,6 +68,9 @@ def build_prompt(item: PrelabelItem, genre) -> str:
     lines = ['Label the TARGET sentence with exactly one move id from this inventory.', '']
     for m in genre['moves']:
         lines.append(f"- {m['id']}: {m['name']}. {m['definition']}")
+        lines.append('  Examples:')
+        lines += [f'    - {ex}' for ex in m['positive_examples']]
+        lines.append(f"  Not this move (near-miss): {m['near_miss']}")
     lines.append(f'- {OTHER}: none of the moves above applies.')
     lines += ['', f"Section type: {item.get('section_type') or 'unknown'}",
               f"Context: {_context_text(item.get('context'))}",
@@ -88,6 +97,13 @@ def parse_reply(reply, labels) -> str | None:
     return found[0] if len(found) == 1 else None
 
 
+def _current(r, key, model_id) -> bool:
+    """Record was produced under this genre version key, model and prompt version."""
+    return (r.get('model') == model_id and r.get('genre_version') == key['genre_version']
+            and r.get('genre_hash') == key['genre_hash']
+            and r.get('prompt_version', 1) == PROMPT_VERSION)
+
+
 def _done_ids(out_path, key, model_id) -> set:
     done = set()
     if not os.path.exists(out_path):
@@ -102,8 +118,7 @@ def _done_ids(out_path, key, model_id) -> set:
                 continue  # torn write; its id is relabelled
             if not isinstance(r, dict) or 'sentence_id' not in r:
                 continue
-            if (r.get('model') == model_id and r.get('genre_version') == key['genre_version']
-                    and r.get('genre_hash') == key['genre_hash']):
+            if _current(r, key, model_id):
                 done.add(r['sentence_id'])
     return done
 
@@ -169,7 +184,8 @@ def iter_prelabel(items: Iterable[PrelabelItem], genre, model: Model, *, out_pat
             rec = {'sentence_id': sid, 'doc_id': item.get('doc_id'),
                    'label': label or OTHER, 'invalid_reply': label is None,
                    'attempts': attempts, 'model': model_id,
-                   'prompt_hash': hashlib.sha256(prompt.encode('utf-8')).hexdigest(), **key}
+                   'prompt_hash': hashlib.sha256(prompt.encode('utf-8')).hexdigest(),
+                   'prompt_version': PROMPT_VERSION, **key}
             fh.write(json.dumps(rec, sort_keys=True, ensure_ascii=False) + '\n')
             fh.flush()
             done.add(sid)
@@ -281,9 +297,7 @@ def main(argv=None) -> int:
         return 2
     key = version_key(genre)
     model_id = getattr(model, 'model_id', 'unknown')
-    recs = [r for r in _parsed_lines(a.out)
-            if r.get('model') == model_id and r.get('genre_hash') == key['genre_hash']
-            and r.get('genre_version') == key['genre_version']]
+    recs = [r for r in _parsed_lines(a.out) if _current(r, key, model_id)]
     summary = summarize(ids, recs)
     print(json.dumps(summary, sort_keys=True))
     return 0 if summary['exactly_one_label_each'] else 1

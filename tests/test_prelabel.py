@@ -401,3 +401,49 @@ class ModelErrorTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class PromptExamplesTests(unittest.TestCase):
+    """LB-01: inventory examples and near-misses in the prompt; prompt version in resume key."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.out = os.path.join(self.tmp.name, 'labels.jsonl')
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_prompt_lists_examples_and_near_miss_per_move_in_order(self):
+        p = prelabel.build_prompt(items(1)[0], GENRE)
+        pos = -1
+        for m in GENRE['moves']:
+            head = p.index(f"- {m['id']}: {m['name']}. {m['definition']}")
+            self.assertGreater(head, pos)
+            for ex in m['positive_examples']:
+                self.assertIn(f'    - {ex}', p[head:])
+            self.assertIn(f"  Not this move (near-miss): {m['near_miss']}", p[head:])
+            pos = head
+        self.assertEqual(p.count('  Examples:'), len(GENRE['moves']))
+        self.assertGreater(p.index('- other:'), pos)
+        self.assertTrue(p.endswith('Reply with the move id only.'))
+        self.assertIn('TARGET: Synthetic sentence number 0.', p)
+
+    def test_prompt_deterministic(self):
+        it = items(1)[0]
+        self.assertEqual(prelabel.build_prompt(it, GENRE), prelabel.build_prompt(dict(it), GENRE))
+
+    def test_records_carry_prompt_version(self):
+        recs = prelabel.prelabel(items(2), GENRE, FakeModel({}), out_path=self.out)
+        self.assertTrue(all(r['prompt_version'] == prelabel.PROMPT_VERSION for r in recs))
+        self.assertGreaterEqual(prelabel.PROMPT_VERSION, 2)
+
+    def test_resume_skips_same_version_relabels_old_version(self):
+        prelabel.prelabel(items(2), GENRE, FakeModel({}), out_path=self.out)
+        old = dict(read(self.out)[0], sentence_id='s2')
+        del old['prompt_version']  # pre-LB-01 record: counts as version 1
+        with open(self.out, 'a', encoding='utf-8') as fh:
+            fh.write(json.dumps(old) + '\n')
+        model = FakeModel({})
+        recs = prelabel.prelabel(items(3), GENRE, model, out_path=self.out)
+        self.assertEqual([r['sentence_id'] for r in recs], ['s2'])
+        self.assertEqual(len(model.prompts), 1)
