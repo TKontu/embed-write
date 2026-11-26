@@ -39,8 +39,9 @@ from service.segment import segment_sentences
 
 # ATX heading: up to three leading spaces, one to six #s, then whitespace or EOL.
 _ATX = re.compile(r"^ {0,3}(#{1,6})(?:[ \t]+(.*?))?[ \t]*$")
-# Optional closing sequence: whitespace then #s, e.g. "## Title ##".
-_CLOSING = re.compile(r"[ \t]+#+$")
+# Optional closing sequence (CommonMark): #s preceded by whitespace or forming the whole
+# content, e.g. "## Title ##" and "### ###"; "# foo#" keeps "foo#".
+_CLOSING = re.compile(r"(?:^|[ \t]+)#+$")
 
 # Fence line: up to three leading spaces, 3+ backticks or tildes, then the rest.
 _FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")

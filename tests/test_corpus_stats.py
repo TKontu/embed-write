@@ -270,5 +270,12 @@ class CliTests(Base):
         self.assertFalse(out.exists())
 
 
+class ClosingSequenceTests(unittest.TestCase):
+    def test_commonmark_closing_sequence(self):
+        for line, want in (("### ###", ""), ("#", ""), ("# foo#", "foo#"), ("## Title ##", "title")):
+            m = cs._ATX.match(line)
+            self.assertEqual(cs._heading_text(m.group(2)), want, line)
+
+
 if __name__ == "__main__":
     unittest.main()
