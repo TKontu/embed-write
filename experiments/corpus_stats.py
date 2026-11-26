@@ -12,8 +12,9 @@ contains heading strings only, no body excerpts.
 ``--metadata`` joins CO-06 JSONL records to documents by doc_id = path stem and
 adds per-genre document counts plus matched/unmatched counts. A metadata record
 matches every document with that stem; duplicate stems are not detected.
-Fenced code blocks are not tracked, so an ATX-looking line inside a fence counts
-as a heading. Unwired by design: MV-02 and CO-05 will read the report.
+Lines inside fenced code blocks (CommonMark: 3+ backticks or tildes with up to
+three leading spaces; closed by the same character at least as long; an unclosed
+fence runs to end of document) are section body text, never headings. Unwired by design: MV-02 and CO-05 will read the report.
 
 CLI: python -m experiments.corpus_stats report CORPUS_DIR OUT.json
      [--metadata META.jsonl] [--force]
@@ -38,6 +39,8 @@ _ATX = re.compile(r"^ {0,3}(#{1,6})(?:[ \t]+(.*?))?[ \t]*$")
 # Optional closing sequence: whitespace then #s, e.g. "## Title ##".
 _CLOSING = re.compile(r"[ \t]+#+$")
 
+# Fence line: up to three leading spaces, 3+ backticks or tildes, then the rest.
+_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 _PREAMBLE = object()
 
 
@@ -52,7 +55,25 @@ def _iter_sections(text: str) -> Iterator[tuple[object, str]]:
     """Yield (heading, body) pairs; heading is (level, normalised text) or _PREAMBLE."""
     heading: object = _PREAMBLE
     body: list[str] = []
+    fence: str | None = None  # opening marker while inside a fenced code block
     for line in text.splitlines():
+        fmatch = _FENCE.match(line)
+        if fence is not None:
+            if (
+                fmatch is not None
+                and fmatch.group(1)[0] == fence[0]
+                and len(fmatch.group(1)) >= len(fence)
+                and not fmatch.group(2).strip()
+            ):
+                fence = None
+            body.append(line)
+            continue
+        if fmatch is not None and not (
+            fmatch.group(1)[0] == "`" and "`" in fmatch.group(2)
+        ):
+            fence = fmatch.group(1)
+            body.append(line)
+            continue
         match = _ATX.match(line)
         if match is None:
             body.append(line)
