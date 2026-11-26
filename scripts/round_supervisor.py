@@ -11,6 +11,8 @@ validated sentinel, never Herdr's ``idle``: an orchestrator waiting on CI is idl
 Live lanes carry over untouched: they run in their own ``live-<repo>-<lane>`` Herdr tabs, and the only tab
 this process ever closes is the one it created for the round's orchestrator.
 
+Cooldown (D-012): the breaker and a planner halt pause the loop instead of halting it.
+
 Watchdog: transcript silence or no outward progress (main, PR heads, round manifests) earns a
 nudge; only outward progress refunds nudges, so a heartbeat that merely keeps the transcript
 growing cannot wait forever. Exhausted nudges recycle the session; repeated recycles halt.
@@ -124,7 +126,7 @@ decisions in HANDOFF.md.
 - Your very last action, after every subagent has finished and handoff has validated:
     python3 {script} complete --outcome continue
   Only for a reached goal, an operator instruction or an obstacle blocking all future lanes, use
-  --outcome halt --reason "<why>" instead. Then end your turn; a new session takes the next round.
+  --outcome halt --reason "<why>" instead; the supervisor then pauses and retries (D-012). Then end your turn; a new session takes the next round.
 """
 SILENT_NUDGE = (
     "Supervisor: this session has been silent for {minutes} minutes and round {round} is not "
@@ -156,6 +158,8 @@ class Config:
     max_nudges: int = 3
     max_recycles: int = 2
     max_no_advance: int = 3
+    cooldown_s: int = 3600  # D-012: the loop cools down instead of halting on its own
+    cooldown_max_s: int = 6 * 3600
     gap_s: int = 60
 
 
@@ -173,6 +177,7 @@ class Tracker:
     limited_since: float | None = None
     recycles: int = 0
     no_advance: int = 0
+    cooldowns: int = 0
     main_at_start: str = ""
 
 
@@ -189,7 +194,7 @@ class Observation:
 
 @dataclass(frozen=True)
 class Action:
-    kind: str  # wait|nudge_silent|nudge_progress|deny|next|recycle|halt
+    kind: str  # wait|nudge_silent|nudge_progress|deny|next|recycle|cooldown|halt
     reason: str = ""
 
 
@@ -202,10 +207,10 @@ def decide(cfg: Config, t: Tracker, o: Observation) -> Action:
             t.done_since = t.done_since or o.now
             if o.now - t.done_since < cfg.settle_s:
                 return Action("wait", "sentinel written; agent settling")
-        if o.sentinel.get("outcome") == "halt":
-            return Action("halt", f"round asked to halt: {o.sentinel.get('reason', '')}")
         if o.stop_after_round:
             return Action("halt", "operator stop after round")
+        if o.sentinel.get("outcome") == "halt":  # D-012: only the operator halts the loop
+            return Action("cooldown", f"round asked to halt: {o.sentinel.get('reason', '')}")
         return Action("next", "round complete")
     if o.status is None:
         return Action("recycle", "agent is gone without completing the round")
@@ -240,16 +245,28 @@ def decide(cfg: Config, t: Tracker, o: Observation) -> Action:
 
 
 def after_round(cfg: Config, t: Tracker, *, recycled: bool, main_sha: str) -> Action | None:
-    """Circuit breaker between rounds: halt rather than burn sessions on no effect."""
+    """Circuit breaker between rounds: cool down rather than burn sessions on no effect (D-012).
+
+    Once tripped, a still-frozen main cools down again after the very next empty round; any
+    advance of main resets every counter.
+    """
     advanced = bool(main_sha) and main_sha != t.main_at_start
     t.no_advance = 0 if advanced else t.no_advance + 1
     t.recycles = t.recycles + 1 if recycled else 0
+    if advanced:
+        t.cooldowns = 0
     if t.recycles >= cfg.max_recycles:
-        return Action("halt", f"{t.recycles} consecutive recycled rounds")
+        return Action("cooldown", f"{t.recycles} consecutive recycled rounds")
     if t.no_advance >= cfg.max_no_advance:
-        return Action("halt", f"main unchanged across {t.no_advance} rounds")
+        return Action("cooldown", f"main unchanged across {t.no_advance} rounds")
     return None
 
+
+def next_cooldown(cfg: Config, t: Tracker) -> int:
+    """Seconds to wait before the next round: doubles per consecutive cooldown, capped."""
+    wait = min(cfg.cooldown_s * 2 ** t.cooldowns, cfg.cooldown_max_s)
+    t.cooldowns += 1
+    return wait
 
 Run = Callable[[Sequence[str], float], tuple[int, str]]
 NOTE_MAX = 140
@@ -507,6 +524,22 @@ class Supervisor:
         news("halt", reason)
         self.herdr.notify(f"Round loop {NAMES['slug']} halted", reason[:200])
 
+    def cool_down(self, reason: str) -> bool:
+        """Wait out a cooldown, polling the operator's stop controls; False means halted."""
+        wait = next_cooldown(self.cfg, self.t)
+        log(f"cooldown {wait // 60} min: {reason}")
+        news("watchdog", f"Paused {wait // 60} min, then the loop resumes: {reason}"[:NOTE_MAX])
+        until = time.time() + wait
+        while time.time() < until:
+            if (STATE / "STOP").exists():
+                self.halt("operator stop")
+                return False
+            if stop_requested():
+                self.halt("operator stop after round")
+                return False
+            time.sleep(min(self.cfg.poll_s, max(0.0, until - time.time())))
+        return True
+
     def step(self) -> bool:
         """One poll; False ends the supervisor."""
         now = time.time()
@@ -533,17 +566,18 @@ class Supervisor:
         elif action.kind == "halt":
             self.halt(action.reason)
             return False
-        elif action.kind in ("next", "recycle"):
+        elif action.kind in ("next", "recycle", "cooldown"):
             if action.kind == "recycle":
                 news("watchdog", f"Replaced the planner session: {action.reason}")
             self.end_session()
             sha = main_sha(self.herdr.run)
             stop = after_round(self.cfg, self.t, recycled=action.kind == "recycle", main_sha=sha)
-            if stop:
-                self.halt(stop.reason)
-                return False
+            if action.kind == "cooldown" and stop is None:
+                stop = action
             if stop_requested():
                 self.halt("operator stop after round")
+                return False
+            if stop and not self.cool_down(stop.reason):
                 return False
             time.sleep(self.cfg.gap_s)
             self.begin_round(self.t.round + 1)

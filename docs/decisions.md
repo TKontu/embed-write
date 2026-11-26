@@ -126,3 +126,14 @@ Append-only record of operator rulings and architecture decisions.
   agent may record an operator ruling in `docs/decisions.md` only when the operator gave it.
 - **Why:** rulings sat as open PRs waiting for the operator (PR #246) while the planner already
   acted on them.
+
+## D-012 — The loop never halts on its own; it cools down and retries (2026-11-26, operator)
+
+- **Ruling:** only the operator stops the loop (`stop`, `stop-after-round`). The supervisor's
+  breaker (main unchanged across 3 rounds, repeated recycled rounds) and a planner's
+  `--outcome halt` now pause the loop for a cooldown, then resume. The cooldown is 1 h, doubles per
+  consecutive cooldown up to 6 h, and resets when main advances. While cooling down, the
+  supervisor still obeys the operator's stop controls.
+- **Why:** the iknosreview loop ran a week unattended; this one halted on Codex limits and empty
+  backlogs, and only a session-bound heartbeat restarted it.
+- **Cost bound:** a frozen main costs at most one planner session per cooldown.

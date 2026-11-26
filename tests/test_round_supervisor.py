@@ -59,9 +59,12 @@ class PolicyTests(unittest.TestCase):
         late = obs(60 + CFG.settle_s, sentinel=done, status="working")
         self.assertEqual(rs.decide(CFG, t, late).kind, "next")
 
-    def test_requested_halts_win_over_the_next_round(self):
-        halt = obs(1, sentinel={"outcome": "halt"})
-        self.assertEqual(rs.decide(CFG, tracker(), halt).kind, "halt")
+    def test_a_planner_halt_request_cools_down_but_operator_stops_still_halt(self):
+        # The operator asked that the loop never halt on its own (D-012).
+        asked = obs(1, sentinel={"outcome": "halt", "reason": "no executor"})
+        action = rs.decide(CFG, tracker(), asked)
+        self.assertEqual(action.kind, "cooldown")
+        self.assertIn("no executor", action.reason)
         after = obs(1, sentinel={"outcome": "continue"}, stop_after_round=True)
         self.assertEqual(rs.decide(CFG, tracker(), after).kind, "halt")
         self.assertEqual(rs.decide(CFG, tracker(), obs(1, stop_now=True)).kind, "halt")
@@ -107,18 +110,29 @@ class PolicyTests(unittest.TestCase):
         late = obs(CFG.silence_s + CFG.limit_max_s, activity=T0, limited=True)
         self.assertNotEqual(rs.decide(CFG, t, late).reason, "usage limit")
 
-    def test_breaker_halts_on_repeated_recycles_and_on_a_frozen_main(self):
+    def test_breaker_cools_down_instead_of_halting(self):
         t = tracker(main_at_start="a")
         self.assertIsNone(rs.after_round(CFG, t, recycled=True, main_sha="b"))
-        stop = rs.after_round(CFG, t, recycled=True, main_sha="c")
-        self.assertEqual(stop.kind, "halt")
+        self.assertEqual(rs.after_round(CFG, t, recycled=True, main_sha="c").kind, "cooldown")
         t = tracker(main_at_start="a")
         self.assertIsNone(rs.after_round(CFG, t, recycled=False, main_sha="a"))
         self.assertIsNone(rs.after_round(CFG, t, recycled=False, main_sha="a"))
-        self.assertIsNotNone(rs.after_round(CFG, t, recycled=False, main_sha="a"))
-        t = tracker(main_at_start="a", recycles=1, no_advance=2)
+        stop = rs.after_round(CFG, t, recycled=False, main_sha="a")
+        self.assertEqual(stop.kind, "cooldown")
+        self.assertIn("main unchanged", stop.reason)
+        # still frozen: the very next empty round cools down again, without three more rounds
+        self.assertEqual(rs.after_round(CFG, t, recycled=False, main_sha="a").kind, "cooldown")
+        t = tracker(main_at_start="a", recycles=1, no_advance=2, cooldowns=3)
         self.assertIsNone(rs.after_round(CFG, t, recycled=False, main_sha="b"))
-        self.assertEqual((t.recycles, t.no_advance), (0, 0))
+        self.assertEqual((t.recycles, t.no_advance, t.cooldowns), (0, 0, 0))
+
+    def test_cooldowns_double_up_to_a_cap(self):
+        t = tracker()
+        waits = [rs.next_cooldown(CFG, t) for _ in range(6)]
+        self.assertEqual(waits[0], CFG.cooldown_s)
+        self.assertEqual(waits[1], 2 * CFG.cooldown_s)
+        self.assertTrue(all(w <= CFG.cooldown_max_s for w in waits))
+        self.assertEqual(waits[-1], CFG.cooldown_max_s)
 
     def test_overrides_shorten_timers_and_reject_unknown_keys(self):
         self.assertEqual(rs.with_overrides(CFG, ["silence_s=60"]).silence_s, 60)
@@ -146,6 +160,15 @@ class StateTests(unittest.TestCase):
             patcher = mock.patch.object(rs, name, self.tmp)
             patcher.start()
             self.addCleanup(patcher.stop)
+
+    def test_a_cooldown_waits_but_the_operator_stop_still_halts_it(self):
+        cfg = rs.with_overrides(CFG, ["cooldown_s=1", "poll_s=0"])
+        sup = rs.Supervisor(cfg, (), FakeHerdr([]))
+        with mock.patch.object(rs.time, "sleep"):
+            self.assertTrue(sup.cool_down("main unchanged"))  # waited it out, resumes
+            (self.tmp / "STOP").touch()
+            self.assertFalse(sup.cool_down("main unchanged"))
+        self.assertIn("operator stop", (self.tmp / "HALT").read_text())
 
     def open_round(self, started):
         (self.tmp / "current.json").write_text(json.dumps({"round": 7, "started": started}))
