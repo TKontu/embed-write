@@ -8,7 +8,8 @@ test sentences) ids, no text. Every document must be in the split's test set
 
 Headings are ATX (``#``..``######``, level = ``#`` count) or setext (a paragraph
 underlined by ``===``, level 1, or ``---``, level 2); lines inside ``` or ~~~ code
-fences (also inside blockquotes and list items) are never headings. Heading text is
+fences (also inside blockquotes and list items) are never headings and are excluded
+from the text, so fenced code (opener, body, closer) never yields a sentence. Heading text is
 mapped through the genre's ``section_types`` aliases with ``normalize_heading``. Each sentence takes the type
 of the nearest enclosing mapped heading: an unmapped heading deeper than the
 current mapped one inherits its type, while any heading at the same or a higher
@@ -136,8 +137,7 @@ def _sections(markdown, headings):
             if para:
                 yield current, heading, index, '\n'.join(para)
             para, fenced = [], False
-        if fence:
-            para.append(line)
+        if fence:  # fenced text is excluded from the paragraph
             if _fence_close(line, fence):
                 fence = None
             continue
@@ -145,7 +145,6 @@ def _sections(markdown, headings):
         if m and not (m.group(1)[0] == '`' and '`' in m.group(2)):
             fence = (m.group(1)[0], len(m.group(1)), depth, col)
             fenced = True
-            para.append(line)
             continue
         promotable = para and not fenced and not _NOT_SETEXT_START.match(para[0])
         atx, setext = _HEADING.match(line), promotable and _SETEXT.match(line)
