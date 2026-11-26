@@ -63,7 +63,7 @@ from typing import Callable, Iterable, Iterator, Sequence, TypedDict
 from experiments.prelabel import local_model
 
 ARMS = ('A', 'B', 'C')
-PROMPT_VERSION = 'g02.3-v1'
+PROMPT_VERSION = 'g02.3-v2'
 DEFAULT_C_TEMPERATURE = 0.7  # arm C sampling when n_candidates > 1 and none is given
 
 
