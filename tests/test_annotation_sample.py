@@ -177,6 +177,38 @@ class SectionTypingTests(unittest.TestCase):
         rows = types('# Methods\n\n> quote\n---\n\nAlpha.')
         self.assertTrue(rows and all((t, ix) == ('methods', 1) for t, ix, _ in rows), rows)
 
+    def test_container_fenced_hash_lines_are_not_headings(self):
+        cases = (('> ```', '> # Results', '> ```'),
+                 ('> > ~~~', '> > # Results', '> > ~~~~'),
+                 ('- ```', '  # Results', '  ```'),
+                 ('* ```', '  # Results', '  ```'),
+                 ('+ ```', '  # Results', '  ```'),
+                 ('1. ```', '   # Results', '   ```'),
+                 ('2) ```', '   # Results', '   ```'))
+        for open_, inner, close in cases:
+            md = f'# Methods\n\nAlpha one.\n\n{open_}\n{inner}\n{close}\n\nBeta two.\n'
+            rows = types(md)
+            self.assertTrue(all(t == 'methods' and ix == 1 for t, ix, _ in rows), (open_, rows))
+            self.assertIn('Beta two.', [s for *_, s in rows])
+
+    def test_list_continuation_fence(self):
+        md = '# Methods\n\n- item\n\n  ```\n  # Results\n  ```\n\nBeta two.\n'
+        rows = types(md)
+        self.assertTrue(all(t == 'methods' and ix == 1 for t, ix, _ in rows), rows)
+
+    def test_container_fence_closes_then_real_heading(self):
+        for open_, inner, close in (('> ```', '> # Odd', '> ```'), ('- ```', '  # Odd', '  ```')):
+            md = (f'# Methods\n\nA one.\n\n{open_}\n{inner}\n```\n# Odd\n{close}\n\n'
+                  '# Results\n\nC three.\n')
+            rows = types(md)
+            self.assertEqual([(t, ix) for t, ix, _ in rows][-1], ('results', 2), (open_, rows))
+            self.assertTrue(all(ix == 1 for _, ix, _ in rows[:-1]), (open_, rows))
+
+    def test_unclosed_container_fence_runs_to_end(self):
+        for open_ in ('> ```', '- ```'):
+            rows = types(f'# Methods\n\nA one.\n\n{open_}\n\n# Results\n\nC three.\n')
+            self.assertTrue(all((t, ix) == ('methods', 1) for t, ix, _ in rows), (open_, rows))
+
 
 if __name__ == '__main__':
     unittest.main()

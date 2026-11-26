@@ -8,8 +8,8 @@ test sentences) ids, no text. Every document must be in the split's test set
 
 Headings are ATX (``#``..``######``, level = ``#`` count) or setext (a paragraph
 underlined by ``===``, level 1, or ``---``, level 2); lines inside ``` or ~~~ code
-fences are never headings. Heading text is mapped through the genre's
-``section_types`` aliases with ``normalize_heading``. Each sentence takes the type
+fences (also inside blockquotes and list items) are never headings. Heading text is
+mapped through the genre's ``section_types`` aliases with ``normalize_heading``. Each sentence takes the type
 of the nearest enclosing mapped heading: an unmapped heading deeper than the
 current mapped one inherits its type, while any heading at the same or a higher
 level closes it. Text before any heading, or under an unmapped heading with no
@@ -49,6 +49,8 @@ MEMORY_BOUND = ('O(test sentences) candidate tuples (doc_id, section_type, sente
 _HEADING = re.compile(r'^ {0,3}(#{1,6})[ \t]+(.*?)[ \t#]*$')
 _SETEXT = re.compile(r'^ {0,3}(=+|-+)[ \t]*$')
 _FENCE = re.compile(r'^ {0,3}(`{3,}|~{3,})(.*)$')
+_QUOTE = re.compile(r'^ {0,3}> ?')
+_LIST_MARK = re.compile(r'^ {0,3}(?:[-*+]|\d{1,9}[.)])[ \t]+')
 _NOT_SETEXT_START = re.compile(r'^ {0,3}(?:[-*+]|\d+[.)])[ \t]|^ {0,3}>')
 
 
@@ -57,11 +59,50 @@ def _heading_map(genre):
             for t in genre.get('section_types', []) for h in t['headings']}
 
 
+def _unquote(line):
+    """Return (blockquote depth, line with the ``>`` markers removed)."""
+    depth = 0
+    while (m := _QUOTE.match(line)):
+        line, depth = line[m.end():], depth + 1
+    return depth, line
+
+
+def _fence_open(line, item_col):
+    """Match a fence opener inside optional containers -> (match, depth, col, item_col).
+
+    ``col`` is the list content column the fence sits at (0 outside lists); ``item_col``
+    is the content column of the latest list item, kept so indented continuation lines
+    are recognised.
+    """
+    depth, rest = _unquote(line)
+    mark = _LIST_MARK.match(rest)
+    if mark:
+        item_col = mark.end()
+        return _FENCE.match(rest[item_col:]), depth, item_col, item_col
+    if item_col and rest[:item_col] == ' ' * item_col:
+        return _FENCE.match(rest[item_col:]), depth, item_col, item_col
+    if rest.strip() and not rest.startswith(' '):
+        item_col = 0  # unindented text ends the list item
+    return _FENCE.match(rest), depth, 0, item_col
+
+
+def _fence_close(line, fence):
+    """True when ``line`` closes ``fence`` (char, length, depth, col) at its container prefix."""
+    char, length, depth, col = fence
+    got, rest = _unquote(line)
+    if got != depth or rest[:col] != ' ' * col:
+        return False
+    m = _FENCE.match(rest[col:])
+    return bool(m and m.group(1)[0] == char and len(m.group(1)) >= length
+                and not m.group(2).strip())
+
+
 def _sections(markdown, headings):
     """Yield (section_type, heading_text, section_index, paragraph) per blank-line paragraph."""
     current, heading, index, para = UNKNOWN, None, 0, []
     mapped = []  # stack of (level, section_type) for enclosing mapped headings
-    fence = None  # (char, length) of the open code fence
+    fence = None  # (char, length, quote depth, list column) of the open code fence
+    item_col = 0  # content column of the latest list item, for continuation lines
     fenced = False  # pending paragraph text includes a code fence
     lines = markdown.splitlines()
     start = 0
@@ -73,14 +114,12 @@ def _sections(markdown, headings):
     for line in lines[start:]:
         if fence:
             para.append(line)
-            m = _FENCE.match(line)
-            if m and m.group(1)[0] == fence[0] and len(m.group(1)) >= fence[1] \
-                    and not m.group(2).strip():
+            if _fence_close(line, fence):
                 fence = None
             continue
-        m = _FENCE.match(line)
+        m, depth, col, item_col = _fence_open(line, item_col)
         if m and not (m.group(1)[0] == '`' and '`' in m.group(2)):
-            fence = (m.group(1)[0], len(m.group(1)))
+            fence = (m.group(1)[0], len(m.group(1)), depth, col)
             fenced = True
             para.append(line)
             continue
