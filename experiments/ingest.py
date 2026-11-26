@@ -1,7 +1,10 @@
 """CO-04: convert source documents to Markdown for the corpus (stdlib + pypdf).
 
 Formats: .docx (zipfile + xml.etree: paragraphs, Heading1..6 -> ATX headings,
-bold/italic runs, list paragraphs -> ``-`` items, simple tables -> pipe tables),
+bold/italic runs, list paragraphs -> ``-`` items or, when word/numbering.xml gives
+the numId/ilvl a decimal* numFmt, ``1.``/``2.`` items (counter per numId and level,
+restarting after a non-list block); nested ilvl indents 3 spaces per level; simple
+tables -> pipe tables),
 .html/.htm (html.parser: h1-h6, p, ul/ol/li, table, strong/b, em/i), .txt
 (blank-line separated paragraphs), .md (copied) and .pdf (pypdf text per page:
 blank-line paragraphs, page-number-only lines dropped, hyphenated line breaks
@@ -10,9 +13,10 @@ by body text; numbering depth sets the level, ``1.`` -> ``##``, ``1.2`` ->
 ``###``, unnumbered ``##``). Encrypted/unreadable PDFs and PDFs without
 extractable text (scans; no OCR) are ``failed``. Without pypdf, ``.pdf`` is
 ``unsupported`` ("pypdf not installed"); other extensions likewise unsupported.
-Not handled: images, footnotes, tracked changes, nested lists/tables, merged
-cells, hyperlinks (text kept), numbered DOCX lists (emitted as ``-``), PDF
-layout, tables and images.
+Not handled: images, footnotes, tracked changes, nested tables, merged cells,
+hyperlinks (text kept), numbering lvlOverride/start values (numbers start at 1),
+non-decimal numbering formats (emitted as ``-``), PDF layout, tables and images.
+Files under OUT_DIR are never scanned as input, even when OUT_DIR is inside SRC_DIR.
 
 Files are processed one at a time. After conversion each output is checked by
 docmodel/scripts/check-roundtrip.js (batches of at most 50 paths) when ``node``
@@ -123,35 +127,86 @@ def _docx_para_text(p) -> str:
     return "".join(parts).replace("****", "")
 
 
+def _docx_numbering(z: zipfile.ZipFile) -> dict[str, dict[int, str]]:
+    """numId -> {ilvl: numFmt} from word/numbering.xml; {} when absent/unreadable."""
+    try:
+        root = ET.fromstring(z.read("word/numbering.xml"))
+    except (KeyError, ET.ParseError):
+        return {}
+    abstract: dict[str, dict[int, str]] = {}
+    for an in root.findall(WNS + "abstractNum"):
+        levels = {}
+        for lvl in an.findall(WNS + "lvl"):
+            fmt = lvl.find(WNS + "numFmt")
+            try:
+                levels[int(lvl.get(WNS + "ilvl", "0"))] = (
+                    fmt.get(WNS + "val", "") if fmt is not None else "")
+            except ValueError:
+                continue
+        abstract[an.get(WNS + "abstractNumId", "")] = levels
+    nums: dict[str, dict[int, str]] = {}
+    for num in root.findall(WNS + "num"):
+        ref = num.find(WNS + "abstractNumId")
+        if ref is not None:
+            nums[num.get(WNS + "numId", "")] = abstract.get(ref.get(WNS + "val", ""), {})
+    return nums
+
+
+def _ordered_fmt(fmt: str) -> bool:
+    return fmt.startswith("decimal")
+
+
 def convert_docx(path: Path) -> str:
     with zipfile.ZipFile(path) as z:
         root = ET.fromstring(z.read("word/document.xml"))
+        numbering = _docx_numbering(z)
     body = root.find(WNS + "body")
     if body is None:
         raise ValueError("docx: no document body")
     blocks: list[tuple[str, str]] = []
+    counters: dict[tuple[str, int], int] = {}  # (numId, ilvl) -> last number; reset off-list
     for el in body:
         if el.tag == WNS + "p":
             text = _docx_para_text(el).strip()
             ppr = el.find(WNS + "pPr")
             style = ""
-            numbered = False
+            num_pr = None
             if ppr is not None:
                 ps = ppr.find(WNS + "pStyle")
                 style = (ps.get(WNS + "val") or "") if ps is not None else ""
-                numbered = ppr.find(WNS + "numPr") is not None
+                num_pr = ppr.find(WNS + "numPr")
             m = re.fullmatch(r"(?i)heading\s*([1-6])", style)
             if m and text:
                 blocks.append(("h", "#" * int(m.group(1)) + " " + text))
-            elif numbered or style.lower().startswith("list"):
-                blocks.append(("li", "- " + text))
+                counters.clear()
+            elif num_pr is not None or style.lower().startswith("list"):
+                num_id, ilvl = "", 0
+                if num_pr is not None:
+                    nid, lv = num_pr.find(WNS + "numId"), num_pr.find(WNS + "ilvl")
+                    num_id = (nid.get(WNS + "val") or "") if nid is not None else ""
+                    try:
+                        ilvl = max(0, min(8, int(lv.get(WNS + "val") or 0))) if lv is not None else 0
+                    except ValueError:
+                        ilvl = 0
+                for key in [k for k in counters if k[0] == num_id and k[1] > ilvl]:
+                    del counters[key]  # a shallower item restarts deeper levels
+                if _ordered_fmt(numbering.get(num_id, {}).get(ilvl, "")):
+                    n = counters.get((num_id, ilvl), 0) + 1
+                    counters[(num_id, ilvl)] = n
+                    marker = f"{n}. "
+                else:
+                    marker = "- "
+                blocks.append(("li", "   " * ilvl + marker + text))
             else:
                 blocks.append(("p", text))
+                if text:
+                    counters.clear()
         elif el.tag == WNS + "tbl":
             rows = [[" ".join(_docx_para_text(p).strip() for p in tc.iter(WNS + "p")).strip()
                      for tc in tr.findall(WNS + "tc")]
                     for tr in el.findall(WNS + "tr")]
             blocks.append(("t", _table(rows)))
+            counters.clear()
     return _join_blocks(blocks)
 
 
@@ -373,7 +428,9 @@ def convert_dir(src_dir: Path, out_dir: Path, check: bool = True) -> dict:
     out_dir.mkdir(parents=True, exist_ok=True)
     entries: list[dict] = []
     written: set[str] = set()
-    for src in sorted(p for p in src_dir.rglob("*") if p.is_file()):
+    out_abs = out_dir.resolve()
+    for src in sorted(p for p in src_dir.rglob("*")
+                      if p.is_file() and not p.resolve().is_relative_to(out_abs)):
         ext = src.suffix.lower()
         entry = {"source": str(src), "output": None, "format": ext.lstrip(".") or None,
                  "status": "unsupported", "headings": None, "roundtrip": None}

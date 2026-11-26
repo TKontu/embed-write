@@ -53,6 +53,33 @@ def make_docx(path: Path) -> None:
         z.writestr("word/document.xml", doc)
 
 
+def _np(text, num_id, ilvl=0):
+    return (f'<w:p><w:pPr><w:numPr><w:ilvl w:val="{ilvl}"/><w:numId w:val="{num_id}"/>'
+            f'</w:numPr></w:pPr><w:r><w:t>{text}</w:t></w:r></w:p>')
+
+
+def make_numbered_docx(path: Path, body: str, numbering: str | None) -> None:
+    """Synthetic LLM-built DOCX with optional word/numbering.xml."""
+    doc = f'<?xml version="1.0"?><w:document {W}><w:body>{body}<w:sectPr/></w:body></w:document>'
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("[Content_Types].xml", "<Types/>")
+        z.writestr("word/document.xml", doc)
+        if numbering is not None:
+            z.writestr("word/numbering.xml", numbering)
+
+
+def numbering_xml(fmts: dict[int, list[str]]) -> str:
+    """fmts: numId -> numFmt per ilvl (abstractNumId = numId + 10)."""
+    parts = []
+    for num_id, levels in fmts.items():
+        lvls = "".join(f'<w:lvl w:ilvl="{i}"><w:numFmt w:val="{f}"/></w:lvl>'
+                       for i, f in enumerate(levels))
+        parts.append(f'<w:abstractNum w:abstractNumId="{num_id + 10}">{lvls}</w:abstractNum>')
+    for num_id in fmts:
+        parts.append(f'<w:num w:numId="{num_id}"><w:abstractNumId w:val="{num_id + 10}"/></w:num>')
+    return f'<?xml version="1.0"?><w:numbering {W}>{"".join(parts)}</w:numbering>'
+
+
 EXPECTED = ("# Title\n\nPlain **bold** and *italic*.\n\n## Sub\n\n- one\n- two\n\n"
             "| A | B |\n| --- | --- |\n| 1 | 2 |\n")
 
@@ -258,6 +285,46 @@ class IngestTest(unittest.TestCase):
         rt = self.report()["r.pdf"]["roundtrip"]
         self.assertTrue(rt["parses"] and rt["roundtrip_idempotent"])
         self.assertEqual(rt["section_count"], 2)
+
+    def test_out_inside_src_not_rescanned(self):
+        (self.src / "a.txt").write_text("hi\n")
+        self.out = self.src / "out"
+        self.run_cli()
+        self.run_cli("--force")
+        data = json.loads((self.out / "ingest_report.json").read_text())
+        sources = [f["source"] for f in data["files"]]
+        self.assertEqual([Path(s).name for s in sources], ["a.txt"])
+        self.assertEqual(data["summary"], {"ok": 1, "failed": 0, "unsupported": 0})
+
+    def test_docx_decimal_numbering_ordered(self):
+        body = _np("a", 1) + _np("b", 1) + _p("break") + _np("c", 1) + _np("d", 2)
+        make_numbered_docx(self.src / "n.docx", body, numbering_xml({1: ["decimal"], 2: ["bullet"]}))
+        self.assertEqual(ingest.convert_docx(self.src / "n.docx"),
+                         "1. a\n2. b\n\nbreak\n\n1. c\n- d\n")
+
+    def test_docx_bullet_numbering_dash(self):
+        make_numbered_docx(self.src / "b.docx", _np("a", 1) + _np("b", 1),
+                           numbering_xml({1: ["bullet"]}))
+        self.assertEqual(ingest.convert_docx(self.src / "b.docx"), "- a\n- b\n")
+
+    def test_docx_missing_numbering_xml_dash(self):
+        make_numbered_docx(self.src / "m.docx", _np("a", 1) + _np("b", 7), None)
+        self.assertEqual(ingest.convert_docx(self.src / "m.docx"), "- a\n- b\n")
+
+    def test_docx_nested_levels_indent(self):
+        body = _np("a", 1) + _np("a1", 1, 1) + _np("a2", 1, 1) + _np("b", 1) + _np("b1", 1, 1)
+        make_numbered_docx(self.src / "x.docx", body, numbering_xml({1: ["decimal", "lowerLetter"]}))
+        self.assertEqual(ingest.convert_docx(self.src / "x.docx"),
+                         "1. a\n   - a1\n   - a2\n2. b\n   - b1\n")
+
+    @unittest.skipUnless(ingest.node_available(), "node unavailable")
+    def test_numbered_docx_roundtrip(self):
+        body = _p("T", style="Heading1") + _np("a", 1) + _np("a1", 1, 1) + _np("b", 1)
+        make_numbered_docx(self.src / "n.docx", body, numbering_xml({1: ["decimal", "decimal"]}))
+        code, _ = self.run_cli(check=True)
+        self.assertEqual(code, 0)
+        rt = self.report()["n.docx"]["roundtrip"]
+        self.assertTrue(rt["parses"] and rt["roundtrip_idempotent"])
 
     def test_batches_of_50(self):
         calls = []
