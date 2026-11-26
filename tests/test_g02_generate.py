@@ -163,6 +163,27 @@ class GenerateTests(unittest.TestCase):
         self.assertEqual(len(model.prompts), calls)
         self.assertEqual(len(read(self.out)), 6)
 
+    def test_resume_regenerates_pre_r152_v1_records_and_skips_v2(self):
+        # R152 changed arm C sampling; records written under 'g02.3-v1' are stale.
+        self.assertEqual(gen.PROMPT_VERSION, 'g02.3-v2')
+        recs = notes(1)
+        model = FakeModel()
+        first = gen.generate(recs, pool(), model, out_path=self.out,
+                             critic=FakeCritic({}), n_candidates=2)
+        stale = [dict(r, prompt_version='g02.3-v1') for r in first]
+        with open(self.out, 'w', encoding='utf-8') as fh:
+            for r in stale:
+                fh.write(json.dumps(r) + '\n')
+        regen = gen.generate(recs, pool(), model, out_path=self.out,
+                             critic=FakeCritic({}), n_candidates=2)
+        self.assertEqual(sorted(r['arm'] for r in regen), sorted(r['arm'] for r in first))
+        self.assertTrue(all(r['prompt_version'] == 'g02.3-v2' for r in regen))
+        calls = len(model.prompts)
+        again = gen.generate(recs, pool(), model, out_path=self.out,
+                             critic=FakeCritic({}), n_candidates=2)
+        self.assertEqual(again, [])
+        self.assertEqual(len(model.prompts), calls)
+
     def test_prompt_hash_model_and_text_recorded(self):
         target = notes(1)[0]
         out = gen.generate([target], pool(), FakeModel(), out_path=self.out,
