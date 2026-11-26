@@ -126,3 +126,15 @@ Append-only record of operator rulings and architecture decisions.
   agent may record an operator ruling in `docs/decisions.md` only when the operator gave it.
 - **Why:** rulings sat as open PRs waiting for the operator (PR #246) while the planner already
   acted on them.
+
+## D-011 — Build the thin demo on synthetic data while the corpus is pending (2026-11-26, operator)
+
+- **Ruling:** until the expert's corpus arrives, the loop builds D-009 item 2 (the thin demo) on
+  synthetic sample reports that are clearly labelled as synthetic: the Tauri shell (D-007) with the
+  Milkdown editor, opening, round-tripping and saving a report, move labels as a provisional
+  overlay with a legend, and a one-command launch. When the corpus arrives, swapping in a real
+  report must be the only remaining step.
+- **Order:** D-009's gate enablers still come first whenever real data exists.
+- **Why:** with no corpus, the remaining D-009 enablers need real-data runs, so rounds found no
+  plannable work and the supervisor halted repeatedly ("main unchanged across 3 rounds").
+- **Not changed:** results on synthetic data are never quoted as evidence for a gate (AGENTS.md).
