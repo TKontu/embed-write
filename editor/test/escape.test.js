@@ -126,3 +126,33 @@ test('"* " converted then backspaced leaves a literal "* text" that round-trips'
     assert.equal(parseMarkdown(md).firstChild.type.name, 'paragraph', md);
     roundTrips(md);
   }));
+
+// FM-04 inline rules: one Backspace restores the literal delimiters.
+for (const [typed, mark] of [['*em*', 'em'], ['_em_', 'em'], ['**st**', 'strong'], ['__st__', 'strong'], ['`cd`', 'code']]) {
+  test(`one Backspace after inline "${typed}" restores the literal text`, () =>
+    withEd('a\n', (ed) => {
+      caret(ed, 2);
+      type(ed, ' ' + typed);
+      assert.equal(ed.view.state.doc.rangeHasMark(1, ed.view.state.doc.firstChild.nodeSize - 1, ed.view.state.schema.marks[mark]), true);
+      assert.equal(backspace(ed), true);
+      const p = ed.view.state.doc.firstChild;
+      assert.equal(p.textContent, 'a ' + typed);
+      let marked = false;
+      p.forEach((n) => { if (n.marks.length) marked = true; });
+      assert.equal(marked, false);
+      const md = ed.getMarkdown();
+      assert.equal(parseMarkdown(md).firstChild.textContent, 'a ' + typed, md);
+      roundTrips(md);
+      assert.equal(backspace(ed), false);
+    }));
+}
+
+test('literal "*" mid-word and a lone "*x" stay literal against inline rules', () =>
+  withEd('ab\n', (ed) => {
+    caret(ed, 3);
+    type(ed, ' 2*3 *x');
+    assert.equal(ed.view.state.doc.firstChild.textContent, 'ab 2*3 *x');
+    const md = ed.getMarkdown();
+    assert.equal(parseMarkdown(md).firstChild.textContent, 'ab 2*3 *x', md);
+    roundTrips(md);
+  }));

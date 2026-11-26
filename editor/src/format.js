@@ -2,6 +2,7 @@
 // FM-01: formatting shortcuts. Mod-b strong, Mod-i em, Mod-e inline code, Mod-k link.
 // FM-02: heading shortcuts Mod-1..6 and `#`..`######` + space input rule.
 // FM-03: block input rules (lists, task items, quotes, code fences, thematic breaks).
+// FM-04: inline input rules (*em*, _em_, **strong**, __strong__, `code`).
 // FM-06: escape hatch — Backspace right after an input rule restores the typed text.
 // Production caller: createEditor (itself unwired by design until AP-01).
 import { keymap, keydownHandler } from '@milkdown/prose/keymap';
@@ -149,6 +150,47 @@ export function blockInputRules({ isRich = () => true } = {}) {
     return true;
   };
   return [gate(inputRules({ rules }), isRich), keymap({ Enter: fenceEnter })];
+}
+
+/**
+ * FM-04: typing the closing delimiter converts the just-typed span: `*x*`/`_x_` em,
+ * `**x**`/`__x__` strong, `` `x` `` inline code; delimiters are removed and em/strong keep their
+ * marker so serialization reproduces the typed source. No conversion for empty spans, spans that
+ * start or end with whitespace, or intraword `_` (snake_case). Strikethrough is skipped: docmodel's
+ * schema has no strike mark. Inactive in source view, code blocks and inline code; undoable (FM-06).
+ * @param {{ isRich?: () => boolean }} [opts]
+ * @returns {import('prosemirror-state').Plugin}
+ */
+export function inlineInputRules({ isRich = () => true } = {}) {
+  const m = schema.marks;
+  const body = (d) => `([^${d}\\s\\ufffc](?:[^${d}\\ufffc]*[^${d}\\s\\ufffc])?)`;
+  /** @param {RegExp} re @param {import('prosemirror-model').MarkType} type @param {number} len @param {string | null} marker */
+  const rule = (re, type, len, marker) => new InputRule(re, (state, match, start, end) => {
+    // docmodel's code mark has no spec.code, so inputrules' own inCodeMark check misses it.
+    if (state.doc.rangeHasMark(start, end, m.code) || m.code.isInSet(state.doc.resolve(end).marks())) return null;
+    const from = start + match[1].length;
+    const cFrom = from + len;
+    const cTo = cFrom + match[2].length;
+    const tr = state.tr.delete(cTo, end)
+      .addMark(cFrom, cTo, type.create(marker ? { marker } : null))
+      .delete(from, cFrom);
+    return tr.removeStoredMark(type);
+  }, { inCodeMark: false });
+  const rules = [
+    rule(new RegExp(`(^|[^*])\\*\\*${body('*')}\\*\\*$`), m.strong, 2, '*'),
+    rule(new RegExp(`(^|[^\\w])__${body('_')}__$`), m.strong, 2, '_'),
+    rule(new RegExp(`(^|[^*])\\*${body('*')}\\*$`), m.em, 1, '*'),
+    rule(new RegExp(`(^|[^\\w])_${body('_')}_$`), m.em, 1, '_'),
+    rule(new RegExp(`(^|[^\`])\`${body('`')}\`$`), m.code, 1, null),
+  ];
+  const plugin = inputRules({ rules });
+  const handle = plugin.props.handleTextInput;
+  // Wrap rather than replace so FM-06 still finds this plugin's state.
+  plugin.props.handleTextInput = function (view, from, to, text, deflt) {
+    if (!isRich()) return false;
+    return /** @type {any} */ (handle).call(this, view, from, to, text, deflt);
+  };
+  return plugin;
 }
 
 /**
