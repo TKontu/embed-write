@@ -1,8 +1,8 @@
 """G-01.5 build the experiments.gates.g01 config from stored annotations and LLM pre-labels.
 
 ``build_config(store, genre, manifest, prelabel_path, *, annotator=None, model_id=None,
-include_non_blind=False)`` returns ``{expert, [expert_repeat], llm, labels, other_label, doc_of,
-non_blind}``:
+include_non_blind=False)`` returns ``{expert, [expert_repeat], [expert_repeat_omitted], llm,
+labels, other_label, doc_of, non_blind}``:
 
 * ``expert`` / ``expert_repeat``: ``annotate.labels_for_pass`` for the ``first`` / ``repeat``
   pass, restricted to ``annotate.pass_ids(manifest, pass)``. Retracted (undone) labels are absent.
@@ -10,6 +10,8 @@ non_blind}``:
   ``prelabel`` field (annotate's opt-in pre-label mode) was made with the LLM label shown, so it
   is non-blind (D-009 item 3): excluded unless ``include_non_blind=True``
   (``--include-non-blind``). Excluded labels are dropped before the one-annotator check.
+* ``expert_repeat_omitted``: ``'all repeat labels non-blind'`` when the repeat pass has labels
+  but every one was excluded as non-blind (so ``expert_repeat`` is absent); absent otherwise.
 * ``non_blind``: ``{'first'|'repeat': {'excluded': N, 'included': M}}`` non-blind label counts.
 * ``llm``: ``prelabel.llm_labels`` over the prelabel JSONL records under the genre's version key
   (and ``model_id`` when given), restricted to first-pass ids. The file is streamed; a torn or
@@ -26,8 +28,8 @@ Memory: maps are O(manifest sample size); the store and prelabel file are stream
 Production caller: the G-01.6 result run. Unwired by design until then (G-01.6 wires it).
 
 CLI: ``python -m experiments.g01_inputs --store S --genre G --manifest M --prelabel P
-[--annotator A] [--model-id ID] [--include-non-blind] --out CONFIG.json`` writes the config (label maps only) and prints
-counts.
+[--annotator A] [--model-id ID] [--include-non-blind] --out CONFIG.json`` writes the config above as JSON and prints
+counts; when ``expert_repeat_omitted`` is set it also prints a one-line warning to stderr.
 """
 from __future__ import annotations
 
@@ -105,6 +107,8 @@ def build_config(store, genre, manifest, prelabel_path, *, annotator=None, model
     repeat = _expert(store, genre, manifest, 'repeat', annotator, include_non_blind, nb['repeat'])
     if repeat:
         cfg['expert_repeat'] = repeat
+    elif nb['repeat']['excluded']:
+        cfg['expert_repeat_omitted'] = 'all repeat labels non-blind'
     cfg['llm'] = prelabel.llm_labels(iter_llm_records(prelabel_path, genre, model_id, first))
     cfg['labels'] = prelabel.valid_labels(genre)
     cfg['other_label'] = OTHER
@@ -145,6 +149,9 @@ def main(argv=None) -> int:
     with open(a.out, 'w', encoding='utf-8') as fh:
         json.dump(cfg, fh, indent=1, sort_keys=True, ensure_ascii=False)
         fh.write('\n')
+    if 'expert_repeat_omitted' in cfg:
+        print(f"warning: expert_repeat omitted: {cfg['expert_repeat_omitted']} "
+              '(pass --include-non-blind to keep them)', file=sys.stderr)
     for k, v in counts(cfg).items():
         print(f'{k}: {v}')
     return 0

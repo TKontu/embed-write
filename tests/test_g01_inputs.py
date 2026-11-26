@@ -7,7 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 
 from experiments import annotation_sample as samp
 from experiments import g01_inputs as gi
@@ -203,6 +203,37 @@ class NonBlindTest(unittest.TestCase):
                 self.assertEqual(len(json.load(fh)['expert']), n_exp)
             self.assertIn(frag, buf.getvalue())
             self.assertIn('non-blind repeat:', buf.getvalue())
+
+    def test_all_non_blind_repeat_records_omission(self):
+        cfg = self.build()
+        self.assertNotIn('expert_repeat', cfg)
+        self.assertEqual(cfg['expert_repeat_omitted'], 'all repeat labels non-blind')
+
+    def test_include_non_blind_keeps_repeat_without_omission(self):
+        cfg = self.build(include_non_blind=True)
+        self.assertIn('expert_repeat', cfg)
+        self.assertNotIn('expert_repeat_omitted', cfg)
+
+    def test_empty_repeat_pass_has_neither_key(self):
+        store = AnnotationStore(os.path.join(self.tmp.name, 'empty.jsonl'))
+        put(store, self.blind, lab(0))
+        cfg = gi.build_config(store, GENRE, MANIFEST, self.pre_path)
+        self.assertNotIn('expert_repeat', cfg)
+        self.assertNotIn('expert_repeat_omitted', cfg)
+
+    def test_cli_warns_on_all_non_blind_repeat(self):
+        manifest_path = os.path.join(self.tmp.name, 'manifest.json')
+        with open(manifest_path, 'w', encoding='utf-8') as fh:
+            json.dump(MANIFEST, fh)
+        out = os.path.join(self.tmp.name, 'cfg.json')
+        err = io.StringIO()
+        with redirect_stdout(io.StringIO()), redirect_stderr(err):
+            self.assertEqual(gi.main(['--store', self.store.path, '--genre', GENRE_PATH,
+                                      '--manifest', manifest_path, '--prelabel',
+                                      self.pre_path, '--out', out]), 0)
+        lines = [l for l in err.getvalue().splitlines() if l]
+        self.assertEqual(len(lines), 1)
+        self.assertIn('expert_repeat omitted: all repeat labels non-blind', lines[0])
 
     def test_iter_llm_records_public_alias(self):
         self.assertIs(gi._llm_records, gi.iter_llm_records)
