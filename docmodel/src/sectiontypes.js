@@ -56,3 +56,27 @@ export function mapSectionTypes(doc, sectionTypes) {
   walk(sectionTree(doc));
   return { mapped, unmapped };
 }
+
+/**
+ * BH-06: Markdown skeleton for a new report, one heading per genre section type in
+ * genre order. Each heading uses the type's `name` when it normalizes to one of its
+ * aliases, else `headings[0]`, so the parsed skeleton maps back to every type. Pure.
+ * @param {SectionType[] | undefined} sectionTypes
+ * @param {{ title?: string, level?: number }} [opts]
+ * @returns {string}
+ */
+export function sectionSkeleton(sectionTypes, opts = {}) {
+  const level = opts.level === undefined ? 2 : opts.level;
+  if (!Number.isInteger(level) || level < 1 || level > 6) {
+    throw new TypeError(`sectionSkeleton: level must be an integer 1..6, got ${String(level)}`);
+  }
+  const lines = [];
+  if (opts.title !== undefined) lines.push(`# ${opts.title}`);
+  const hashes = '#'.repeat(level);
+  for (const t of sectionTypes ?? []) {
+    const aliases = new Set(t.headings.map(normalizeHeading));
+    const text = aliases.has(normalizeHeading(t.name)) ? t.name : t.headings[0];
+    lines.push(`${hashes} ${text}`);
+  }
+  return lines.length ? `${lines.join('\n\n')}\n` : '';
+}
