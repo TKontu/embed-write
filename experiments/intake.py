@@ -41,7 +41,11 @@ Production caller: the expert/operator CLI.
 
 CLI: python -m experiments.intake run SRC OUT --genre GENRE.json [--metadata META.jsonl]
      [--split-seed N] [--test-fraction F] [--n N] [--seed N]
-     [--model-url URL --model-name NAME] [--discover] [--force]
+     [--model-url URL --model-name NAME] [--discover [--discover-k N]
+     [--discover-sample N]] [--force]
+
+--force first removes the files a previous intake run wrote into OUT (``OWNED`` names and
+OUT/converted only; every other file survives), so a rerun leaves no stale output.
 Exit 0 when every step is ok or skipped, 1 when any step failed, 2 on usage errors.
 """
 from __future__ import annotations
@@ -73,6 +77,10 @@ NO_MODEL = "no local model endpoint given"
 NO_DISCOVER = "not requested"
 DISCOVERY_NAME = "move_discovery.json"
 MODEL_DIR_ENV = "EMBED_WRITE_MODEL_DIR"
+# Files intake itself writes into OUT (besides CONVERTED); a run removes these first so a
+# --force rerun leaves no stale output. Never other files (annotations.jsonl is the expert's).
+OWNED = ("conversion_quality.json", "corpus_stats.json", "manifest.json", "prelabels.jsonl",
+         DISCOVERY_NAME, REPORT_NAME)
 
 
 def _code(exc: BaseException) -> str:
@@ -161,17 +169,23 @@ def _prelabel(converted: Path, out: Path, genre, model) -> dict:
                                          "labels": dict(sorted(labels.items()))})
 
 
-def _discover(converted: Path, out: Path, genre) -> dict:
+def _discover(converted: Path, out: Path, genre, k: int | None = None,
+              sample: int | None = None) -> dict:
     model_dir = os.environ.get(MODEL_DIR_ENV) or None
     embedder = move_discovery.make_embedder("onnx" if model_dir else "hash", model_dir)
-    report = move_discovery.build_report(converted, genre, embedder=embedder)
+    params = {}
+    if k is not None:
+        params["k"] = k
+    if sample is not None:
+        params["max_per_type"] = sample
+    report = move_discovery.build_report(converted, genre, embedder=embedder, **params)
     path = out / DISCOVERY_NAME
     move_discovery.write_report(report, path, force=True)
     return _step("ok", None, str(path), {
         "clusters_per_section_type": {t: len(c) for t, c in sorted(report["clusters"].items())},
         "sentences_sampled": report["sentences"]["sampled"],
         "sentences_seen": report["sentences"]["seen"],
-        "development_only_embedder": report["embedder"]["development_only"]})
+        "development_only_embedder": report["embedder"]["development_only"], **params})
 
 
 def _editor_path(path: str) -> str:
@@ -202,6 +216,8 @@ def run(args, model=None) -> tuple[int, dict]:
     genre = load_genre(args.genre)
     if converted.exists():  # only reached with --force or an empty OUT
         shutil.rmtree(converted)
+    for name in OWNED:  # stale outputs of an earlier run this run may not rewrite
+        (out / name).unlink(missing_ok=True)
     steps: dict[str, dict] = {}
     outputs: list[str] = []
 
@@ -238,7 +254,8 @@ def run(args, model=None) -> tuple[int, dict]:
                              if steps["annotation_sample"]["status"] != "ok"
                              else _step("skipped", NO_MODEL))
     if args.discover:
-        attempt("discovery", _discover, converted, out, genre)
+        attempt("discovery", _discover, converted, out, genre, args.discover_k,
+                args.discover_sample)
     else:
         steps["discovery"] = _step("skipped", NO_DISCOVER)
     report = {"schema_version": 1, "source": args.src, "out": args.out,
@@ -278,7 +295,14 @@ def main(argv: list[str] | None = None, model=None) -> int:
     r.add_argument("--discover", action="store_true",
                    help="also write MV-02 move discovery to OUT (embedder from "
                         f"{MODEL_DIR_ENV}, else development hash stub)")
-    r.add_argument("--force", action="store_true", help="overwrite a non-empty OUT")
+    r.add_argument("--discover-k", type=int, default=None,
+                   help="MV-02 clusters per section type (default "
+                        f"{move_discovery.DEFAULT_K}; recorded in counts when given)")
+    r.add_argument("--discover-sample", type=int, default=None,
+                   help="MV-02 sentences sampled per section type (default "
+                        f"{move_discovery.DEFAULT_MAX_PER_TYPE}; recorded when given)")
+    r.add_argument("--force", action="store_true",
+                   help="overwrite a non-empty OUT (removes intake's own earlier outputs)")
     args = parser.parse_args(argv)
     src, out = Path(args.src), Path(args.out)
     if not src.is_dir():
@@ -289,6 +313,9 @@ def main(argv: list[str] | None = None, model=None) -> int:
         return 2
     if not 0 < args.test_fraction < 1 or args.n < 0:
         print("error: --test-fraction must be in (0, 1) and --n >= 0", file=sys.stderr)
+        return 2
+    if any(v is not None and v < 1 for v in (args.discover_k, args.discover_sample)):
+        print("error: --discover-k and --discover-sample must be >= 1", file=sys.stderr)
         return 2
     if args.metadata and not Path(args.metadata).is_file():
         print(f"error: metadata file not found: {args.metadata}", file=sys.stderr)
