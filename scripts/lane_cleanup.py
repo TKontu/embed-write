@@ -8,6 +8,10 @@ Worktrees: a registered worktree outside the main checkout, at a sibling path
 --force) once the newest PR on its branch is MERGED or CLOSED and no PR on it is OPEN. Anything
 uncertain is held and reported, never forced: `no-pr`, `open-pr`, `dirty`, `unpushed`
 (commits on no remote), `busy` (a process has its cwd inside), `carried` (HANDOFF.md names it).
+The one tolerated untracked entry is a `node_modules` symlink at any depth (e.g. editor/node_modules):
+it does not make a tree `dirty`, and under --go the link itself (never its target) is unlinked right
+before `git worktree remove`. A real node_modules directory, any other untracked file or any
+tracked change still holds the tree as `dirty`; a dry run unlinks nothing.
 
 Tabs: a tab labelled <lane prefix><lane> is closed with `herdr tab close <id>` only when its
 worktree is gone (or was removed in this run), every pane is idle, done or unknown, it is not carried, and
@@ -109,6 +113,20 @@ def _inside(path: str, cwds: Iterable[str]) -> bool:
     return any(c == path or c.startswith(path + "/") for c in cwds)
 
 
+def node_modules_links(path: str, status: str) -> list[Path] | None:
+    """The untracked node_modules symlinks that are a tree's only status entries, else None."""
+    links = []
+    for line in status.splitlines():
+        rel = line[3:]
+        if not line.startswith("?? ") or rel.startswith('"') or Path(rel).name != "node_modules":
+            return None
+        link = Path(path) / rel
+        if not link.is_symlink():
+            return None
+        links.append(link)
+    return links
+
+
 def tree_hold(path: str, branch: str, run: Run) -> str | None:
     """Why this lane worktree must stay (busy aside), or None when its work is finished."""
     if not branch:
@@ -122,7 +140,7 @@ def tree_hold(path: str, branch: str, run: Run) -> str | None:
     if "OPEN" in states:
         return "open-pr"
     rc, out = run(["git", "-C", path, "status", "--porcelain"])
-    if rc or out:
+    if rc or node_modules_links(path, out) is None:
         return "dirty"
     rc, out = run(["git", "-C", path, "rev-list", "HEAD", "--not", "--remotes"])
     if rc or out:
@@ -210,6 +228,13 @@ def cleanup(
         elif not go:
             report.append(f"would remove {path} ({branch})")
         else:
+            rc, out = run(["git", "-C", path, "status", "--porcelain"])
+            links = None if rc else node_modules_links(path, out)
+            if links is None:
+                report.append(f"hold {path} ({branch}): dirty")
+                continue
+            for link in links:
+                link.unlink()  # the symlink only; its target is untouched
             rc, out = run(["git", "worktree", "remove", path])
             if rc:
                 report.append(f"hold {path} ({branch}): remove failed: {out[:160]}")

@@ -22,8 +22,13 @@ export function serializeMarkdown(doc, opts = {}) {
   const defs = new Map();
   const ctx = { opts, defs };
   const parts = children(doc, ctx);
-  // A leading `---` would reopen as YAML front matter on reparse (DM-04 fuzz finding).
-  if (doc.firstChild?.type.name === 'thematic_break') parts[0] = '***';
+  // FM-07: a leading thematic break keeps its source marker, but a leading `---` would reopen as
+  // YAML front matter if a later line closed it (DM-04 fuzz finding), so that case uses `***`.
+  const first = doc.firstChild;
+  if (first?.type.name === 'thematic_break') {
+    const marker = first.attrs.marker ?? '***';
+    parts[0] = marker === '---' && /^---[ \t]*$/m.test(parts.slice(1).join('\n\n')) ? '***' : marker;
+  }
   if (defs.size) {
     parts.push([...defs].map(([ref, d]) => `[${ref}]: ${destination(d.href)}${titlePart(d.title)}`).join('\n'));
   }
@@ -100,7 +105,7 @@ function block(node, ctx) {
       return `${f}${lang ?? ''}\n${text ? text + '\n' : ''}${f}`;
     }
     case 'thematic_break':
-      return '---';
+      return node.attrs.marker;
     case 'html_block':
       return node.attrs.value;
     case 'front_matter':
@@ -113,7 +118,8 @@ function block(node, ctx) {
       const rows = [];
       node.forEach((row) => {
         const cells = [];
-        row.forEach((cell) => cells.push(finishInline(inline(cell, ctx, true)).replace(/\n/g, ' ')));
+        // Cells hold inline content only: no block line-start escaping (DM-06).
+        row.forEach((cell) => cells.push(inline(cell, ctx, true).split(BREAK).join(' ').replace(/\n/g, ' ')));
         rows.push(`| ${cells.join(' | ')} |`);
       });
       const aligns = [];

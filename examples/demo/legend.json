@@ -1,0 +1,10 @@
+{
+  "provisional": true,
+  "note": "Placeholder move names invented for the demo. They are not the expert's inventory and no label is a finding about real text.",
+  "moves": {
+    "context": { "label": "Context", "colour": "#4f7cac" },
+    "gap": { "label": "Gap", "colour": "#c0504d" },
+    "method": { "label": "Method", "colour": "#4f9d69" },
+    "finding": { "label": "Finding", "colour": "#d08b2c" }
+  }
+}

@@ -45,6 +45,28 @@ for (const [name, src] of Object.entries(SAMPLES)) {
   test(`round-trip: ${name}`, () => assert.equal(rt(src), src));
 }
 
+// FM-07: thematic breaks keep the marker the source used, including at the top of a document.
+test('thematic break markers round-trip byte for byte', () => {
+  for (const m of ['---', '***', '___']) {
+    assert.equal(rt(`${m}\n`), `${m}\n`, `leading ${m}`);
+    assert.equal(rt(`a\n\n${m}\n\nb\n`), `a\n\n${m}\n\nb\n`, `middle ${m}`);
+  }
+  assert.equal(rt('---\n\n***\n\n___\n'), '---\n\n***\n\n___\n');
+});
+
+// A leading `---` would reopen as YAML front matter if a later line closed it, so it falls back
+// to `***`; documents from parseMarkdown never take this branch (such a source is front matter).
+test('leading --- falls back to *** when a later line would close front matter', () => {
+  const doc = schema.node('doc', null, [
+    schema.node('thematic_break', { marker: '---' }),
+    schema.node('paragraph', null, schema.text('body')),
+    schema.node('thematic_break', { marker: '---' }),
+  ]);
+  const out = serializeMarkdown(doc);
+  assert.ok(out.startsWith('***\n\nbody\n\n---\n'), out);
+  assert.equal(parseMarkdown(out).firstChild.type.name, 'thematic_break');
+});
+
 test('(c) reference link keeps style and definition', () => {
   assert.equal(rt('[x][r]\n\n[r]: http://e.com\n'), '[x][r]\n\n[r]: http://e.com\n');
   assert.equal(rt('[x][r]\n\n[r]: http://e.com "T"\n'), '[x][r]\n\n[r]: http://e.com "T"\n');

@@ -12,7 +12,8 @@
     "node": ">=22.22.2"
   },
   "scripts": {
-    "test": "node --test test/editor.test.js test/undo.test.js test/diff.test.js test/proposal.test.js test/request.test.js test/decorations.test.js test/source.test.js test/autosave.test.js test/format.test.js test/heading.test.js test/blockrules.test.js test/escape.test.js test/inlinerules.test.js"
+    "demo": "node demo/server.js",
+    "test": "node --test test/editor.test.js test/undo.test.js test/diff.test.js test/proposal.test.js test/request.test.js test/decorations.test.js test/source.test.js test/autosave.test.js test/format.test.js test/heading.test.js test/blockrules.test.js test/escape.test.js test/inlinerules.test.js test/style.test.js test/demo-samples.test.js test/demo-overlay.test.js test/demo-server.test.js test/template.test.js test/undogroup.test.js"
   },
   "dependencies": {
     "@milkdown/core": "7.23.0",

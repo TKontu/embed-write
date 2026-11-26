@@ -52,3 +52,41 @@ test('empty or missing section types: everything unmapped', () => {
   assert.equal(mapSectionTypes(doc, []).unmapped.length, 1);
   assert.equal(mapSectionTypes(doc, undefined).unmapped.length, 1);
 });
+
+// BH-06: section skeleton for a new report.
+import { sectionSkeleton, serializeMarkdown } from '../src/index.js';
+
+const SKEL_TYPES = [
+  { id: 'intro', name: 'Introduction', headings: ['Introduction', 'Background'] },
+  { id: 'findings', name: 'Key results', headings: ['Findings', 'Key findings'] },
+  { id: 'conclusions', name: 'Conclusions:', headings: ['Conclusions', 'Summary'] },
+];
+
+test('sectionSkeleton: genre order, name vs alias fallback, round-trips byte for byte', () => {
+  const md = sectionSkeleton(SKEL_TYPES);
+  assert.equal(md, '## Introduction\n\n## Findings\n\n## Conclusions:\n');
+  assert.equal(serializeMarkdown(parseMarkdown(md)), md);
+  const r = mapSectionTypes(parseMarkdown(md), SKEL_TYPES);
+  assert.deepEqual(r.mapped.map((m) => m.sectionType), ['intro', 'findings', 'conclusions']);
+  assert.deepEqual(r.unmapped, []);
+});
+
+test('sectionSkeleton: title is the only unmapped heading; level option', () => {
+  const md = sectionSkeleton(SKEL_TYPES, { title: 'Annual report', level: 3 });
+  assert.equal(md, '# Annual report\n\n### Introduction\n\n### Findings\n\n### Conclusions:\n');
+  assert.equal(serializeMarkdown(parseMarkdown(md)), md);
+  const r = mapSectionTypes(parseMarkdown(md), SKEL_TYPES);
+  assert.deepEqual(r.mapped.map((m) => [m.sectionType, m.level]), [['intro', 3], ['findings', 3], ['conclusions', 3]]);
+  assert.deepEqual(r.unmapped, [{ heading: 'Annual report', index: 0, level: 1 }]);
+  assert.equal(sectionSkeleton(SKEL_TYPES, { level: 1 }).split('\n')[0], '# Introduction');
+  for (const level of [0, 7, 2.5, '2', null]) {
+    assert.throws(() => sectionSkeleton(SKEL_TYPES, { level }), TypeError, String(level));
+  }
+});
+
+test('sectionSkeleton: absent or empty types', () => {
+  assert.equal(sectionSkeleton(undefined), '');
+  assert.equal(sectionSkeleton([]), '');
+  assert.equal(sectionSkeleton([], { title: 'T' }), '# T\n');
+  assert.equal(sectionSkeleton(undefined, { title: 'T' }), '# T\n');
+});

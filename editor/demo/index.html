@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Semantic Text Workbench — thin demo</title>
+  <link rel="stylesheet" href="/@nm/e/prosemirror-view/style/prosemirror.css">
+  <link rel="stylesheet" href="/@nm/e/prosemirror-tables/style/tables.css">
+  <link rel="stylesheet" href="/@nm/e/prosemirror-gapcursor/style/gapcursor.css">
+  <link rel="stylesheet" href="/@app/src/signals.css">
+  <link rel="stylesheet" href="/@app/demo/demo.css">
+  <!--IMPORTMAP-->
+</head>
+<body>
+  <header class="bar">
+    <label class="picker">Sample
+      <select id="samples" aria-label="Sample report"></select>
+    </label>
+    <button id="save-btn" type="button">Save</button>
+    <button id="source-btn" type="button">Source view</button>
+    <span id="status" role="status"></span>
+  </header>
+  <main class="layout">
+    <section id="editor" class="editor" aria-label="Editor"></section>
+    <aside class="legend" aria-label="Provisional move legend">
+      <h2>Legend</h2>
+      <p class="provisional">Provisional labels: synthetic</p>
+      <p class="note">Placeholder move names for the demo, not the expert's inventory.</p>
+      <ul id="legend-list"></ul>
+    </aside>
+  </main>
+  <script type="module" src="/@app/demo/app.js"></script>
+</body>
+</html>

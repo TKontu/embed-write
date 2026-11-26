@@ -1,0 +1,13 @@
+[
+  { "block": 0, "move": "context" },
+  { "block": 1, "move": "context" },
+  { "block": 2, "move": "gap" },
+  { "block": 3, "move": "gap" },
+  { "block": 4, "move": "gap" },
+  { "block": 6, "move": "method" },
+  { "block": 7, "move": "method" },
+  { "block": 8, "move": "method" },
+  { "block": 9, "move": "finding" },
+  { "block": 10, "move": "finding" },
+  { "block": 11, "move": "finding" }
+]

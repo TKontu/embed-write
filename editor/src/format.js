@@ -4,12 +4,56 @@
 // FM-03: block input rules (lists, task items, quotes, code fences, thematic breaks).
 // FM-04: inline input rules (*em*, _em_, **strong**, __strong__, `code`).
 // FM-06: escape hatch — Backspace right after an input rule restores the typed text.
+// FM-07: command-made marks follow the document's prevailing marker; typed rules keep what was typed.
 // Production caller: createEditor (itself unwired by design until AP-01).
 import { keymap, keydownHandler } from '@milkdown/prose/keymap';
 import { toggleMark, setBlockType } from '@milkdown/prose/commands';
 import { inputRules, textblockTypeInputRule, wrappingInputRule, InputRule } from '@milkdown/prose/inputrules';
 import { TextSelection, Plugin, PluginKey } from '@milkdown/prose/state';
+import { closeHistory } from '@milkdown/prose/history';
 import { schema } from 'docmodel';
+
+/**
+ * FM-07: the marker most used by the document's existing marks (or bullet_list nodes), so a
+ * command follows the file's convention; schema default when the document has none. One doc walk,
+ * run only when a formatting command is applied, not while typing. FM-03's list rules are input
+ * rules and keep the marker the writer typed, so they never call this.
+ * @param {import('prosemirror-model').Node} doc
+ * @param {'em'|'strong'|'bullet_list'} name
+ * @returns {string}
+ */
+function prevailingMarker(doc, name) {
+  /** @type {Map<string, number>} */
+  const counts = new Map();
+  const bump = (/** @type {string} */ m) => counts.set(m, (counts.get(m) ?? 0) + 1);
+  if (name === 'bullet_list') {
+    doc.descendants((n) => { if (n.type.name === 'bullet_list') bump(n.attrs.marker); });
+  } else {
+    const type = schema.marks[name];
+    doc.descendants((n) => {
+      if (!n.isText) return;
+      const m = type.isInSet(n.marks);
+      if (m) bump(m.attrs.marker);
+    });
+  }
+  let best = name === 'bullet_list'
+    ? schema.nodes.bullet_list.spec.attrs.marker.default
+    : schema.marks[name].spec.attrs.marker.default;
+  let bestCount = 0;
+  for (const [marker, count] of counts) {
+    if (count > bestCount) { best = marker; bestCount = count; }
+  }
+  return best;
+}
+
+/**
+ * BH-07: run `cmd` so each transaction it dispatches is its own undo step: closeHistory stops it
+ * joining the typing run before it, and the next typed character starts a fresh group.
+ * Used by formatKeymap and headingKeymap (production caller: createEditor).
+ * @param {import('prosemirror-state').Command} cmd @returns {import('prosemirror-state').Command}
+ */
+const ownStep = (cmd) => (state, dispatch, view) =>
+  cmd(state, dispatch && ((tr) => dispatch(closeHistory(tr))), view);
 
 /**
  * @param {{ isRich?: () => boolean, onLinkRequest?: (text: string) => string | null | Promise<string | null> }} [opts]
@@ -17,8 +61,13 @@ import { schema } from 'docmodel';
  */
 export function formatKeymap({ isRich = () => true, onLinkRequest } = {}) {
   /** @param {string} name @returns {import('prosemirror-state').Command} */
-  const mark = (name) => (state, dispatch) =>
-    isRich() && toggleMark(state.schema.marks[name])(state, dispatch);
+  const mark = (name) => (state, dispatch) => {
+    if (!isRich()) return false;
+    const attrs = dispatch && (name === 'em' || name === 'strong')
+      ? { marker: prevailingMarker(state.doc, name) }
+      : undefined;
+    return toggleMark(state.schema.marks[name], attrs)(state, dispatch);
+  };
 
   /** @type {import('prosemirror-state').Command} */
   const link = (state, dispatch, view) => {
@@ -35,12 +84,12 @@ export function formatKeymap({ isRich = () => true, onLinkRequest } = {}) {
     Promise.resolve(onLinkRequest(state.doc.textBetween(from, to))).then((href) => {
       // Apply only to the document the request was made on; a later edit cancels it.
       if (!href || view.isDestroyed || view.state.doc !== doc0) return;
-      view.dispatch(view.state.tr.addMark(from, to, type.create({ href })));
+      view.dispatch(closeHistory(view.state.tr.addMark(from, to, type.create({ href }))));
     }, () => {});
     return true;
   };
 
-  return keymap({ 'Mod-b': mark('strong'), 'Mod-i': mark('em'), 'Mod-e': mark('code'), 'Mod-k': link });
+  return keymap({ 'Mod-b': ownStep(mark('strong')), 'Mod-i': ownStep(mark('em')), 'Mod-e': ownStep(mark('code')), 'Mod-k': ownStep(link) });
 }
 
 /**
@@ -63,7 +112,7 @@ export function headingKeymap({ isRich = () => true } = {}) {
   };
   /** @type {Record<string, import('prosemirror-state').Command>} */
   const keys = {};
-  for (let n = 1; n <= 6; n++) keys[`Mod-${n}`] = heading(n);
+  for (let n = 1; n <= 6; n++) keys[`Mod-${n}`] = ownStep(heading(n));
   return keymap(keys);
 }
 
@@ -122,7 +171,9 @@ export function blockInputRules({ isRich = () => true } = {}) {
     const $s = state.doc.resolve(start);
     // Only when the paragraph holds nothing but the typed rule characters.
     if ($s.parent.content.size !== end - start) return null;
-    const tr = state.tr.replaceWith($s.before(), $s.after(), [n.thematic_break.create(), n.paragraph.create()]);
+    const tr = state.tr.replaceWith($s.before(), $s.after(), [
+      n.thematic_break.create({ marker: match[1].repeat(3) }), n.paragraph.create(),
+    ]);
     return tr.setSelection(TextSelection.create(tr.doc, $s.before() + 2));
   }, { inCodeMark: false });
   const rules = [

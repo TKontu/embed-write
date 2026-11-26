@@ -2,6 +2,10 @@
 
 import importlib.util
 import json
+import os
+import shutil
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -195,6 +199,83 @@ class TabTests(unittest.TestCase):
         fake = Fake({}, {}, tabs=[meta], panes=[pane])
         clean(fake, handoff="- No carried lanes. Tabs live-repo-r49-a1 are finished and may be closed.\n")
         self.assertEqual(fake.done, [["herdr", "tab", "close", "t1"]])
+
+
+class NodeModulesLinkTests(unittest.TestCase):
+    """Real temp repo and worktree: only untracked node_modules symlinks are tolerated."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.root = self.tmp / "repo"
+        self.lane = str(self.tmp / "repo-lanes" / "r1-a1")
+        self.target = self.tmp / "shared-node_modules"
+        (self.target / "pkg").mkdir(parents=True)
+        (self.target / "pkg" / "index.js").write_text("x\n")
+        git = ["git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "init.defaultBranch=main"]
+        subprocess.run([*git, "init", "-q", str(self.root)], check=True)
+        (self.root / "editor").mkdir()
+        (self.root / "editor" / "a.txt").write_text("a\n")
+        subprocess.run([*git, "-C", str(self.root), "add", "."], check=True)
+        subprocess.run([*git, "-C", str(self.root), "commit", "-qm", "i"], check=True)
+        subprocess.run(
+            [*git, "-C", str(self.root), "worktree", "add", "-q", "-b", "task/a", self.lane],
+            check=True,
+        )
+
+    def run_git(self, cmd):
+        cmd = list(cmd)
+        if cmd[:3] == ["gh", "pr", "list"]:
+            return 0, json.dumps([{"state": "MERGED"}])
+        if cmd[:1] == ["herdr"]:
+            return 1, "no herdr"
+        if cmd[:2] == ["git", "-C"] and cmd[3] == "rev-list":
+            return 0, ""  # no remote in the temp repo; pretend pushed
+        done = subprocess.run(cmd, capture_output=True, text=True, cwd=self.root)
+        return done.returncode, done.stdout.strip() or done.stderr.strip()
+
+    def clean(self, go):
+        return lc.cleanup(
+            root=self.root, prefix="live-repo-", go=go, handoff="", run=self.run_git,
+            busy=lambda: [], settle=0,
+        )
+
+    def link(self, rel):
+        os.symlink(self.target, Path(self.lane) / rel)
+
+    def test_symlink_only_untracked_is_not_held_and_go_unlinks_the_link_only(self):
+        self.link("node_modules")
+        self.link("editor/node_modules")
+        report = self.clean(go=True)
+        self.assertIn(f"removed {self.lane} (task/a)", report, report)
+        self.assertFalse(os.path.lexists(self.lane))
+        self.assertEqual((self.target / "pkg" / "index.js").read_text(), "x\n")
+
+    def test_dry_run_unlinks_nothing(self):
+        self.link("editor/node_modules")
+        report = self.clean(go=False)
+        self.assertIn(f"would remove {self.lane} (task/a)", report, report)
+        self.assertTrue(os.path.islink(Path(self.lane) / "editor" / "node_modules"))
+
+    def test_a_real_node_modules_dir_is_dirty(self):
+        self.link("node_modules")
+        (Path(self.lane) / "editor" / "node_modules").mkdir()
+        (Path(self.lane) / "editor" / "node_modules" / "f.js").write_text("y\n")
+        report = self.clean(go=True)
+        self.assertTrue(any(line.endswith(": dirty") for line in report), report)
+        self.assertTrue(os.path.islink(Path(self.lane) / "node_modules"))
+
+    def test_any_other_untracked_file_or_tracked_change_is_dirty(self):
+        for extra in ("stray.txt", "editor/a.txt"):
+            with self.subTest(extra=extra):
+                self.link("node_modules")
+                (Path(self.lane) / extra).write_text("z\n")
+                report = self.clean(go=True)
+                self.assertTrue(any(line.endswith(": dirty") for line in report), report)
+                self.assertTrue(os.path.islink(Path(self.lane) / "node_modules"))
+                subprocess.run(["git", "-C", self.lane, "checkout", "-q", "--", "."], check=True)
+                subprocess.run(["git", "-C", self.lane, "clean", "-qf", "--", "stray.txt"])
+                os.unlink(Path(self.lane) / "node_modules")
 
 
 if __name__ == "__main__":
