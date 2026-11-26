@@ -82,7 +82,8 @@ The corpus defines what "good" means for a genre. The selection is the single mo
 
 Runs corpus-wide only after G-01 passes.
 
-- [ ] **LB-01** `[A]` Labeling prompt built from the inventory file (definitions, examples, near-misses) with section context
+- [x] **LB-01** `[A]` Labeling prompt built from the inventory file (definitions, examples, near-misses) with section context
+  - done (R193/A2, PR #482, merge 8f9e2e7; Claude lane, Codex usage-limited): `experiments.prelabel.build_prompt` lists per move, in genre-file order, id/name/definition, its positive_examples and its near_miss, plus section type and context; records carry `prompt_version` (PROMPT_VERSION = 2) and resume/recording key on genre version key + model + prompt version (records without it count as 1, so older labels are relabelled). seen: tests/test_prelabel.py PromptExamplesTests 4 OK (LLM-built synthetic genre), gate 1652 OK at head 5170086 (rerun by planner). Residuals: prompt not truncated and grows with the inventory (678 chars on the 2-move fixture, unmeasured on a real genre file); after a version bump the output JSONL holds both old and new records for an id; no real-model run (operator-owned).
 - [ ] **LB-02** `[A]` Label every corpus sentence; store label, confidence and model version — check: coverage 100 %, labels within the inventory
 - [ ] **LB-03** `[A]` Consistency pass: label twice with different sentence order; record disagreements
 - [ ] **LB-04** `[A]` Expert-overturned labels take precedence and are excluded from classifier training in their LLM form — check: unit test
