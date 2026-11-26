@@ -493,6 +493,14 @@ async function handle(req, res, ctx) {
     return send(res, 200, MIME['.json'], await readFile(file, 'utf8'));
   }
 
+  if (!ctx.report && pathname.startsWith('/api/support/')) {
+    // IN-03 (D-009 slice): synthetic, LLM-built support flags, `<sample>.support.json`.
+    const name = checkSampleName(decodeURIComponent(pathname.slice('/api/support/'.length)));
+    const file = join(ctx.dir, name.replace(/\.md$/, '') + '.support.json');
+    if (!existsSync(file)) return sendError(res, 404, 'no support flags');
+    return send(res, 200, MIME['.json'], await readFile(file, 'utf8'));
+  }
+
   const mounts = [
     ['/@app/', EDITOR_DIR],
     ['/@docmodel/', DOCMODEL_DIR],

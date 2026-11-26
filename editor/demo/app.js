@@ -9,7 +9,7 @@ import { mountCollapsibleMinimap } from '../src/minimap.js';
 import { blockEvidence, moveSequence, mountComparison, transitionStats } from '../src/comparison.js';
 import { openIssues, renderIssues } from '../src/issues.js';
 import { Plugin, Selection } from '@milkdown/prose/state';
-import { inspectorPlugin, mountInspector, renderMethodTexts } from '../src/inspector.js';
+import { inspectorPlugin, mountInspector, renderMethodTexts, supportEvidence } from '../src/inspector.js';
 
 const byId = (id) => /** @type {HTMLElement} */ (document.getElementById(id));
 const ui = {
@@ -121,11 +121,15 @@ async function load(name) {
   const movesRes = await fetch(`/api/moves/${encodeURIComponent(name)}`);
   if (movesRes.ok) sidecar = await movesRes.json();
   else if (movesRes.status !== 404) throw new Error(`cannot load labels for ${name}: HTTP ${movesRes.status}`);
+  let flags = [];
+  const supportRes = await fetch(`/api/support/${encodeURIComponent(name)}`);
+  if (supportRes.ok) flags = await supportRes.json();
   if (token !== loadToken) return;
 
   if (state.editor) await state.editor.destroy();
   state.editor = null;
   moves = sidecar;
+  supportFlags = flags;
   state.sample = name;
   ui.root.replaceChildren();
   const editor = await createEditor({ root: ui.root, markdown });
@@ -142,7 +146,9 @@ async function load(name) {
   inspector?.destroy();
   // IN-02 (D-009 slice): plus the sample support for (previous move -> this move).
   inspector = mountInspector(editor.view.dom, inspectorMount(), () => genre,
-    (el) => evidenceFor(editor.view, el));
+    (el) => evidenceFor(editor.view, el),
+    // IN-03 (D-009 slice): synthetic, LLM-built support flags for this block (no support model).
+    (el) => supportFor(editor.view, el));
   const current = inspector;
   editor.view.updateState(editor.view.state.reconfigure({
     plugins: [...editor.view.state.plugins, plugin, inspectorPlugin(Plugin, () => current)],
@@ -189,6 +195,26 @@ function evidenceFor(/** @type {any} */ view, /** @type {Element} */ el) {
   try {
     const block = view.state.doc.resolve(view.posAtDOM(el, 0)).index(0);
     return blockEvidence(sampleStats, moves, block, genre);
+  } catch { return null; }
+}
+
+/** IN-03: this sample's support flags (synthetic, LLM-built), `<sample>.support.json`. */
+/** @type {unknown} */
+let supportFlags = [];
+
+/** IN-03: a short text excerpt of a top-level block. */
+function blockExcerpt(/** @type {any} */ doc, /** @type {number} */ block, max = 60) {
+  if (block >= doc.childCount) return '(block not in document)';
+  const t = doc.child(block).textContent.replace(/\s+/g, ' ').trim();
+  return t.length > max ? `${t.slice(0, max - 1)}…` : t;
+}
+
+/** IN-03: the support view for a decorated element's top-level block, or null. */
+function supportFor(/** @type {any} */ view, /** @type {Element} */ el) {
+  try {
+    const block = view.state.doc.resolve(view.posAtDOM(el, 0)).index(0);
+    const evidence = supportEvidence(supportFlags, block);
+    return evidence ? { evidence, excerptOf: (/** @type {number} */ b) => blockExcerpt(view.state.doc, b) } : null;
   } catch { return null; }
 }
 

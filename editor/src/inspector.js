@@ -90,13 +90,88 @@ export function renderSequenceEvidence(doc, ev) {
 }
 
 /**
+ * @typedef {{ block: number, candidates: { block: number, score: number }[] }} SupportEvidence
+ * @typedef {{ evidence: SupportEvidence, excerptOf: (block: number) => string }} SupportView
+ */
+
+/** @param {unknown} n */
+const isBlock = (n) => Number.isInteger(n) && /** @type {number} */ (n) >= 0;
+
+/**
+ * IN-03: the support flag for one block from a support-flag list
+ * `[{ block, candidates: [{ block, score }] }]` (empty candidates = none found). Pure; validates
+ * the whole list's shape and throws on malformed input. Candidates sorted by score desc, ties by
+ * block. Null when the block has no flag. O(flags x candidates).
+ * @param {unknown} flags @param {number} block @returns {SupportEvidence | null}
+ */
+export function supportEvidence(flags, block) {
+  if (!Array.isArray(flags)) throw new TypeError('support flags must be an array');
+  /** @type {SupportEvidence | null} */
+  let found = null;
+  for (const f of flags) {
+    if (!f || typeof f !== 'object' || !isBlock(f.block) || !Array.isArray(f.candidates)) {
+      throw new TypeError('support flag must be { block: int >= 0, candidates: [] }');
+    }
+    const candidates = f.candidates.map((/** @type {any} */ c) => {
+      if (!c || typeof c !== 'object' || !isBlock(c.block) || typeof c.score !== 'number'
+        || !Number.isFinite(c.score) || c.score < 0 || c.score > 1) {
+        throw new TypeError('support candidate must be { block: int >= 0, score: 0..1 }');
+      }
+      return { block: c.block, score: c.score };
+    });
+    if (f.block === block && !found) {
+      candidates.sort((a, b) => b.score - a.score || a.block - b.block);
+      found = { block, candidates };
+    }
+  }
+  return found;
+}
+
+/**
+ * IN-03: the candidate-evidence section: each candidate's block number, a short excerpt and
+ * score, or "No candidate evidence found". Labels say synthetic support flags, LLM-built, and
+ * pattern fit, not a verdict (I8). No colours (I3).
+ * @param {Document} doc @param {SupportEvidence} ev @param {(block: number) => string} excerptOf
+ */
+export function renderSupportEvidence(doc, ev, excerptOf) {
+  const section = doc.createElement('section');
+  section.className = 'inspector-support';
+  const h = doc.createElement('h3');
+  h.textContent = 'Candidate evidence (synthetic support flags, LLM-built)';
+  section.append(h);
+  if (!ev.candidates.length) {
+    const p = doc.createElement('p');
+    p.className = 'inspector-support-none';
+    p.textContent = 'No candidate evidence found';
+    section.append(p);
+  } else {
+    const ul = doc.createElement('ul');
+    for (const c of ev.candidates) {
+      const li = doc.createElement('li');
+      li.className = 'inspector-support-candidate';
+      li.dataset.block = String(c.block);
+      const excerpt = excerptOf(c.block);
+      li.textContent = `Block ${c.block}: "${excerpt}" (score ${c.score.toFixed(2)})`;
+      ul.append(li);
+    }
+    section.append(ul);
+  }
+  const note = doc.createElement('p');
+  note.className = 'inspector-support-note';
+  note.textContent = 'Pattern fit, not a verdict.';
+  section.append(note);
+  return section;
+}
+
+/**
  * The inspector panel for one signal, or "No signal here" for null. I8: says pattern fit.
  * IN-02: an optional `evidence` adds the sequence-evidence section.
  * @param {Document} doc
  * @param {ReturnType<typeof inspectSignal>} info
  * @param {SequenceEvidence | null} [evidence]
+ * @param {SupportView | null} [support] IN-03: adds the candidate-evidence section.
  */
-export function renderInspector(doc, info, evidence = null) {
+export function renderInspector(doc, info, evidence = null, support = null) {
   const aside = doc.createElement('aside');
   aside.className = 'inspector';
   aside.setAttribute('aria-live', 'polite');
@@ -126,6 +201,7 @@ export function renderInspector(doc, info, evidence = null) {
   link.textContent = 'Method';
   aside.append(dl, note, link);
   if (evidence) aside.append(renderSequenceEvidence(doc, evidence));
+  if (support) aside.append(renderSupportEvidence(doc, support.evidence, support.excerptOf));
   return aside;
 }
 
@@ -159,8 +235,9 @@ export function renderMethodTexts(doc, genre) {
  * IN-02: optional `getEvidence(el)` supplies sequence evidence for a move mark.
  * @param {HTMLElement} editorDom @param {HTMLElement} mount @param {() => any} getGenre
  * @param {(el: Element) => SequenceEvidence | null} [getEvidence]
+ * @param {(el: Element) => SupportView | null} [getSupport] IN-03: support flag for a move mark.
  */
-export function mountInspector(editorDom, mount, getGenre, getEvidence) {
+export function mountInspector(editorDom, mount, getGenre, getEvidence, getSupport) {
   const doc = mount.ownerDocument;
   /** @type {Element | null} */
   let selected = null;
@@ -168,7 +245,8 @@ export function mountInspector(editorDom, mount, getGenre, getEvidence) {
   const show = (el) => {
     const info = el ? inspectSignal(signalAttrs(el), getGenre()) : null;
     const ev = el && info && getEvidence ? getEvidence(el) : null;
-    mount.replaceChildren(renderInspector(doc, info, ev));
+    const sup = el && info && getSupport ? getSupport(el) : null;
+    mount.replaceChildren(renderInspector(doc, info, ev, sup));
   };
   /** @param {Event} e */
   const over = (e) => {
