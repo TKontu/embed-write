@@ -189,3 +189,27 @@ body {
 .issues button {
   font: inherit;
 }
+
+/* IN-01: signal inspector and method texts in the legend column. No colours (I3). */
+.inspector {
+  margin-bottom: 0.75rem;
+  font-size: 0.8rem;
+}
+
+.inspector dl,
+.method-texts dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.125rem 0.5rem;
+  margin: 0;
+}
+
+.inspector dd,
+.method-texts dd {
+  margin: 0;
+}
+
+.method-texts {
+  margin-top: 0.75rem;
+  font-size: 0.8rem;
+}
