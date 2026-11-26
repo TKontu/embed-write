@@ -13,7 +13,7 @@ import { history, undo as pmUndo, closeHistory } from '@milkdown/prose/history';
 import { views } from './render.js';
 import { proposalRequestKeymap } from './request.js';
 import { sourceView } from './source.js';
-import { formatKeymap, headingKeymap, headingInputRule } from './format.js';
+import { formatKeymap, headingKeymap, headingInputRule, blockInputRules } from './format.js';
 
 const DocmodelSchemaReady = createTimer('DocmodelSchemaReady');
 
@@ -65,6 +65,7 @@ export async function createEditor({ root, markdown, onRequest, onLinkRequest })
         formatKeymap({ isRich: () => !srcRef?.isSourceView(), onLinkRequest }),
         headingKeymap({ isRich: () => !srcRef?.isSourceView() }),
         headingInputRule({ isRich: () => !srcRef?.isSourceView() }),
+        ...blockInputRules({ isRich: () => !srcRef?.isSourceView() }),
         ...(onRequest ? [proposalRequestKeymap({ onRequest })] : []),
       ]);
       ctx.update(nodeViewCtx, (xs) => [...xs, .../** @type {any[]} */ (nodeViews)]);
@@ -114,7 +115,7 @@ export function undo({ view }) {
 export { renderDiff } from './diff.js';
 export { showProposal } from './proposal.js';
 export { proposalRequestKeymap } from './request.js';
-export { formatKeymap, headingKeymap, headingInputRule } from './format.js';
+export { formatKeymap, headingKeymap, headingInputRule, blockInputRules } from './format.js';
 export { signalDecorations, signalDecorationsPlugin, DEFAULT_WEAK_BELOW, DEFAULT_OFF_SHORTCUT,
   signalOverlayKey, toggleSignalOverlay, isSignalOverlayOn, OVERLAYS, DEFAULT_OVERLAY, setSignalOverlay,
   selectedSignalOverlay, GRANULARITIES, DEFAULT_GRANULARITY, setSignalGranularity,
