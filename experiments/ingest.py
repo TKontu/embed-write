@@ -3,8 +3,10 @@
 Formats: .docx (zipfile + xml.etree: paragraphs, Heading1..6 -> ATX headings,
 bold/italic runs, list paragraphs -> ``-`` items or, when word/numbering.xml gives
 the numId/ilvl a decimal* numFmt, ``1.``/``2.`` items (counter per numId and level,
-restarting after a non-list block); nested ilvl indents 3 spaces per level; simple
-tables -> pipe tables),
+restarting after a non-list block; abstractNum start, lvlOverride, lvlRestart and
+numStyleLink honoured; numbering inherited from a paragraph style's basedOn chain in
+word/styles.xml; empty numbered paragraphs consume no number); nested ilvl indents
+3 spaces per level; simple tables -> pipe tables),
 .html/.htm (html.parser: h1-h6, p, ul/ol/li, table, strong/b, em/i), .txt
 (blank-line separated paragraphs), .md (copied) and .pdf (pypdf text per page:
 blank-line paragraphs, page-number-only lines dropped, hyphenated line breaks
@@ -14,8 +16,7 @@ by body text; numbering depth sets the level, ``1.`` -> ``##``, ``1.2`` ->
 extractable text (scans; no OCR) are ``failed``. Without pypdf, ``.pdf`` is
 ``unsupported`` ("pypdf not installed"); other extensions likewise unsupported.
 Not handled: images, footnotes, tracked changes, nested tables, merged cells,
-hyperlinks (text kept), numbering lvlOverride/start values (numbers start at 1),
-non-decimal numbering formats (emitted as ``-``), PDF layout, tables and images.
+hyperlinks (text kept), letter/roman numbering rendered as decimal, PDF layout, tables and images.
 Files under OUT_DIR are never scanned as input, even when OUT_DIR is inside SRC_DIR.
 
 Files are processed one at a time. After conversion each output is checked by
@@ -163,61 +164,131 @@ def _docx_para_text(p, line_starts: bool = True) -> str:
     return _md_escape_line_starts(text) if line_starts else text
 
 
-def _lvl_props(lvl, base: tuple[str, int] = ("", 1)) -> tuple[str, int]:
-    """(numFmt, start) of a <w:lvl>, inheriting missing values from base."""
-    fmt, start = base
-    f, st = lvl.find(WNS + "numFmt"), lvl.find(WNS + "start")
+def _int_val(el, default=None):
+    if el is None:
+        return default
+    try:
+        return int(el.get(WNS + "val", ""))
+    except ValueError:
+        return default
+
+
+def _lvl_props(lvl, base: tuple = ("", 1, None)) -> tuple:
+    """(numFmt, start, lvlRestart) of a <w:lvl>, inheriting missing values from base.
+
+    lvlRestart None means the default (restart after any shallower item)."""
+    fmt, start, restart = base
+    f = lvl.find(WNS + "numFmt")
     if f is not None:
         fmt = f.get(WNS + "val", "")
-    if st is not None:
-        try:
-            start = int(st.get(WNS + "val", ""))
-        except ValueError:
-            pass
-    return fmt, start
+    start = _int_val(lvl.find(WNS + "start"), start)
+    restart = _int_val(lvl.find(WNS + "lvlRestart"), restart)
+    return fmt, start, restart
 
 
-def _docx_numbering(z: zipfile.ZipFile) -> dict[str, dict[int, tuple[str, int]]]:
-    """numId -> {ilvl: (numFmt, start)} from word/numbering.xml; {} when absent/unreadable.
+def _num_pr_ids(num_pr) -> tuple[str | None, int | None]:
+    """(numId, ilvl) of a <w:numPr>; None for an absent child."""
+    if num_pr is None:
+        return None, None
+    nid = num_pr.find(WNS + "numId")
+    num_id = (nid.get(WNS + "val") or "") if nid is not None else None
+    ilvl = _int_val(num_pr.find(WNS + "ilvl"))
+    return num_id, (None if ilvl is None else max(0, min(8, ilvl)))
 
-    Honours abstractNum <w:start>, and per-num <w:lvlOverride> (<w:startOverride>, <w:lvl>).
+
+def _docx_style_numbering(z: zipfile.ZipFile) -> dict[str, tuple[str | None, int | None]]:
+    """styleId -> (numId, ilvl) from word/styles.xml, following basedOn (cycle-safe);
+    {} when absent/unreadable. Parsed once per file."""
+    try:
+        root = ET.fromstring(z.read("word/styles.xml"))
+    except (KeyError, ET.ParseError):
+        return {}
+    direct: dict[str, tuple[str | None, int | None]] = {}
+    based: dict[str, str] = {}
+    for st in root.findall(WNS + "style"):
+        sid = st.get(WNS + "styleId", "")
+        ppr = st.find(WNS + "pPr")
+        direct[sid] = _num_pr_ids(ppr.find(WNS + "numPr") if ppr is not None else None)
+        b = st.find(WNS + "basedOn")
+        if b is not None:
+            based[sid] = b.get(WNS + "val", "")
+    out = {}
+    for sid in direct:
+        num_id, ilvl, cur, seen = None, None, sid, set()
+        while cur in direct and cur not in seen and (num_id is None or ilvl is None):
+            seen.add(cur)
+            n, lv = direct[cur]
+            num_id = n if num_id is None else num_id
+            ilvl = lv if ilvl is None else ilvl
+            cur = based.get(cur)
+        if num_id is not None or ilvl is not None:
+            out[sid] = (num_id, ilvl)
+    return out
+
+
+def _docx_numbering(z: zipfile.ZipFile, styles: dict | None = None) -> dict[str, dict[int, tuple]]:
+    """numId -> {ilvl: (numFmt, start, lvlRestart)} from word/numbering.xml; {} when absent/unreadable.
+
+    Honours abstractNum <w:start>/<w:lvlRestart>, <w:numStyleLink> (resolved through the
+    numbering style in ``styles`` to the abstractNum defining its levels, cycle-safe), and
+    per-num <w:lvlOverride> (<w:startOverride>, <w:lvl>).
     """
+    styles = styles or {}
     try:
         root = ET.fromstring(z.read("word/numbering.xml"))
     except (KeyError, ET.ParseError):
         return {}
-    abstract: dict[str, dict[int, tuple[str, int]]] = {}
+    abstract: dict[str, dict[int, tuple]] = {}
+    links: dict[str, str] = {}  # abstractNumId -> numbering styleId it links to
     for an in root.findall(WNS + "abstractNum"):
+        aid = an.get(WNS + "abstractNumId", "")
         levels = {}
         for lvl in an.findall(WNS + "lvl"):
             try:
                 levels[int(lvl.get(WNS + "ilvl", "0"))] = _lvl_props(lvl)
             except ValueError:
                 continue
-        abstract[an.get(WNS + "abstractNumId", "")] = levels
-    nums: dict[str, dict[int, tuple[str, int]]] = {}
+        abstract[aid] = levels
+        link = an.find(WNS + "numStyleLink")
+        if link is not None:
+            links[aid] = link.get(WNS + "val", "")
+    num_abs: dict[str, str] = {}
     for num in root.findall(WNS + "num"):
         ref = num.find(WNS + "abstractNumId")
-        if ref is None:
+        if ref is not None:
+            num_abs[num.get(WNS + "numId", "")] = ref.get(WNS + "val", "")
+
+    def resolve(aid: str) -> dict[int, tuple]:
+        seen = set()
+        while aid in links and aid not in seen:
+            seen.add(aid)
+            num_id = styles.get(links[aid], (None, None))[0]
+            nxt = num_abs.get(num_id or "")
+            if nxt is None:
+                break
+            aid = nxt
+        return abstract.get(aid, {})
+
+    nums: dict[str, dict[int, tuple]] = {}
+    for num in root.findall(WNS + "num"):
+        num_id = num.get(WNS + "numId", "")
+        if num_id not in num_abs:
             continue
-        levels = dict(abstract.get(ref.get(WNS + "val", ""), {}))
+        levels = dict(resolve(num_abs[num_id]))
         for ov in num.findall(WNS + "lvlOverride"):
             try:
                 ilvl = int(ov.get(WNS + "ilvl", "0"))
             except ValueError:
                 continue
-            props = levels.get(ilvl, ("", 1))
+            props = levels.get(ilvl, ("", 1, None))
             lvl = ov.find(WNS + "lvl")
             if lvl is not None:
                 props = _lvl_props(lvl, props)
-            so = ov.find(WNS + "startOverride")
+            so = _int_val(ov.find(WNS + "startOverride"))
             if so is not None:
-                try:
-                    props = (props[0], int(so.get(WNS + "val", "")))
-                except ValueError:
-                    pass
+                props = (props[0], so, props[2])
             levels[ilvl] = props
-        nums[num.get(WNS + "numId", "")] = levels
+        nums[num_id] = levels
     return nums
 
 
@@ -230,7 +301,8 @@ def _ordered_fmt(fmt: str) -> bool:
 def convert_docx(path: Path) -> str:
     with zipfile.ZipFile(path) as z:
         root = ET.fromstring(z.read("word/document.xml"))
-        numbering = _docx_numbering(z)
+        styles = _docx_style_numbering(z)
+        numbering = _docx_numbering(z, styles)
     body = root.find(WNS + "body")
     if body is None:
         raise ValueError("docx: no document body")
@@ -246,22 +318,26 @@ def convert_docx(path: Path) -> str:
                 ps = ppr.find(WNS + "pStyle")
                 style = (ps.get(WNS + "val") or "") if ps is not None else ""
                 num_pr = ppr.find(WNS + "numPr")
+            d_id, d_lvl = _num_pr_ids(num_pr)
+            s_id, s_lvl = styles.get(style, (None, None))
+            num_id = d_id if d_id is not None else s_id
+            ilvl = d_lvl if d_lvl is not None else (s_lvl or 0)
+            numbered = num_pr is not None or (num_id is not None and num_id != "0")
             m = re.fullmatch(r"(?i)heading\s*([1-6])", style)
             if m and text:
                 blocks.append(("h", "#" * int(m.group(1)) + " " + text))
                 counters.clear()
-            elif num_pr is not None or style.lower().startswith("list"):
-                num_id, ilvl = "", 0
-                if num_pr is not None:
-                    nid, lv = num_pr.find(WNS + "numId"), num_pr.find(WNS + "ilvl")
-                    num_id = (nid.get(WNS + "val") or "") if nid is not None else ""
-                    try:
-                        ilvl = max(0, min(8, int(lv.get(WNS + "val") or 0))) if lv is not None else 0
-                    except ValueError:
-                        ilvl = 0
+            elif numbered or style.lower().startswith("list"):
+                if not text:
+                    continue  # an empty numbered paragraph consumes no number
+                num_id = num_id or ""
+                levels = numbering.get(num_id, {})
                 for key in [k for k in counters if k[0] == num_id and k[1] > ilvl]:
-                    del counters[key]  # a shallower item restarts deeper levels
-                fmt, start = numbering.get(num_id, {}).get(ilvl, ("", 1))
+                    restart = levels.get(key[1], ("", 1, None))[2]
+                    restart = key[1] if restart is None else restart
+                    if ilvl < restart:  # lvlRestart N: restart after a level < N; 0 never
+                        del counters[key]
+                fmt, start, _ = levels.get(ilvl, ("", 1, None))
                 if _ordered_fmt(fmt):
                     n = counters[(num_id, ilvl)] + 1 if (num_id, ilvl) in counters else start
                     counters[(num_id, ilvl)] = n
