@@ -164,3 +164,13 @@ body {
   min-width: 1px;
   background: var(--signal-color, transparent);
 }
+
+/* OV-04: collapsed by default; `display: flex` above would otherwise override the hidden attribute. */
+.minimap[hidden] {
+  display: none;
+}
+
+.minimap-toggle {
+  font-size: 0.75rem;
+  margin-bottom: 0.25rem;
+}

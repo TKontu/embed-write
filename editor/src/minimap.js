@@ -80,3 +80,41 @@ export function mountMinimap(mount, moves, blockCount, genre) {
   const ids = (genre?.moves ?? []).map((/** @type {any} */ m) => m.id);
   mount.replaceChildren(renderMinimap(mount.ownerDocument, minimapSegments(moves, blockCount, ids), genre));
 }
+
+/**
+ * OV-04: the strip behind a toggle, collapsed by default so the prose keeps the space (§5.7: off is
+ * a first-class state). The expanded state lives on `mount.dataset.expanded`, so re-mounting for a
+ * new sample keeps it; `expanded` only seeds a mount that has no state yet. Production caller:
+ * editor/demo/app.js; AP-01 wires it in the app. O(blocks).
+ * @param {HTMLElement} mount
+ * @param {Array<{ block: number, move: string }>} moves
+ * @param {number} blockCount
+ * @param {any} genre
+ * @param {{ expanded?: boolean }} [options]
+ * @returns {{ button: HTMLButtonElement, strip: HTMLElement }}
+ */
+export function mountCollapsibleMinimap(mount, moves, blockCount, genre, { expanded = false } = {}) {
+  const doc = mount.ownerDocument;
+  if (mount.dataset.expanded === undefined) mount.dataset.expanded = String(expanded);
+  if (!mount.id) mount.id = 'minimap-mount';
+  const ids = (genre?.moves ?? []).map((/** @type {any} */ m) => m.id);
+  const strip = renderMinimap(doc, minimapSegments(moves, blockCount, ids), genre);
+  strip.id = `${mount.id}-strip`;
+  const button = doc.createElement('button');
+  button.type = 'button';
+  button.className = 'minimap-toggle';
+  button.setAttribute('aria-controls', strip.id);
+  const apply = () => {
+    const open = mount.dataset.expanded === 'true';
+    button.setAttribute('aria-expanded', String(open));
+    button.textContent = open ? 'Hide minimap' : 'Show minimap';
+    strip.hidden = !open;
+  };
+  button.addEventListener('click', () => {
+    mount.dataset.expanded = String(mount.dataset.expanded !== 'true');
+    apply();
+  });
+  apply();
+  mount.replaceChildren(button, strip);
+  return { button, strip };
+}
