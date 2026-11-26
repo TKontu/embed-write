@@ -161,7 +161,9 @@ export function blockInputRules({ isRich = () => true } = {}) {
     const $s = state.doc.resolve(start);
     // Only when the paragraph holds nothing but the typed rule characters.
     if ($s.parent.content.size !== end - start) return null;
-    const tr = state.tr.replaceWith($s.before(), $s.after(), [n.thematic_break.create(), n.paragraph.create()]);
+    const tr = state.tr.replaceWith($s.before(), $s.after(), [
+      n.thematic_break.create({ marker: match[1].repeat(3) }), n.paragraph.create(),
+    ]);
     return tr.setSelection(TextSelection.create(tr.doc, $s.before() + 2));
   }, { inCodeMark: false });
   const rules = [
