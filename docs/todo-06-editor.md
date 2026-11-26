@@ -98,6 +98,7 @@ text and file names; swapping in a real report must be the only step left when t
   - done (R136/A1, PR #343, merge 4a67519; OpenCode lane per D-008; planner rerun at reviewed head 4e7e1c648560ac9dfcb3c53c5e57434f4d1dae6c and on main 4a67519: editor 167/167, docmodel 265/265, Python gate 1460 OK): `cd editor && npm run demo` prints the URL; folder via --dir or DEMO_DIR. seen: planner launch check on the reviewed head (page, /@app/demo/app.js, /api/samples, a sample: 200; encoded traversal: 400). No new dependency; offline.
 - [ ] **DE-04** `[A]` Tauri wrapper of the DE-02 harness (D-007) — blocked: needs the operator's Rust toolchain + WebKitGTK approval (AP-01) — check: the app opens a sample and saves
 - [ ] **DE-05** `[A]` Real-report swap: the demo takes a path to any Markdown report plus an optional label sidecar — check: documented single step; run when the corpus exists
+  - partial (R141/A1, PR #360, merge f98b622; planner rerun at reviewed head eabe89f: editor 184/184, docmodel 268/268, Python 1480 OK): `npm run demo -- --report <file> [--labels <json>]` serves exactly that one file (any name), labels from --labels, else `<report>.moves.json`, else none; saves via atomicWrite; other names 404; legend reads "Provisional labels: unreviewed placeholders". Documented in editor/demo/README.md. seen: editor/test/demo-report.test.js (synthetic temp files only). Stays partial until a real-report run when the corpus exists. Residuals: folder mode with a real --dir still shows the "synthetic" legend; --labels without --report errors.
 
 ---
 
