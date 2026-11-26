@@ -65,3 +65,21 @@ test('source view: paste plugin does not handle the event', () => withEd('x\n', 
   assert.equal(paste(ed, { 'text/plain': '# H' }), false);
   assert.equal(ed.getMarkdown(), 'x\n');
 }));
+
+test('pasted HTML is parsed in an inert document, never in the live one', () => withEd('', (ed) => {
+  const orig = document.createElement;
+  let live = 0;
+  document.createElement = function (...a) { live++; return orig.apply(this, a); };
+  const desc = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML');
+  let liveHtml = 0;
+  Object.defineProperty(Element.prototype, 'innerHTML', { ...desc, set(v) { if (this.ownerDocument === document) liveHtml++; desc.set.call(this, v); } });
+  try {
+    assert.equal(paste(ed, { 'text/html': '<p>a<img src="x" onerror="globalThis.__pwned=1">b</p>' }), true);
+  } finally {
+    document.createElement = orig;
+    Object.defineProperty(Element.prototype, 'innerHTML', desc);
+  }
+  assert.equal(liveHtml, 0, 'innerHTML set on a live-document element');
+  assert.equal(globalThis.__pwned, undefined);
+  assert.equal(ed.getMarkdown(), 'ab\n');
+}));

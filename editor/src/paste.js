@@ -77,9 +77,11 @@ function plainSlice(text) {
  * @param {Document} ownerDocument
  */
 function htmlSlice(html, ownerDocument) {
-  const box = ownerDocument.createElement('div');
-  box.innerHTML = html; // detached element: scripts do not run
-  return openSlice(trimCode(htmlParser.parse(box).content));
+  // Parse in an inert document: an element of the live document, even detached, still loads
+  // resources and fires handlers such as <img onerror>.
+  const inert = ownerDocument.implementation.createHTMLDocument('');
+  inert.body.innerHTML = html;
+  return openSlice(trimCode(htmlParser.parse(inert.body).content));
 }
 
 /**
