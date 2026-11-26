@@ -74,5 +74,66 @@ class CliTests(unittest.TestCase):
         self.assertEqual(self._run({**base, 'alpha': 2, 'palette': {}}), 2)
 
 
+class GenreCliTests(unittest.TestCase):
+    """--genre mode; synthetic LLM-built genre fixtures, placeholder colours."""
+
+    SPEC = {'alpha': 0.8, 'themes': {'light': LIGHT}}
+
+    def _run(self, spec, genre):
+        with tempfile.TemporaryDirectory() as d:
+            sp, gp = os.path.join(d, 'spec.json'), os.path.join(d, 'genre.json')
+            with open(sp, 'w', encoding='utf-8') as fh:
+                json.dump(spec, fh)
+            with open(gp, 'w', encoding='utf-8') as fh:
+                json.dump(genre, fh)
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = c.main([sp, '--genre', gp])
+            return code, out.getvalue(), err.getvalue()
+
+    def test_pale_tints_pass(self):
+        code, out, _ = self._run(self.SPEC, genre_obj({'a': '#fff0c0', 'b': '#e0f0ff'}))
+        self.assertEqual((code, out), (0, ''))
+
+    def test_dark_move_tint_fails(self):
+        code, out, _ = self._run(self.SPEC, genre_obj({'a': '#fff0c0', 'b': '#202020'}))
+        self.assertEqual(code, 1)
+        self.assertIn('light: b ratio=', out)
+        self.assertNotIn(': a ', out)
+
+    def test_dark_other_tint_fails(self):
+        code, out, _ = self._run(self.SPEC, genre_obj({'a': '#fff0c0'}, other='#202020'))
+        self.assertEqual(code, 1)
+        self.assertIn('light: other ratio=', out)
+
+    def test_invalid_genre_exits_2_naming_field(self):
+        g = genre_obj({'a': '#fff0c0'})
+        g['legend']['other'] = 'grey'
+        code, _, err = self._run(self.SPEC, g)
+        self.assertEqual(code, 2)
+        self.assertIn('legend.other', err)
+
+    def test_palette_in_spec_with_genre_exits_2(self):
+        code, _, err = self._run({**self.SPEC, 'palette': {'a': '#fff0c0'}},
+                                 genre_obj({'a': '#fff0c0'}))
+        self.assertEqual(code, 2)
+        self.assertIn('palette', err)
+
+    def test_spec_still_needs_themes_and_alpha(self):
+        self.assertEqual(self._run({'alpha': 0.8}, genre_obj({'a': '#fff0c0'}))[0], 2)
+        self.assertEqual(self._run({'themes': {'light': LIGHT}},
+                                   genre_obj({'a': '#fff0c0'}))[0], 2)
+
+
+def genre_obj(colors, other='#f0f0f0'):
+    ids = list(colors)
+    return {
+        'genre': 'synthetic', 'version': 1,
+        'moves': [{'id': i, 'name': i, 'definition': 'd', 'near_miss': 'n',
+                   'positive_examples': ['e1', 'e2']} for i in ids],
+        'legend': {'colors': dict(colors), 'other': other},
+    }
+
+
 if __name__ == '__main__':
     unittest.main()
