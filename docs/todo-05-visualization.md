@@ -61,6 +61,7 @@ Colour is the expert's main channel into the pattern model. Revision 2 replaces 
 ## Inspector
 
 - [ ] **IN-01** `[A]` Hover or focus on a mark shows: the signal, its value, confidence, layer, and a link to its method text
+  - partial (R182/A1, PR #456, merge 2650927): `editor/src/inspector.js` inspectSignal/renderInspector/renderMethodTexts/mountInspector/inspectorPlugin; hovering a move mark or placing the cursor in one fills an inspector (signal, value, confidence, layer, "Method" link to the genre definition, "Pattern fit, not a verdict") in `npm run demo`. seen: editor/test/inspector.test.js (jsdom, LLM-built synthetic demo samples), npm test 287/287 and gate 1630 OK at head 51092f6 (rerun by planner). Stays partial: no browser run; only move marks; method text is the genre definition, not a method document; app wiring owed to AP-01.
 - [ ] **IN-02** `[A]` For sequence flags: the corpus evidence ("this move follows that one in 18 of 20 reports")
 - [ ] **IN-03** `[A]` For support flags: the candidate evidence found, or the statement that none was found
 - [ ] **IN-04** `[A]` For register flags: the feature the slow layer named
