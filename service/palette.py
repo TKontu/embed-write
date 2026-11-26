@@ -4,12 +4,13 @@ Checks every pair of move colours in normal vision and three simulated
 colour-vision deficiencies (Machado et al. 2009, severity 1.0) using CIEDE2000.
 Pure stdlib. O(n^2) over palette size; n is the number of moves in a genre.
 
-Unwired by design: the production caller is the genre-file legend check
-(LG-02/LG-05). No palette is chosen here (LG-01 is [H]).
+No palette is chosen here (LG-01 is [H]). genre_palette() wires the validator
+to a genre file's legend; its production caller is the --genre CLI mode (CI
+wiring is a residual).
 
 CLI (build-failing hook):
-    python3 -m service.palette PALETTE.json [--min-delta-e X]
-exits 1 if any pair is below threshold, 0 otherwise.
+    python3 -m service.palette (PALETTE.json | --genre GENRE.json) [--min-delta-e X]
+exits 1 if any pair is below threshold, 0 otherwise; 2 on an invalid input.
 """
 
 import argparse
@@ -20,6 +21,8 @@ import re
 import sys
 from dataclasses import dataclass
 from typing import Mapping
+
+from service.genre import OTHER, GenreFileError, load_genre
 
 MIN_DELTA_E = 20.0
 """Provisional default CIEDE2000 threshold; the expert may revise it under G-09."""
@@ -167,16 +170,39 @@ def validate(palette: Mapping[str, str], min_delta_e=MIN_DELTA_E):
     return tuple(out)
 
 
+def genre_palette(genre_obj):
+    """Validated genre object -> {move: hex} in moves order, plus 'other'.
+
+    Colours come from legend.colors ("_" comment keys skipped) and
+    legend.other; the legend is stored, never computed (I3).
+    """
+    colors = genre_obj['legend']['colors']
+    out = {m['id']: colors[m['id']] for m in genre_obj['moves']
+           if not m['id'].startswith('_')}
+    out[OTHER] = genre_obj['legend']['other']
+    return out
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog='python3 -m service.palette')
-    parser.add_argument('palette', help='JSON object {move: "#rrggbb"}')
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument('palette', nargs='?', help='JSON object {move: "#rrggbb"}')
+    mode.add_argument('--genre', metavar='PATH',
+                      help='genre file; validates legend.colors plus legend.other')
     parser.add_argument('--min-delta-e', type=float, default=MIN_DELTA_E)
     args = parser.parse_args(argv)
-    with open(args.palette, encoding='utf-8') as fh:
-        data = json.load(fh)
-    if not isinstance(data, dict):
-        print('palette must be a JSON object', file=sys.stderr)
-        return 2
+    if args.genre is not None:
+        try:
+            data = genre_palette(load_genre(args.genre))
+        except GenreFileError as exc:
+            print(exc, file=sys.stderr)
+            return 2
+    else:
+        with open(args.palette, encoding='utf-8') as fh:
+            data = json.load(fh)
+        if not isinstance(data, dict):
+            print('palette must be a JSON object', file=sys.stderr)
+            return 2
     violations = validate(data, args.min_delta_e)
     for v in violations:
         print(f'{v.vision}: {v.move_a} vs {v.move_b} delta_e={v.delta_e:.2f}'
