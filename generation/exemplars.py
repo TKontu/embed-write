@@ -30,20 +30,33 @@ class Exemplar:
 
 
 def select_exemplars(candidates: Iterable[Exemplar], *, current_document_id: str,
-                     section_type: str, move: str, limit: int) -> tuple[Exemplar, ...]:
+                     section_type: str, move: str, limit: int,
+                     max_per_document: int | None = None) -> tuple[Exemplar, ...]:
     """Select exact label matches outside the current document, in stream order.
 
     Stop immediately at the limit; zero does not even request an iterator.
+    ``max_per_document``, when not ``None``, skips any candidate whose document
+    already holds that many selections (skipped, never deferred); it keeps one
+    count per selected document, so memory stays O(limit).
     IDs are caller-supplied stable passage identifiers for GenerationRunRecord.
     """
     if type(limit) is not int or limit < 0:
         raise ValueError('limit must be a nonnegative integer')
+    if max_per_document is not None and (type(max_per_document) is not int
+                                         or max_per_document < 1):
+        raise ValueError('max_per_document must be a positive integer or None')
     if limit == 0:
         return ()
     selected = []
+    per_document: dict[str, int] = {}
     for candidate in candidates:
         if (candidate.document_id != current_document_id
                 and candidate.section_type == section_type and candidate.move == move):
+            if max_per_document is not None:
+                count = per_document.get(candidate.document_id, 0)
+                if count >= max_per_document:
+                    continue
+                per_document[candidate.document_id] = count + 1
             selected.append(candidate)
             if len(selected) == limit:
                 break
@@ -51,16 +64,17 @@ def select_exemplars(candidates: Iterable[Exemplar], *, current_document_id: str
 
 
 def render_prompt(context: GenerationContext, candidates: Iterable[Exemplar], *,
-                  current_document_id: str, section_type: str,
-                  limit: int) -> tuple[str, tuple[str, ...]]:
+                  current_document_id: str, section_type: str, limit: int,
+                  max_per_document: int | None = None) -> tuple[str, tuple[str, ...]]:
     """Return the unchanged GE-01 prompt plus JSON examples and ordered IDs.
 
     The move comes from the selected context passage; section type and document
     identity must be supplied by its caller because GE-01 does not carry them.
+    ``max_per_document`` is forwarded to :func:`select_exemplars` unchanged.
     """
     selected = select_exemplars(candidates, current_document_id=current_document_id,
                                 section_type=section_type, move=context.passage.move,
-                                limit=limit)
+                                limit=limit, max_per_document=max_per_document)
     examples = json.dumps([asdict(candidate) for candidate in selected],
                           ensure_ascii=False, sort_keys=True, separators=(',', ':'))
     return (context.render_prompt() + '\nExemplars:\n' + examples,
