@@ -53,6 +53,8 @@ The folder may also contain:
   drive the legend panel (LG-07) and overlay colours (LG-02 legendCss). Falls back to the demo's.
 - `legend.json` — provisional marking; `{ "provisional": true, "moves": { "finding": { "label": "...", "colour": "#..." } } }`.
 
+Expert corrections (IN-05, "Correct label" in the inspector) are stored outside the sample folder in the gitignored `edit-log/demo-corrections/<sample>.corrections.json` (override with `DEMO_CORRECTIONS_DIR`); not available with `--report`.
+
 If the folder has no `legend.json`, the demo's provisional legend is used. Without a sidecar the
 report still opens and saves; it simply has no move labels.
 

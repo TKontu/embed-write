@@ -17,7 +17,7 @@ function findMove(genre, id) {
  * Returns null when the attributes do not describe a move mark.
  * @param {Record<string, string | null | undefined> | null | undefined} attrs
  * @param {any} genre
- * @returns {{ signal: string, value: string, confidence: string, layer: string, methodId: string, methodText: string } | null}
+ * @returns {{ signal: string, value: string, confidence: string, layer: string, methodId: string, methodText: string, previous?: string } | null}
  */
 export function inspectSignal(attrs, genre) {
   if (!attrs) return null;
@@ -29,7 +29,8 @@ export function inspectSignal(attrs, genre) {
   const move = findMove(genre, kind);
   const name = move && typeof move.name === 'string' && move.name ? move.name : kind;
   const def = move && typeof move.definition === 'string' && move.definition ? move.definition : NO_METHOD;
-  return {
+  /** @type {NonNullable<ReturnType<typeof inspectSignal>>} */
+  const out = {
     signal: 'Move',
     value: name,
     confidence: String(attrs['data-signal-confidence'] ?? 'unknown'),
@@ -37,6 +38,13 @@ export function inspectSignal(attrs, genre) {
     methodId: kind,
     methodText: def,
   };
+  // IN-05: an expert correction names the label it overruled.
+  const prev = attrs['data-signal-previous'];
+  if (typeof prev === 'string' && prev) {
+    const was = findMove(genre, prev);
+    out.previous = was && typeof was.name === 'string' && was.name ? was.name : prev;
+  }
+  return out;
 }
 
 /** The data-signal-* attribute map of an element (and data-move). @param {Element} el */
@@ -238,6 +246,37 @@ export function renderRegisterFlag(doc, flag) {
 }
 
 /**
+ * IN-05: the "Correct label" control: a labelled select of the genre's moves (current preselected)
+ * and a Save button that calls `onSave(id)`. The expert's choice is stored by the caller. No colours.
+ * @param {Document} doc
+ * @param {{ moves: { id: string, name?: string }[], current: string, onSave: (id: string) => void }} opts
+ */
+export function renderCorrectionControl(doc, { moves, current, onSave }) {
+  const section = doc.createElement('section');
+  section.className = 'inspector-correct';
+  const label = doc.createElement('label');
+  label.textContent = 'Correct label';
+  const select = doc.createElement('select');
+  select.className = 'inspector-correct-select';
+  for (const m of moves) {
+    if (!m || typeof m.id !== 'string') continue;
+    const o = doc.createElement('option');
+    o.value = m.id;
+    o.textContent = typeof m.name === 'string' && m.name ? m.name : m.id;
+    select.append(o);
+  }
+  select.value = current;
+  label.append(select);
+  const btn = doc.createElement('button');
+  btn.type = 'button';
+  btn.className = 'inspector-correct-save';
+  btn.textContent = 'Save';
+  btn.addEventListener('click', () => onSave(select.value));
+  section.append(label, btn);
+  return section;
+}
+
+/**
  * The inspector panel for one signal, or "No signal here" for null. I8: says pattern fit.
  * IN-02: an optional `evidence` adds the sequence-evidence section.
  * @param {Document} doc
@@ -274,7 +313,14 @@ export function renderInspector(doc, info, evidence = null, support = null, regi
   const link = doc.createElement('a');
   link.href = `#${anchorId(info.methodId)}`;
   link.textContent = 'Method';
-  aside.append(dl, note, link);
+  aside.append(dl);
+  if (info.previous !== undefined) {
+    const p = doc.createElement('p');
+    p.className = 'inspector-corrected';
+    p.textContent = `Corrected by expert (was ${info.previous})`;
+    aside.append(p);
+  }
+  aside.append(note, link);
   if (evidence) aside.append(renderSequenceEvidence(doc, evidence));
   if (support) aside.append(renderSupportEvidence(doc, support.evidence, support.excerptOf));
   if (register) aside.append(renderRegisterFlag(doc, register));
@@ -313,8 +359,10 @@ export function renderMethodTexts(doc, genre) {
  * @param {(el: Element) => SequenceEvidence | null} [getEvidence]
  * @param {(el: Element) => SupportView | null} [getSupport] IN-03: support flag for a move mark.
  * @param {(el: Element) => RegisterFlag | null} [getRegister] IN-04: register flag for a move mark.
+ * @param {(el: Element, label: string) => void} [onCorrect] IN-05: adds the "Correct label"
+ *   control to a move mark's panel; called with the chosen genre move id on Save.
  */
-export function mountInspector(editorDom, mount, getGenre, getEvidence, getSupport, getRegister) {
+export function mountInspector(editorDom, mount, getGenre, getEvidence, getSupport, getRegister, onCorrect) {
   const doc = mount.ownerDocument;
   /** @type {Element | null} */
   let selected = null;
@@ -324,7 +372,15 @@ export function mountInspector(editorDom, mount, getGenre, getEvidence, getSuppo
     const ev = el && info && getEvidence ? getEvidence(el) : null;
     const sup = el && info && getSupport ? getSupport(el) : null;
     const reg = el && info && getRegister ? getRegister(el) : null;
-    mount.replaceChildren(renderInspector(doc, info, ev, sup, reg));
+    const panel = renderInspector(doc, info, ev, sup, reg);
+    if (el && info && onCorrect) {
+      const genre = getGenre();
+      const moves = genre && Array.isArray(genre.moves) ? genre.moves : [];
+      const target = el;
+      panel.append(renderCorrectionControl(doc, { moves, current: info.methodId,
+        onSave: (id) => onCorrect(target, id) }));
+    }
+    mount.replaceChildren(panel);
   };
   /** @param {Event} e */
   const over = (e) => {
