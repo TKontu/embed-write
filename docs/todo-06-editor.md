@@ -50,6 +50,7 @@ A native writing surface over Markdown: the expert sees formatted text, shortcut
 - [ ] **BH-04** `[A]` Footnotes; link editing without raw syntax
 - [ ] **BH-05** `[A]` Images referenced by path, never embedded as base64
 - [ ] **BH-06** `[A]` Section templates from the genre file: insert a new report with the genre's section skeleton
+  - partial (R136/A3, PR #345, merge 790af21; Claude lane, Codex at usage limit until 2026-11-30): `sectionSkeleton(sectionTypes, {title?, level?})` in docmodel/src/sectiontypes.js, exported from index.js: one heading per genre section type in genre order (name, or headings[0] when the name is not an alias); level 1..6 else TypeError. seen: docmodel/test/sectiontypes.test.js; planner rerun docmodel 262/262 at head 99aa50b and 268/268 merged onto main. Unwired by design; the editor insert-template command (open half of this row) wires it. Residual: heading text is emitted raw, so names with Markdown syntax would not round-trip. Synthetic section types only.
 - [ ] **BH-07** `[A]` Undo grouping: typing runs coalesce, formatting is its own step
 
 ---
