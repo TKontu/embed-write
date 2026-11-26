@@ -36,7 +36,9 @@ class Base(unittest.TestCase):
 
     def write(self, files):
         for rel, text in files.items():
-            (self.corpus / rel).write_text(text, encoding="utf-8")
+            path = self.corpus / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8")
         return self.corpus
 
     def flags(self, kind, **kw):
@@ -114,6 +116,55 @@ class OutputTest(Base):
         self.assertEqual(rep["flags"], [])
         self.assertEqual(rep["totals"]["documents"], 0)
         self.assertEqual(rep["totals"]["flags"], 0)
+
+
+class ResidualsTest(Base):
+    def test_same_stem_in_subdirs_distinct(self):
+        self.write({"a/x.md": f"{BODIES[0]}\n", "b/x.md": f"{BODIES[1]}\n"})
+        rep = bp.build_report(self.corpus)
+        self.assertEqual(rep["totals"]["documents"], 2)
+
+    def test_same_stem_ids_in_flags(self):
+        self.write({f"{d}/x.md": f"{b}\n\n{DISCLAIMER}\n"
+                    for d, b in zip("abc", BODIES)})
+        rep = self.flags("repeated")
+        self.assertEqual(rep[0]["documents"], ["a/x", "b/x", "c/x"])
+
+    def test_short_heading_min_words(self):
+        self.write({f"d{i}.md": f"Executive Summary\n\n{b}\n" for i, b in enumerate(BODIES[:3])})
+        texts = [f["text"] for f in self.flags("repeated")]
+        self.assertNotIn("executive summary", texts)
+        texts = [f["text"] for f in self.flags("repeated", min_words=1)]
+        self.assertIn("executive summary", texts)
+        rep = bp.build_report(self.corpus)
+        self.assertEqual(rep["params"]["min_words"], 4)
+
+    def test_min_words_cli(self):
+        self.write({f"d{i}.md": f"Executive Summary\n\n{b}\n" for i, b in enumerate(BODIES[:3])})
+        out = self.root / "o.json"
+        self.assertEqual(bp.main(["report", str(self.corpus), str(out), "--min-words", "1"]), 0)
+        self.assertIn("executive summary", out.read_text(encoding="utf-8"))
+
+    def test_max_passages_caps_table(self):
+        self.write({f"d{i}.md": f"{DISCLAIMER}\n\n{b}\n" for i, b in enumerate(BODIES)})
+        full = bp.build_report(self.corpus)
+        self.assertFalse(full["totals"]["passage_table_capped"])
+        self.assertGreater(full["totals"]["distinct_passages"], 2)
+        capped = bp.build_report(self.corpus, max_passages=2)
+        self.assertTrue(capped["totals"]["passage_table_capped"])
+        self.assertEqual(capped["totals"]["distinct_passages"], 2)
+        self.assertEqual(capped["params"]["max_passages"], 2)
+        # existing entries keep counting after the cap
+        rep = [f for f in capped["flags"] if f["kind"] == "repeated"]
+        self.assertEqual(rep[0]["text"], bp.normalize(DISCLAIMER))
+        self.assertEqual(rep[0]["count"], 4)
+        self.assertEqual(capped, bp.build_report(self.corpus, max_passages=2))
+
+    def test_max_passages_cli(self):
+        self.write({f"d{i}.md": f"{DISCLAIMER}\n\n{b}\n" for i, b in enumerate(BODIES)})
+        out = self.root / "o.json"
+        self.assertEqual(bp.main(["report", str(self.corpus), str(out), "--max-passages", "1"]), 0)
+        self.assertIn('"passage_table_capped": true', out.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":
