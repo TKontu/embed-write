@@ -152,3 +152,17 @@ Append-only record of operator rulings and architecture decisions.
   restarted it blindly. The iknosreview loop ran a week unattended only because its main kept
   moving.
 - **Supersedes:** PR #355, the timed cooldown.
+
+## D-014 — The strong model where judgment errors cost whole rounds (2026-11-26, operator)
+
+- **Ruling:** Claude Fable (`claude-fable-5-2`) runs the planner for diagnosing rounds (D-012) and
+  for one strategic planning round every 24 h, and runs independent reviews of high-risk PRs
+  (`scripts/round_supervisor.py`, `scripts/merge_guard.py`, `scripts/lane_cleanup.py`,
+  `.claude/`, gate code). Routine rounds, lanes and other reviews keep the default model.
+- **Strategic round:** re-read the architecture and decisions against what main holds, check the
+  current priority still gives the earliest real feedback, re-rank if not, and plan against the
+  single biggest risk the loop can reduce now.
+- **Not yet:** `/stream-audit` on the strong model waits for real corpus data. Until then it
+  would audit synthetic text.
+- **Why:** these are rare, high-leverage decisions; the strong-model review of #359 caught a
+  defect that would have let the loop diagnose forever.

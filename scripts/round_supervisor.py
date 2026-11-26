@@ -112,6 +112,9 @@ decisions in HANDOFF.md.
 - Release finished lanes with python3 scripts/lane_cleanup.py --go after merge-round and before
   handoff; it closes their idle tabs and removes their worktrees by rule. Never close lane tabs or
   remove lane worktrees by hand.
+- Independent reviews of high-risk PRs run on the strong model (D-014; Agent tool model "fable"):
+  any PR touching scripts/round_supervisor.py, scripts/merge_guard.py, scripts/lane_cleanup.py,
+  .claude/ or gate code (experiments/gates/, the G-01/G-02 harnesses). Other reviews: default model.
 - HANDOFF.md must name every carried lane: its tab, owner, what it is doing, how to check it, and
   that it carries over and must not be halted or duplicated.
 - While waiting on CI or subagents, keep a background wake-up armed so the session resumes.
@@ -129,6 +132,16 @@ decisions in HANDOFF.md.
   obstacle no lane can work around, use --outcome halt --cause <code> --reason "<why>"; the
   supervisor then runs a diagnosing round first (D-012). Then end your turn; a new session takes
   the next round.
+"""
+STRATEGIC_PROMPT = """STRATEGIC ROUND (D-014, once a day, on the strong model). Before planning:
+1. Re-read docs/architecture.md (goal, gates, phasing, risks) and docs/decisions.md, then compare
+   them with what main actually holds: rows done versus seen, gates run, and what is blocked.
+2. Check the current priority (D-009, D-011 and later rulings) still gives the earliest real
+   feedback. Re-rank docs/todo.md's critical path if it does not, and say why in HANDOFF.md.
+3. Name the single biggest risk to the project's goal that the loop can reduce now, and plan
+   this round's lanes against it. Raise anything only the operator can decide as an `open` note.
+Then continue with the normal round instructions below.
+
 """
 DIAGNOSE_PROMPT = """DIAGNOSING ROUND (D-012). The supervisor stopped normal planning because: {reason}.
 Do not retry the same plan. This round's job is to find out why the loop made no progress, and to
@@ -181,6 +194,8 @@ class Config:
     max_no_advance: int = 3
     max_same_cause: int = 2  # D-012: the same unresolved cause twice in a row is a real halt
     wait_max_s: int = 12 * 3600
+    strategic_every_s: int = 24 * 3600  # D-014: one strategic planning pass a day
+    strong_model: str = "claude-fable-5-2"  # D-014: diagnosing and strategic rounds
     gap_s: int = 60
 
 
@@ -288,6 +303,20 @@ def after_round(cfg: Config, t: Tracker, *, recycled: bool, main_sha: str) -> Ac
     if t.no_advance >= cfg.max_no_advance:
         return Action("diagnose", f"main unchanged across {t.no_advance} rounds", cause="no-advance")
     return None
+
+
+def round_kind(t: Tracker, now: float, *, last_strategic: float, cfg: Config) -> str:
+    """D-014: a diagnosing round first; else a strategic round once per strategic_every_s."""
+    if t.diagnosing:
+        return "diagnose"
+    if now - last_strategic >= cfg.strategic_every_s:
+        return "strategic"
+    return "normal"
+
+
+def model_args(kind: str, cfg: Config) -> list[str]:
+    """The strong model only where judgment errors cost whole rounds (D-014)."""
+    return ["--model", cfg.strong_model] if kind in ("diagnose", "strategic") else []
 
 
 def between_rounds(
@@ -516,10 +545,16 @@ class Supervisor:
         )  # fmt: skip
         self.t = Tracker(**keep)
         time.sleep(2)  # the new tab's shell must reach its prompt
-        self.herdr.start(pane, self.session, round_no, self.extra)
+        strategic = _load(STATE / "strategic.json") or {}
+        kind = round_kind(self.t, now, last_strategic=float(strategic.get("at", 0.0)), cfg=self.cfg)
+        if kind == "strategic":
+            _dump(STATE / "strategic.json", {"at": now, "round": round_no})
+        self.herdr.start(pane, self.session, round_no, [*self.extra, *model_args(kind, self.cfg)])
         text = self.prompt.format(round=round_no, script=SELF, lane_prefix=LANE_PREFIX)
-        if self.t.diagnosing:
+        if kind == "diagnose":
             text = DIAGNOSE_PROMPT.format(reason=self.t.diagnose_reason, script=SELF) + text
+        elif kind == "strategic":
+            text = STRATEGIC_PROMPT + text
         rc, out = self.herdr.prompt(text)
         if rc:
             raise RuntimeError(f"round prompt refused: {out[:300]}")
