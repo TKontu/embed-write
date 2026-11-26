@@ -13,6 +13,14 @@ never silently read under another:
 * Later appends for the same sentence_id supersede earlier ones within the
   same version key (last write wins); the file keeps the full history
   (``history(sentence_id)``).
+* Retraction (AN-01 undo): a record ``{"sentence_id", "annotator",
+  "timestamp", "retracted": true, ...}`` with no ``label`` key withdraws the
+  sentence's earlier label. It is versioned like a label; when it is the
+  latest record for a (sentence_id, version key), ``read()`` omits that
+  sentence (it is unlabelled). ``history()`` keeps it. ``retracted`` must be
+  exactly ``true`` and excludes ``label``; label records never carry it.
+* ``iter_records()`` is the public streaming reader: yields ``(line_no,
+  record)`` for every stored line, raising on torn/corrupt lines.
 
 Durability: each append is one ``write`` of one newline-terminated line on an
 O_APPEND handle, then flush + fsync. A final line without its newline (a torn
@@ -76,7 +84,7 @@ class AnnotationStore:
                 'repair the store before appending')
 
     # -- reading -------------------------------------------------------
-    def _records(self):
+    def iter_records(self):
         """Yield (line_no, record) streaming; raise on corrupt/torn lines."""
         try:
             fh = open(self.path, encoding='utf-8')
@@ -99,6 +107,8 @@ class AnnotationStore:
                         f'{self.path}: line {no} is not a JSON object')
                 yield no, obj
 
+    _records = iter_records  # backwards-compatible private alias
+
     def read(self, genre_obj, *, include_stale=False):
         """Latest label per sentence (first-seen order) under ``genre_obj``'s exact version key.
 
@@ -116,7 +126,7 @@ class AnnotationStore:
             key = (obj.get('sentence_id'), obj.get('genre_version'),
                    obj.get('genre_hash'))
             latest[key] = dict(obj, stale=not current)
-        return list(latest.values())
+        return [r for r in latest.values() if not r.get('retracted')]
 
     def stale_count(self, genre_obj):
         """Number of stored records of this genre under another version key."""
@@ -137,12 +147,20 @@ def _validated(genre_obj, record):
     for k in RESERVED:
         if k in record:
             raise AnnotationStoreError(f'{k!r} is set by the store, not the caller')
+    retracted = 'retracted' in record
+    if retracted:
+        if record['retracted'] is not True:
+            raise AnnotationStoreError("'retracted' must be true when present")
+        if 'label' in record:
+            raise AnnotationStoreError('a retraction must not carry a label')
     for k in REQUIRED:
+        if retracted and k == 'label':
+            continue
         v = record.get(k)
         if not isinstance(v, str) or not v.strip():
             raise AnnotationStoreError(f'{k!r} must be a non-empty string')
     allowed = {m['id'] for m in genre_obj['moves']} | {OTHER}
-    if record['label'] not in allowed:
+    if not retracted and record['label'] not in allowed:
         raise AnnotationStoreError(
             f'label {record["label"]!r} is not a move of genre '
             f'{genre_obj["genre"]!r} v{genre_obj["version"]} nor {OTHER!r}')

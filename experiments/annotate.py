@@ -12,7 +12,10 @@ Raises ``AnnotateError`` if the manifest's genre version key differs from
 current document's sentences.
 
 ``AnnotationSession`` shows one sentence at a time; number keys pick a move,
-``o`` other, ``u`` undo/relabel previous, ``s`` skip, ``q`` quit. Each answer is
+``o`` other, ``u`` undo/relabel previous (the previous sentence's label is
+retracted — a store retraction record is appended when the session leaves it
+without a new label: skip, another undo, quit/EOF or an exception — so it is
+unlabelled and shown again on resume; relabelling simply supersedes), ``s`` skip, ``q`` quit. Each answer is
 appended to the ``AnnotationStore`` immediately. On start it skips items this
 annotator already labelled in this pass under the current version key.
 
@@ -96,12 +99,12 @@ def resolve_items(manifest, documents, genre, *, only=None):
 def _labelled(store, genre, pass_name, annotator=None):
     """Latest current-version record per (sentence_id, annotator) for a pass, write order."""
     latest = {}
-    for _, obj in store._records():
+    for _, obj in store.iter_records():
         if (obj.get('genre') == genre['genre'] and labels_valid_for(genre, obj)
                 and obj.get('pass') == pass_name
                 and (annotator is None or obj.get('annotator') == annotator)):
             latest[(obj['sentence_id'], obj['annotator'])] = obj
-    return latest
+    return {k: r for k, r in latest.items() if not r.get('retracted')}
 
 
 def labels_for_pass(store, genre, pass_name, annotator=None):
@@ -142,38 +145,58 @@ class AnnotationSession:
         lines.append('[u] undo  [s] skip  [q] quit')
         self.output('\n'.join(lines))
 
+    def _retract(self, it):
+        self.store.append(self.genre, {
+            'sentence_id': it['sentence_id'], 'retracted': True,
+            'annotator': self.annotator, 'timestamp': self.clock(),
+            'pass': self.pass_name, 'doc_id': it['doc_id'],
+            'section_type': it['section_type']})
+
     def run(self):
         done = {sid for sid, _ in _labelled(self.store, self.genre, self.pass_name,
                                             self.annotator)}
         pending = [it for it in self.items if it['sentence_id'] not in done]
         i, stack, written = 0, [], 0
-        while i < len(pending):
-            it = pending[i]
-            self._show(it, i + 1, len(pending))
-            try:
-                key = self.input('> ').strip().lower()
-            except EOFError:
-                break
-            if key == 'q':
-                break
-            if key == 's':
-                i += 1
-            elif key == 'u':
-                if stack:
-                    i = stack.pop()
+        undone = None  # index whose label `u` withdrew; retracted unless relabelled
+        try:
+            while i < len(pending):
+                it = pending[i]
+                self._show(it, i + 1, len(pending))
+                try:
+                    key = self.input('> ').strip().lower()
+                except EOFError:
+                    break
+                if key == 'q':
+                    break
+                if key == 's':
+                    if undone == i:
+                        self._retract(it)
+                        undone = None
+                    i += 1
+                elif key == 'u':
+                    if stack:
+                        if undone is not None:
+                            self._retract(pending[undone])
+                        i = undone = stack.pop()
+                        written -= 1
+                    else:
+                        self.output('nothing to undo')
+                elif key in self.keys:
+                    self.store.append(self.genre, {
+                        'sentence_id': it['sentence_id'], 'label': self.keys[key],
+                        'annotator': self.annotator, 'timestamp': self.clock(),
+                        'pass': self.pass_name, 'doc_id': it['doc_id'],
+                        'section_type': it['section_type']})
+                    if undone == i:
+                        undone = None
+                    written += 1
+                    stack.append(i)
+                    i += 1
                 else:
-                    self.output('nothing to undo')
-            elif key in self.keys:
-                self.store.append(self.genre, {
-                    'sentence_id': it['sentence_id'], 'label': self.keys[key],
-                    'annotator': self.annotator, 'timestamp': self.clock(),
-                    'pass': self.pass_name, 'doc_id': it['doc_id'],
-                    'section_type': it['section_type']})
-                written += 1
-                stack.append(i)
-                i += 1
-            else:
-                self.output(f'unknown key {key!r}')
+                    self.output(f'unknown key {key!r}')
+        finally:
+            if undone is not None:
+                self._retract(pending[undone])
         self.output(f'{written} labels written this session')
         return written
 
