@@ -30,7 +30,13 @@ on the private corpus to prepare MV-03.
 
 CLI: python -m experiments.move_discovery report CORPUS_DIR GENRE.json OUT.json
      [--k N] [--max-per-type M] [--examples E] [--seed S]
-     [--model-url URL] [--model-name NAME] [--embedder hash] [--force]
+     [--model-url URL] [--model-name NAME] [--force]
+     [--embedder hash | --embedder onnx --model-dir DIR [--candidate bge-m3]]
+
+``--embedder onnx`` loads ``service.candidates.OnnxEmbedder`` (CPU onnxruntime)
+from a local DIR holding model.onnx and tokenizer.json (see
+``scripts/export_onnx.py``); nothing is downloaded. A missing DIR or file exits
+2 before any document is read.
 """
 from __future__ import annotations
 
@@ -46,6 +52,7 @@ from typing import Callable, Iterable
 from experiments.annotation_sample import document_sentences, heading_map
 from experiments.corpus import iter_documents
 from experiments.prelabel import local_model
+from service.candidates import CANDIDATES, OnnxEmbedder
 from service.embedder import HashEmbedder, embed
 from service.genre import load_genre, version_key
 from service.normalize import l2_normalize
@@ -343,6 +350,28 @@ def write_report(report, out, force: bool = False) -> None:
         handle.write(data)
 
 
+CANDIDATE_NAMES = {c.model_id.split('/')[-1]: c for c in CANDIDATES}
+ONNX_FILES = ('model.onnx', 'tokenizer.json')
+
+
+def make_embedder(name: str, model_dir: str | None = None, candidate: str = 'bge-m3'):
+    """Build the CLI's embedder; raises DiscoveryError for a missing model_dir or file."""
+    if name == 'hash':
+        return HashEmbedder()
+    if name != 'onnx':
+        raise DiscoveryError(f'unknown embedder: {name}')
+    if not model_dir:
+        raise DiscoveryError('--embedder onnx needs --model-dir')
+    if not Path(model_dir).is_dir():
+        raise DiscoveryError(f'model directory not found: {model_dir}')
+    for file_name in ONNX_FILES:
+        if not (Path(model_dir) / file_name).is_file():
+            raise DiscoveryError(f'missing {file_name} in model directory {model_dir}')
+    if candidate not in CANDIDATE_NAMES:
+        raise DiscoveryError(f'unknown candidate: {candidate}')
+    return OnnxEmbedder(CANDIDATE_NAMES[candidate], model_dir)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog='python -m experiments.move_discovery')
     sub = parser.add_subparsers(dest='cmd', required=True)
@@ -362,12 +391,24 @@ def main(argv: list[str] | None = None) -> int:
                          help='loopback OpenAI-compatible endpoint for cluster naming')
     command.add_argument('--model-name', default=None,
                          help='model name sent to --model-url (default "local")')
-    command.add_argument('--embedder', choices=('hash',), default='hash',
-                         help='hash is a development-only stub, not a semantic model')
+    command.add_argument('--embedder', choices=('hash', 'onnx'), default='hash',
+                         help='hash is a development-only stub, not a semantic model; '
+                              'onnx runs a local model from --model-dir')
+    command.add_argument('--model-dir', default=None,
+                         help='directory with model.onnx and tokenizer.json (--embedder onnx)')
+    command.add_argument('--candidate', choices=sorted(CANDIDATE_NAMES), default='bge-m3',
+                         help='candidate model record for --embedder onnx (default bge-m3)')
     command.add_argument('--force', action='store_true', help='overwrite an existing OUT')
     args = parser.parse_args(argv)
     if args.model_name and not args.model_url:
         parser.error('--model-name needs --model-url')
+    if args.embedder != 'onnx' and args.model_dir:
+        parser.error('--model-dir needs --embedder onnx')
+    try:
+        embedder = make_embedder(args.embedder, args.model_dir, args.candidate)
+    except DiscoveryError as exc:
+        print(f'error: {exc}', file=sys.stderr)
+        return 2
     if not Path(args.corpus).is_dir():
         print(f'error: corpus directory not found: {args.corpus}', file=sys.stderr)
         return 2
@@ -378,7 +419,6 @@ def main(argv: list[str] | None = None) -> int:
         genre = load_genre(args.genre)
         model = (local_model(args.model_url, model=args.model_name or 'local')
                  if args.model_url else None)
-        embedder = {'hash': HashEmbedder}[args.embedder]()
         report = build_report(args.corpus, genre, embedder=embedder, k=args.k,
                               max_per_type=args.max_per_type, examples=args.examples,
                               seed=args.seed, model=model)

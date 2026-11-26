@@ -115,6 +115,21 @@ class OnnxEmbedderTests(unittest.TestCase):
         b2, a2 = e2.embed(['zzzz', 'a'], Level.BLOCK)
         self.assertEqual((a, b), (a2, b2))
 
+    def test_pad_and_end_tokens_follow_candidate(self):
+        session = FakeSession()
+        c = CandidateModel('fake/xlmr', 'rev1', 2, (2,), 4, 'mean', '', '',
+                           pad_token_id=1, end_token_id=2)
+        e = OnnxEmbedder(c, 'x', session=session, tokenizer=FakeTokenizer())
+        e.embed(['a', 'abcdef'], Level.BLOCK)
+        short, long_ = session.feeds[0]['input_ids']
+        self.assertEqual(short, [ord('a'), 1, 1, 1])  # padded with <pad>=1, not 0
+        self.assertEqual(long_, [ord('a'), ord('b'), ord('c'), 2])  # end token kept
+        self.assertEqual(session.feeds[0]['attention_mask'][0], [1, 0, 0, 0])
+
+    def test_bge_m3_uses_xlmr_special_tokens(self):
+        bge = {c.model_id: c for c in CANDIDATES}['BAAI/bge-m3']
+        self.assertEqual((bge.pad_token_id, bge.end_token_id), (1, 2))
+
     def test_wrappers_accept_adapter(self):
         e = adapter()
         self.assertIsInstance(embed(e, ['x', 'y', 'z'], Level.BLOCK, batch_size=2)[0],
