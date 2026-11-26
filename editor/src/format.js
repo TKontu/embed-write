@@ -2,11 +2,12 @@
 // FM-01: formatting shortcuts. Mod-b strong, Mod-i em, Mod-e inline code, Mod-k link.
 // FM-02: heading shortcuts Mod-1..6 and `#`..`######` + space input rule.
 // FM-03: block input rules (lists, task items, quotes, code fences, thematic breaks).
+// FM-06: escape hatch — Backspace right after an input rule restores the typed text.
 // Production caller: createEditor (itself unwired by design until AP-01).
-import { keymap } from '@milkdown/prose/keymap';
+import { keymap, keydownHandler } from '@milkdown/prose/keymap';
 import { toggleMark, setBlockType } from '@milkdown/prose/commands';
 import { inputRules, textblockTypeInputRule, wrappingInputRule, InputRule } from '@milkdown/prose/inputrules';
-import { TextSelection } from '@milkdown/prose/state';
+import { TextSelection, Plugin, PluginKey } from '@milkdown/prose/state';
 import { schema } from 'docmodel';
 
 /**
@@ -148,4 +149,57 @@ export function blockInputRules({ isRich = () => true } = {}) {
     return true;
   };
   return [gate(inputRules({ rules }), isRich), keymap({ Enter: fenceEnter })];
+}
+
+/**
+ * FM-06: Backspace immediately after any input rule (FM-02 heading, FM-03 block rules) undoes the
+ * conversion and leaves the typed literal text; otherwise it falls through to the other Backspace
+ * bindings, so it must precede them. Inactive in source view.
+ *
+ * prosemirror-inputrules' own undoInputRule forgets the rule as soon as any later transaction
+ * changes the doc — including the id-fixing transaction docmodel's idPlugin appends to every
+ * conversion. So this plugin records the rule itself, plus the steps of transactions appended
+ * after it, and inverts both.
+ * @param {{ isRich?: () => boolean }} [opts]
+ * @returns {import('prosemirror-state').Plugin}
+ */
+export function escapeKeymap({ isRich = () => true } = {}) {
+  /** @typedef {{ transform: import('prosemirror-transform').Transform, from: number, to: number, text: string }} Undoable */
+  /** @typedef {{ rule: Undoable, extra: { step: import('prosemirror-transform').Step, doc: import('prosemirror-model').Node }[] } | null} Last */
+  const key = new PluginKey('fm06-escape');
+  /** @type {import('prosemirror-state').Command} */
+  const undo = (state, dispatch) => {
+    if (!isRich()) return false;
+    /** @type {Last} */
+    const last = key.getState(state);
+    if (!last) return false;
+    if (dispatch) {
+      const tr = state.tr;
+      for (let j = last.extra.length - 1; j >= 0; j--) tr.step(last.extra[j].step.invert(last.extra[j].doc));
+      const { transform, from, to, text } = last.rule;
+      for (let j = transform.steps.length - 1; j >= 0; j--) tr.step(transform.steps[j].invert(transform.docs[j]));
+      if (text) {
+        tr.replaceWith(from, to, state.schema.text(text, tr.doc.resolve(from).marks()));
+        tr.setSelection(TextSelection.create(tr.doc, from + text.length));
+      } else tr.delete(from, to);
+      dispatch(tr);
+    }
+    return true;
+  };
+  return new Plugin({
+    key,
+    state: {
+      init: () => null,
+      /** @returns {Last} */
+      apply(tr, /** @type {Last} */ prev, state) {
+        const rule = state.plugins.reduce((r, p) => r ?? (p.spec.isInputRules ? tr.getMeta(p) : null), null);
+        if (rule) return { rule, extra: [] };
+        if (prev && tr.getMeta('appendedTransaction')) {
+          return { rule: prev.rule, extra: [...prev.extra, ...tr.steps.map((step, i) => ({ step, doc: tr.docs[i] }))] };
+        }
+        return tr.selectionSet || tr.docChanged ? null : prev;
+      },
+    },
+    props: { handleKeyDown: keydownHandler({ Backspace: undo }) },
+  });
 }
