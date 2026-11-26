@@ -75,6 +75,27 @@ class SupportCheckTest(unittest.TestCase):
         diff = support_diff("A plain sentence.", "Another plain sentence.")
         self.assertTrue(diff.preserved)
 
+    def test_leading_currency_changed(self):
+        diff = support_diff("It costs $5.", "It costs €5.")
+        self.assertEqual(diff.missing, Counter({"num:5 $": 1}))
+        self.assertEqual(diff.added, Counter({"num:5 €": 1}))
+
+    def test_leading_equals_trailing_currency(self):
+        self.assertTrue(support_diff("It costs $5.", "It costs 5 $.").preserved)
+
+    def test_leading_currency_forms(self):
+        self.assertEqual(
+            extract_support("€ 1,200.50 and -$3 and £7"),
+            Counter({"num:1200.50 €": 1, "num:-3 $": 1, "num:7 £": 1}),
+        )
+
+    def test_bare_number_without_currency(self):
+        self.assertEqual(extract_support("about 5 items"), Counter({"num:5": 1}))
+
+    def test_non_adjacent_currency_ignored(self):
+        self.assertEqual(extract_support("paid in $ about 5"), Counter({"num:5": 1}))
+        self.assertEqual(extract_support("$ alone"), Counter())
+
 
 if __name__ == "__main__":
     unittest.main()
