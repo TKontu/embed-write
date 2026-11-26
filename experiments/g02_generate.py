@@ -35,9 +35,12 @@ A ``section_id`` repeated in the input raises ``ValueError`` before anything is 
 repeat (the CLI exits 2).
 
 Sampling: ``temperature`` (CLI ``--temperature``) is passed as ``model(prompt, temperature=t)``
-for arm C candidates only, so the k drafts can differ; arms A and B, and the default
-``temperature=None``, call ``model(prompt)`` unchanged. Arm C records carry ``temperature`` when set.
-``local_model`` (experiments.prelabel) honours it (default 0).
+for arm C candidates only, so the k drafts can differ. With ``temperature=None`` and
+``n_candidates > 1`` arm C uses ``DEFAULT_C_TEMPERATURE`` (``local_model`` would otherwise send 0
+and the drafts would differ only by prompt suffix); an explicit 0 is honoured. Arms A and B, and
+arm C with one candidate and no temperature, call ``model(prompt)`` unchanged. Arm C records carry
+``temperature`` when one was used; ``summarize`` reports ``c_deterministic`` when any counted arm C
+record has ``n_candidates > 1`` with temperature 0 or missing (``complete`` is unaffected).
 
 ``summarize(..., model=, prompt_version=)`` counts only the records of that run, so stale-version
 records in a reused ``out_path`` neither duplicate nor complete the current run; the CLI passes both.
@@ -61,6 +64,7 @@ from experiments.prelabel import local_model
 
 ARMS = ('A', 'B', 'C')
 PROMPT_VERSION = 'g02.3-v1'
+DEFAULT_C_TEMPERATURE = 0.7  # arm C sampling when n_candidates > 1 and none is given
 
 
 class NotesRecord(TypedDict):
@@ -201,6 +205,8 @@ def iter_generate(sections: Iterable[NotesRecord], pool: Iterable[Exemplar], mod
     """Generate every missing ``(section_id, arm)``; yield each record as it is written."""
     if n_candidates < 1:
         raise ValueError('n_candidates must be at least 1')
+    if temperature is None and n_candidates > 1:
+        temperature = DEFAULT_C_TEMPERATURE
     pool = list(pool)
     if retriever is None:
         retriever = partial(lexical_retriever, k=k_exemplars)
@@ -269,6 +275,7 @@ def summarize(records: Iterable[dict], *, expected_sections: int | None = 30,
     order = {}
     leaked = set()
     models, versions = set(), set()
+    c_deterministic = False
     for r in records:
         if model is not None and r.get('model') != model:
             continue
@@ -278,6 +285,9 @@ def summarize(records: Iterable[dict], *, expected_sections: int | None = 30,
         models.add(r.get('model'))
         versions.add(r.get('prompt_version'))
         order.setdefault(r['section_id'], True)
+        if (r['arm'] == 'C' and (r.get('n_candidates') or 1) > 1
+                and not r.get('temperature')):
+            c_deterministic = True
         if r.get('report_id') in (r.get('exemplar_report_ids') or []):
             leaked.add(r['section_id'])
     section_ids = list(order)
@@ -294,7 +304,8 @@ def summarize(records: Iterable[dict], *, expected_sections: int | None = 30,
             'expected_sections': expected_sections, 'arm_counts': arm_counts,
             'missing': missing, 'duplicates': duplicates,
             'same_report_exemplars': sorted(leaked), 'models': models,
-            'prompt_versions': versions, 'complete': complete}
+            'prompt_versions': versions, 'c_deterministic': c_deterministic,
+            'complete': complete}
 
 
 def read_jsonl(path) -> Iterator[dict]:
@@ -315,7 +326,8 @@ def main(argv=None, *, model: Model | None = None, critic: Critic | None = None)
     ap.add_argument('--n-candidates', type=int, default=4)
     ap.add_argument('--expected-sections', type=int, default=30)
     ap.add_argument('--temperature', type=float, default=None,
-                    help='sampling temperature for arm C candidates (default: model default)')
+                    help='sampling temperature for arm C candidates (default: '
+                         f'{DEFAULT_C_TEMPERATURE} when --n-candidates > 1; 0 is honoured)')
     a = ap.parse_args(argv)
     if model is None:
         if not a.model_url:

@@ -37,7 +37,7 @@ class FakeModel:
     def __init__(self):
         self.prompts = []
 
-    def __call__(self, prompt):
+    def __call__(self, prompt, temperature=None):
         self.prompts.append(prompt)
         sid = re.search(r'NOTES:\n(.+)', prompt).group(1)
         variant = re.search(r'Draft variant (\d+) of', prompt)
@@ -291,15 +291,59 @@ class GenerateTests(unittest.TestCase):
         c = [r for r in read(self.out) if r['arm'] == 'C'][0]
         self.assertEqual(c['temperature'], 0.8)
 
-    def test_default_path_calls_model_with_prompt_only(self):
+    def test_single_candidate_default_calls_model_with_prompt_only(self):
         class Strict(FakeModel):
             def __call__(self, prompt):  # no temperature kwarg accepted
                 return super().__call__(prompt)
 
         out = gen.generate(notes(1), pool(), Strict(), out_path=self.out,
-                           critic=FakeCritic({}), n_candidates=2)
+                           critic=FakeCritic({}), n_candidates=1)
         self.assertEqual(len(out), 3)
         self.assertNotIn('temperature', out[2])
+
+    def _temp_model(self):
+        class TempModel(FakeModel):
+            def __init__(self):
+                super().__init__()
+                self.temps = []
+
+            def __call__(self, prompt, temperature=None):
+                self.temps.append(('C' if 'Draft variant' in prompt else 'AB', temperature))
+                return super().__call__(prompt)
+        return TempModel()
+
+    def test_default_arm_c_samples_at_default_temperature(self):
+        self.assertEqual(gen.DEFAULT_C_TEMPERATURE, 0.7)
+        m = self._temp_model()
+        gen.generate(notes(1), pool(), m, out_path=self.out, critic=FakeCritic({}),
+                     n_candidates=3)
+        self.assertEqual([t for a, t in m.temps if a == 'C'], [0.7, 0.7, 0.7])
+        self.assertEqual([t for a, t in m.temps if a == 'AB'], [None, None])
+        recs = read(self.out)
+        self.assertEqual([r for r in recs if r['arm'] == 'C'][0]['temperature'], 0.7)
+        s = gen.summarize(recs, expected_sections=1)
+        self.assertFalse(s['c_deterministic'])
+        self.assertTrue(s['complete'])
+
+    def test_explicit_temperature_zero_is_honoured_and_flagged(self):
+        m = self._temp_model()
+        gen.generate(notes(1), pool(), m, out_path=self.out, critic=FakeCritic({}),
+                     n_candidates=2, temperature=0)
+        self.assertEqual([t for a, t in m.temps if a == 'C'], [0, 0])
+        recs = read(self.out)
+        self.assertEqual([r for r in recs if r['arm'] == 'C'][0]['temperature'], 0)
+        s = gen.summarize(recs, expected_sections=1)
+        self.assertTrue(s['c_deterministic'])
+        self.assertTrue(s['complete'])
+
+    def test_c_deterministic_when_temperature_missing_and_ignores_other_runs(self):
+        c = {'section_id': 's', 'report_id': 'r', 'arm': 'C', 'model': 'm',
+             'prompt_version': 'v', 'n_candidates': 2}
+        self.assertTrue(gen.summarize([c], expected_sections=None)['c_deterministic'])
+        self.assertFalse(gen.summarize([{**c, 'n_candidates': 1}],
+                                       expected_sections=None)['c_deterministic'])
+        self.assertFalse(gen.summarize([{**c, 'prompt_version': 'old'}], expected_sections=None,
+                                       prompt_version='v')['c_deterministic'])
 
     def test_cli_temperature_option(self):
         class TempModel(FakeModel):
