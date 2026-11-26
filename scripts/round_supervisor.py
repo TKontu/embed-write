@@ -27,6 +27,7 @@ import dataclasses
 import datetime
 import fcntl
 import json
+import math
 import os
 import re
 import select
@@ -490,10 +491,14 @@ def last_strategic() -> float:
     """When the last strategic round launched; 0 when absent or unreadable (logged)."""
     at = (_load(STATE / "strategic.json") or {}).get("at", 0.0)
     try:
-        return float(at)
+        value = float(at)
     except (TypeError, ValueError):
         log(f"strategic.json: non-numeric at={at!r}; treated as absent")
         return 0.0
+    if not math.isfinite(value) or value > time.time():
+        log(f"strategic.json: non-finite or future at={at!r}; treated as absent")
+        return 0.0
+    return value
 
 
 def read_sentinel(round_no: int) -> dict[str, Any] | None:
@@ -557,15 +562,19 @@ class Supervisor:
         )  # fmt: skip
         self.t = Tracker(**keep)
         time.sleep(2)  # the new tab's shell must reach its prompt
-        last = now if self.trial else last_strategic()
-        kind = round_kind(self.t, now, last_strategic=last, cfg=self.cfg)
+        if self.trial:  # a trial never reads the strategic slot; only diagnosis escalates
+            kind = "diagnose" if self.t.diagnosing else "normal"
+        else:
+            kind = round_kind(self.t, now, last_strategic=last_strategic(), cfg=self.cfg)
         try:
             self.herdr.start(pane, self.session, round_no, [*self.extra, *model_args(kind, self.cfg)])
         except RuntimeError as exc:
-            if kind != "diagnose":
+            if kind not in ("diagnose", "strategic"):
                 raise
             log(f"round {round_no}: strong-model launch failed, falling back to default: {exc}")
             self.herdr.start(pane, self.session, round_no, list(self.extra))
+            if kind == "strategic":  # no preamble, no strategic slot: the next round is normal
+                kind = "normal"
         text = self.prompt.format(round=round_no, script=SELF, lane_prefix=LANE_PREFIX)
         if kind == "diagnose":
             text = DIAGNOSE_PROMPT.format(reason=self.t.diagnose_reason, script=SELF) + text
@@ -574,7 +583,7 @@ class Supervisor:
         rc, out = self.herdr.prompt(text)
         if rc:
             raise RuntimeError(f"round prompt refused: {out[:300]}")
-        if kind == "strategic":  # recorded only once the round really launched
+        if kind == "strategic" and not self.trial:  # recorded only once the round really launched
             _dump(STATE / "strategic.json", {"at": now, "round": round_no})
         news("round", f"Round {round_no} started")
         log(f"round {round_no} started session={self.session} tab={self.tab} main={sha[:8]}")
