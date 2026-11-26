@@ -232,8 +232,7 @@ class SectionTypingTests(unittest.TestCase):
 
     def test_list_fence_ends_at_unindented_paragraph(self):
         paras = [p for *_, p in a._sections('# Methods\n\n- ```\n  code\n\nOwn para.\n', H)]
-        self.assertEqual(paras[-1], 'Own para.', paras)
-        self.assertEqual(len(paras), 2, paras)
+        self.assertEqual(paras, ['Own para.'])
 
     def test_blank_line_inside_list_fence_keeps_it_open(self):
         rows = types('# Methods\n\n- ```\n  a\n\n  # Results\n  ```\n\nTail.\n')
@@ -246,12 +245,12 @@ class SectionTypingTests(unittest.TestCase):
               'Beta two.\n')
         rows = types(md)
         self.assertTrue(all((t, ix) == ('methods', 1) for t, ix, _ in rows), rows)
-        self.assertTrue(all('```' in s for *_, s in rows if '# Results' in s), rows)
+        self.assertFalse(any('# Results' in s or '```' in s for *_, s in rows), rows)
         self.assertEqual(rows[-1][2], 'Beta two.')
         # a ``` at the outer column does not close the inner fence, it leaves the item
         paras = [p for *_, p in a._sections(
             '- outer\n  - inner\n    ```\n    code\n  ```\n  # Results\n  ```\n', H)]
-        self.assertTrue(all('# Results' not in p or '```' in p for p in paras), paras)
+        self.assertEqual(paras, ['- outer\n  - inner'], paras)
 
     def test_outer_continuation_fence_after_nested_item(self):
         md = ('# Methods\n\n- outer\n  - inner\n\n  ```\n  # Results\n  ```\n\n'
@@ -269,6 +268,37 @@ class SectionTypingTests(unittest.TestCase):
         # unindented "# Results" does not leave
         rows = types('# Methods\n\n- outer\n  - inner\n\nPlain.\n\n  ```\n# Results\n')
         self.assertTrue(all((t, ix) == ('methods', 1) for t, ix, _ in rows), rows)
+
+    def test_fenced_text_is_not_sentences(self):
+        # LLM-built synthetic fixtures: top-level, blockquote and list-item fences
+        cases = (('```', 'code line one. code two.', '```'),
+                 ('~~~', 'tilde code. more.', '~~~~'),
+                 ('> ```', '> quoted code. more.', '> ```'),
+                 ('- ```', '  item code. more.', '  ```'))
+        for open_, inner, close in cases:
+            md = f'# Methods\n\nAlpha one.\n\n{open_}\n{inner}\n{close}\n\nBeta two.\n'
+            self.assertEqual(types(md), [('methods', 1, 'Alpha one.'),
+                                         ('methods', 1, 'Beta two.')], open_)
+
+    def test_fence_only_paragraph_yields_nothing(self):
+        self.assertEqual(list(a._sections('# Methods\n\n```\nx = 1.\n```\n', H)), [])
+
+    def test_prose_around_fence_in_one_paragraph(self):
+        rows = types('# Methods\n\nBefore it.\n```\ncode here.\n```\nAfter it.\n')
+        self.assertEqual([(t, ix) for t, ix, _ in rows], [('methods', 1)] * len(rows), rows)
+        text = ' '.join(s for *_, s in rows)
+        self.assertIn('Before it.', text)
+        self.assertIn('After it.', text)
+        self.assertNotIn('code', text)
+        self.assertNotIn('```', text)
+
+    def test_unclosed_fence_excluded_to_end(self):
+        rows = types('# Methods\n\nAlpha one.\n\n```\ncode.\n\n# Results\n\nTail.\n')
+        self.assertEqual(rows, [('methods', 1, 'Alpha one.')])
+
+    def test_fenced_heading_still_not_heading_when_excluded(self):
+        rows = types('# Methods\n\n~~~\n# Results\n~~~\n\nBeta two.\n')
+        self.assertEqual(rows, [('methods', 1, 'Beta two.')])
 
 if __name__ == '__main__':
     unittest.main()
