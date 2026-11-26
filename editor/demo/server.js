@@ -418,8 +418,21 @@ export function refusalReason(req, port) {
 /**
  * @param {import('node:http').IncomingMessage} req
  * @param {import('node:http').ServerResponse} res
- * @param {{ dir: string, correctionsDir: string, report: { file: string, name: string, labels: string | null } | null, importMap: { imports: Record<string, string> } }} ctx
+ * @param {{ dir: string, correctionsDir: string, genreFallback?: string | null, report: { file: string, name: string, labels: string | null } | null, importMap: { imports: Record<string, string> } }} ctx
  */
+/**
+ * The genre file: the sample folder's own genre.json, else the fallback (the demo's by default;
+ * `startServer({ genreFallback: null })` disables it). Null when neither exists.
+ * @param {{ dir: string, genreFallback?: string | null }} ctx
+ * @returns {string | null}
+ */
+function genrePath(ctx) {
+  const own = join(ctx.dir, 'genre.json');
+  if (existsSync(own)) return own;
+  const fallback = ctx.genreFallback;
+  return fallback && existsSync(fallback) ? fallback : null;
+}
+
 async function handle(req, res, ctx) {
   const url = new URL(req.url ?? '/', 'http://127.0.0.1');
   const pathname = url.pathname;
@@ -465,9 +478,7 @@ async function handle(req, res, ctx) {
   }
   if (pathname === '/api/genre') {
     // DE-06: the genre file (moves + stored legend, I3); same folder/fallback lookup as legend.json.
-    const own = join(ctx.dir, 'genre.json');
-    const fallback = join(DEFAULT_DIR, 'genre.json');
-    const file = existsSync(own) ? own : (existsSync(fallback) ? fallback : null);
+    const file = genrePath(ctx);
     if (!file) return sendError(res, 404, 'genre.json not found');
     return send(res, 200, MIME['.json'], await readFile(file, 'utf8'));
   }
@@ -524,9 +535,13 @@ async function handle(req, res, ctx) {
       const text = await readBody(req);
       let list;
       try { list = JSON.parse(text); } catch { return sendError(res, 400, 'body must be JSON'); }
-      const own = join(ctx.dir, 'genre.json');
-      const genreFile = existsSync(own) ? own : join(DEFAULT_DIR, 'genre.json');
-      const genre = JSON.parse(await readFile(genreFile, 'utf8'));
+      // IN-05 residual: a missing or malformed genre.json is a clear JSON error, not a crash.
+      const genreFile = genrePath(ctx);
+      if (!genreFile) return sendError(res, 404, 'genre.json not found');
+      let genre;
+      try { genre = JSON.parse(await readFile(genreFile, 'utf8')); } catch {
+        return sendError(res, 400, 'genre.json is not valid JSON');
+      }
       const ids = new Set((Array.isArray(genre.moves) ? genre.moves : []).map((/** @type {any} */ m) => m && m.id));
       try { checkCorrections(list, ids); } catch (err) {
         return sendError(res, 400, /** @type {Error} */ (err).message);
@@ -572,7 +587,7 @@ async function handle(req, res, ctx) {
 }
 
 /**
- * @param {{ dir?: string, report?: string, labels?: string, port?: number, host?: string, correctionsDir?: string }} [opts]
+ * @param {{ dir?: string, report?: string, labels?: string, port?: number, host?: string, correctionsDir?: string, genreFallback?: string | null }} [opts]
  * @returns {Promise<{ server: import('node:http').Server, url: string, port: number, dir: string, report: { file: string, name: string, labels: string | null } | null, importMap: { imports: Record<string, string> }, close: () => Promise<void> }>}
  */
 export async function startServer(opts = {}) {
@@ -583,6 +598,7 @@ export async function startServer(opts = {}) {
   const info = await stat(dir);
   if (!info.isDirectory()) throw new Error(`sample folder is not a directory: ${dir}`);
   const correctionsDir = resolve(opts.correctionsDir ?? process.env.DEMO_CORRECTIONS_DIR ?? DEFAULT_CORRECTIONS_DIR);
+  const genreFallback = opts.genreFallback === undefined ? join(DEFAULT_DIR, 'genre.json') : opts.genreFallback;
   const port = opts.port ?? 0;
   const host = opts.host ?? '127.0.0.1';
   const importMap = await buildImportMap();
@@ -595,7 +611,7 @@ export async function startServer(opts = {}) {
       req.resume();
       return;
     }
-    handle(req, res, { dir, correctionsDir, report, importMap }).catch((err) => {
+    handle(req, res, { dir, correctionsDir, genreFallback, report, importMap }).catch((err) => {
       if (!res.headersSent) sendError(res, /** @type {any} */ (err).status ?? 500, err instanceof Error ? err.message : String(err));
       else res.end();
     });
