@@ -2,8 +2,8 @@
 // LG-02: legend CSS read straight from the genre file, one rule per move in file order
 // (invariant I3: the legend is fixed per genre and never computed). Colours are copied from
 // legend.colors / legend.other verbatim (lowercased hex); nothing here derives, generates or
-// defaults a colour. Unwired by design until AP-01 loads the genre file in the app and link
-// this stylesheet; createEditor does not install it.
+// defaults a colour. Production caller: editor/demo/app.js (DE-06); AP-01 wires it in the app.
+// createEditor does not install it.
 const HEX = /^#[0-9a-fA-F]{6}$/;
 
 /**
@@ -88,7 +88,7 @@ export function legendCss(genre) {
  * name, definition), then the neutral `other` entry. All text goes through textContent; nothing is
  * parsed as HTML and no colour is derived. Same validation and errors as legendCss, plus
  * moves[i].name / moves[i].definition must be non-empty strings (service/genre.py).
- * Unwired by design until AP-01/AP-03 load the genre file and the app shell (RE-10) mounts it.
+ * Production caller: editor/demo/app.js (DE-06); AP-01/AP-03 and RE-10 wire it in the app.
  * @param {any} genre
  * @param {{ document: Document }} opts
  * @returns {HTMLElement}

@@ -1,7 +1,8 @@
 // @ts-check
 // DE-02: the thin demo page. One document at a time; no corpus loop.
 import { createEditor } from '../src/index.js';
-import { moveOverlayPlugin, legendItems } from './overlay.js';
+import { moveOverlayPlugin } from './overlay.js';
+import { legendCss, renderLegendPanel } from '../src/legend.js';
 
 const byId = (id) => /** @type {HTMLElement} */ (document.getElementById(id));
 const ui = {
@@ -10,7 +11,8 @@ const ui = {
   source: /** @type {HTMLButtonElement} */ (byId('source-btn')),
   status: byId('status'),
   root: byId('editor'),
-  legendList: /** @type {HTMLUListElement} */ (byId('legend-list')),
+  legendMount: byId('legend-panel'),
+  legendStyle: /** @type {HTMLStyleElement} */ (byId('legend-css')),
 };
 
 /** @type {{ editor: Awaited<ReturnType<typeof createEditor>> | null, sample: string | null }} */
@@ -18,7 +20,7 @@ const state = { editor: null, sample: null };
 /** @type {{ block: number, move: string }[]} */
 let moves = [];
 /** @type {any} */
-let legend = null;
+let genre = null;
 let loadToken = 0;
 
 /** @param {string} message @param {boolean} [bad] */
@@ -34,19 +36,13 @@ async function getJson(url) {
   return res.json();
 }
 
+/**
+ * DE-06: the legend panel is LG-07's renderLegendPanel output and the overlay colours are LG-02's
+ * legendCss stylesheet, both read from the stored genre file (I3).
+ */
 function renderLegend() {
-  ui.legendList.replaceChildren();
-  for (const item of legendItems(legend)) {
-    const li = document.createElement('li');
-    li.dataset.move = item.move;
-    const swatch = document.createElement('span');
-    swatch.className = 'swatch';
-    swatch.style.background = item.colour;
-    const text = document.createElement('span');
-    text.textContent = `${item.label} — ${item.move}`;
-    li.append(swatch, text);
-    ui.legendList.append(li);
-  }
+  ui.legendStyle.textContent = legendCss(genre);
+  ui.legendMount.replaceChildren(renderLegendPanel(genre, { document }));
 }
 
 function updateSourceButton() {
@@ -73,7 +69,7 @@ async function load(name) {
   ui.root.replaceChildren();
   const editor = await createEditor({ root: ui.root, markdown });
   if (token !== loadToken) { await editor.destroy(); return; }
-  const plugin = moveOverlayPlugin(() => moves, () => legend);
+  const plugin = moveOverlayPlugin(() => moves, () => genre);
   editor.view.updateState(editor.view.state.reconfigure({
     plugins: [...editor.view.state.plugins, plugin],
   }));
@@ -123,8 +119,11 @@ function toggleSource() {
 
 async function init() {
   try {
-    legend = await getJson('/api/legend');
+    // legend.json stays the provisional-marking record (and a report folder's own override);
+    // its colours are no longer read. The genre file drives panel and overlay colours.
+    const legend = await getJson('/api/legend');
     if (legend.provisional !== true) setStatus('Legend is not marked provisional', true);
+    genre = await getJson('/api/genre');
     renderLegend();
     const listing = await getJson('/api/samples');
     for (const name of listing.samples) {

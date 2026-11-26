@@ -1,5 +1,5 @@
-/* DE-02: demo layout and provisional move styling. Colour values come from legend.json through
-   the decoration's --move-colour custom property; the permanent legend is LG-01's job. */
+/* DE-02/DE-06: demo layout and provisional move styling. Colour values come from the genre file
+   through legendCss's per-kind --signal-color rules (I3); this file sets no move colour. */
 :root {
   color-scheme: light dark;
   font: 15px/1.5 system-ui, -apple-system, Segoe UI, sans-serif;
@@ -93,7 +93,28 @@ body {
   gap: 0.5rem;
 }
 
-.legend .swatch {
+.legend .legend-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.legend .legend-entry {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 0.5rem;
+  align-items: center;
+}
+
+.legend .legend-definition {
+  grid-column: 2;
+  font-size: 0.8rem;
+  opacity: 0.75;
+}
+
+.legend .legend-swatch {
   width: 0.9rem;
   height: 0.9rem;
   border-radius: 3px;
@@ -101,9 +122,9 @@ body {
   flex: none;
 }
 
-/* One decoration per labelled block carries these classes and the legend colour. */
+/* One decoration per labelled block; legendCss sets its --signal-color by data-signal-kind. */
 .move {
-  box-shadow: inset 3px 0 0 var(--move-colour);
+  box-shadow: inset 3px 0 0 var(--signal-color, transparent);
   padding-left: 0.55rem;
 }
 

@@ -28,6 +28,9 @@ test('GET a sample, PUT a one-paragraph edit, and only that paragraph line chang
     // A real report folder may have no legend; the demo's provisional legend is the fallback.
     const legend = await (await fetch(new URL('api/legend', run.url))).json();
     assert.equal(legend.provisional, true);
+    // DE-06: the genre file falls back the same way and drives the legend panel/colours.
+    const genre = await (await fetch(new URL('api/genre', run.url))).json();
+    assert.deepEqual(genre.moves.map((m) => m.id), Object.keys(legend.moves));
 
     const oldLine = 'A team keeps a short weekly report. The *content* here is invented.';
     const newLine = 'A team keeps a short monthly report. The *content* here is invented.';
