@@ -53,11 +53,50 @@ export function signalAttrs(el) {
 const anchorId = (id) => `method-${id}`;
 
 /**
+ * @typedef {{ from: string | null, to: string, count: number, of: number,
+ *   fromName?: string, toName?: string }} SequenceEvidence
+ */
+
+/**
+ * IN-02: the evidence sentence for one transition (pattern fit, not a verdict). Pure.
+ * @param {SequenceEvidence} ev
+ */
+export function evidenceSentence(ev) {
+  const to = ev.toName ?? ev.to;
+  const from = ev.fromName ?? ev.from;
+  if (ev.from === null) return `${to} opens the report in ${ev.count} of ${ev.of} samples`;
+  if (!ev.count) return `No sample has ${to} after ${from}`;
+  return `${to} follows ${from} in ${ev.count} of ${ev.of} samples`;
+}
+
+/**
+ * IN-02: the sequence-evidence section of the inspector. Labels say synthetic, LLM-built samples
+ * and pattern fit, not a verdict (I8). No colours (I3).
+ * @param {Document} doc @param {SequenceEvidence} ev
+ */
+export function renderSequenceEvidence(doc, ev) {
+  const section = doc.createElement('section');
+  section.className = 'inspector-evidence';
+  const h = doc.createElement('h3');
+  h.textContent = 'Sequence evidence (synthetic samples, LLM-built)';
+  const p = doc.createElement('p');
+  p.className = 'inspector-evidence-text';
+  p.textContent = evidenceSentence(ev);
+  const note = doc.createElement('p');
+  note.className = 'inspector-evidence-note';
+  note.textContent = 'Pattern fit, not a verdict.';
+  section.append(h, p, note);
+  return section;
+}
+
+/**
  * The inspector panel for one signal, or "No signal here" for null. I8: says pattern fit.
+ * IN-02: an optional `evidence` adds the sequence-evidence section.
  * @param {Document} doc
  * @param {ReturnType<typeof inspectSignal>} info
+ * @param {SequenceEvidence | null} [evidence]
  */
-export function renderInspector(doc, info) {
+export function renderInspector(doc, info, evidence = null) {
   const aside = doc.createElement('aside');
   aside.className = 'inspector';
   aside.setAttribute('aria-live', 'polite');
@@ -86,6 +125,7 @@ export function renderInspector(doc, info) {
   link.href = `#${anchorId(info.methodId)}`;
   link.textContent = 'Method';
   aside.append(dl, note, link);
+  if (evidence) aside.append(renderSequenceEvidence(doc, evidence));
   return aside;
 }
 
@@ -116,16 +156,19 @@ export function renderMethodTexts(doc, genre) {
 /**
  * Wire an inspector panel to an editor DOM: mouseover shows the hovered mark, mouseleave falls
  * back to the selection's mark; `update(view)` reads the selection. O(1) per event.
+ * IN-02: optional `getEvidence(el)` supplies sequence evidence for a move mark.
  * @param {HTMLElement} editorDom @param {HTMLElement} mount @param {() => any} getGenre
+ * @param {(el: Element) => SequenceEvidence | null} [getEvidence]
  */
-export function mountInspector(editorDom, mount, getGenre) {
+export function mountInspector(editorDom, mount, getGenre, getEvidence) {
   const doc = mount.ownerDocument;
   /** @type {Element | null} */
   let selected = null;
   /** @param {Element | null} el */
   const show = (el) => {
     const info = el ? inspectSignal(signalAttrs(el), getGenre()) : null;
-    mount.replaceChildren(renderInspector(doc, info));
+    const ev = el && info && getEvidence ? getEvidence(el) : null;
+    mount.replaceChildren(renderInspector(doc, info, ev));
   };
   /** @param {Event} e */
   const over = (e) => {
