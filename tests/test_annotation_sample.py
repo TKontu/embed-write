@@ -300,5 +300,36 @@ class SectionTypingTests(unittest.TestCase):
         rows = types('# Methods\n\n~~~\n# Results\n~~~\n\nBeta two.\n')
         self.assertEqual(rows, [('methods', 1, 'Beta two.')])
 
+    # LLM-built synthetic fixtures: CommonMark indented code blocks (top level)
+    def test_indented_code_after_blank_yields_nothing(self):
+        rows = types('# Methods\n\nAlpha one.\n\n    code line one. code two.\n\nBeta two.\n')
+        self.assertEqual(rows, [('methods', 1, 'Alpha one.'), ('methods', 1, 'Beta two.')])
+
+    def test_tab_indented_code_yields_nothing(self):
+        for lead in ('\t', '  \t'):
+            md = f'# Methods\n\nAlpha one.\n\n{lead}tab code. more.\n\nBeta two.\n'
+            self.assertEqual(types(md), [('methods', 1, 'Alpha one.'),
+                                         ('methods', 1, 'Beta two.')], repr(lead))
+
+    def test_blank_line_inside_indented_code_keeps_it(self):
+        md = '# Methods\n\n    first code.\n\n      second code.\n\nBeta two.\n'
+        self.assertEqual(types(md), [('methods', 1, 'Beta two.')])
+
+    def test_indented_code_right_after_heading(self):
+        self.assertEqual(types('# Methods\n    code here.\n\nBeta two.\n'),
+                         [('methods', 1, 'Beta two.')])
+
+    def test_indented_line_after_paragraph_is_continuation(self):
+        rows = types('# Methods\n\nAlpha one\n    continues here.\n')
+        self.assertEqual(' '.join(s for *_, s in rows).split(), 'Alpha one continues here.'.split())
+
+    def test_indented_hash_is_not_heading(self):
+        rows = types('# Methods\n\nAlpha one.\n\n    # Results\n\nBeta two.\n')
+        self.assertEqual(rows, [('methods', 1, 'Alpha one.'), ('methods', 1, 'Beta two.')])
+
+    def test_list_item_continuation_not_code(self):
+        rows = types('# Methods\n\n- Item one.\n\n    Item more.\n')
+        self.assertIn('Item more.', ' '.join(s for *_, s in rows))
+
 if __name__ == '__main__':
     unittest.main()
