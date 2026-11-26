@@ -10,7 +10,7 @@ import { setupDom } from './dom.js';
 setupDom();
 const { createEditor } = await import('../src/index.js');
 const { legendCss } = await import('../src/legend.js');
-const { minimapSegments, renderMinimap, mountMinimap } = await import('../src/minimap.js');
+const { minimapSegments, renderMinimap, mountMinimap, mountCollapsibleMinimap } = await import('../src/minimap.js');
 
 const dir = fileURLToPath(new URL('../../examples/demo/', import.meta.url));
 const genre = JSON.parse(readFileSync(join(dir, 'genre.json'), 'utf8'));
@@ -87,6 +87,49 @@ test('(e) demo wiring mounts the strip for each sample and re-renders on switch'
         await editor.destroy();
         root.remove();
       }
+    }
+  } finally {
+    mount.remove();
+  }
+});
+
+test('OV-04 collapsible strip: collapsed by default, toggles, keeps state on re-mount', () => {
+  const mount = document.body.appendChild(document.createElement('div'));
+  mount.id = 'minimap';
+  try {
+    const moves = [{ block: 0, move: 'context' }, { block: 1, move: 'method' }];
+    let { button, strip } = mountCollapsibleMinimap(mount, moves, 2, genre);
+    // (a) default collapsed
+    assert.equal(strip.hidden, true);
+    assert.equal(button.getAttribute('aria-expanded'), 'false');
+    // (d) aria-controls names the strip
+    assert.equal(strip.id, 'minimap-strip');
+    assert.equal(button.getAttribute('aria-controls'), strip.id);
+    assert.equal(document.getElementById(button.getAttribute('aria-controls')), strip);
+    // (b) click expands, click again collapses
+    button.click();
+    assert.equal(strip.hidden, false);
+    assert.equal(button.getAttribute('aria-expanded'), 'true');
+    button.click();
+    assert.equal(strip.hidden, true);
+    assert.equal(button.getAttribute('aria-expanded'), 'false');
+    // (c) re-mount (sample change) preserves state, both expanded and collapsed
+    button.click();
+    ({ button, strip } = mountCollapsibleMinimap(mount, [{ block: 0, move: 'gap' }], 3, genre));
+    assert.equal(mount.querySelectorAll('.minimap').length, 1);
+    assert.equal(mount.querySelectorAll('.minimap-toggle').length, 1);
+    assert.equal(strip.hidden, false);
+    assert.equal(button.getAttribute('aria-expanded'), 'true');
+    assert.equal(strip.querySelectorAll('.minimap-segment').length, 2);
+    button.click();
+    ({ button, strip } = mountCollapsibleMinimap(mount, moves, 2, genre, { expanded: true }));
+    assert.equal(strip.hidden, true, 'stored state wins over the seed option');
+    // the option seeds a fresh mount
+    const fresh = document.body.appendChild(document.createElement('div'));
+    try {
+      assert.equal(mountCollapsibleMinimap(fresh, moves, 2, genre, { expanded: true }).strip.hidden, false);
+    } finally {
+      fresh.remove();
     }
   } finally {
     mount.remove();
