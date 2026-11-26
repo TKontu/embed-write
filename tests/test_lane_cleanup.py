@@ -71,6 +71,23 @@ def clean(fake, go=True, handoff=""):
     )
 
 
+class LanePrefixTests(unittest.TestCase):
+    def _root(self, toml):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name) / "My Repo"
+        (root / ".agent").mkdir(parents=True)
+        (root / ".agent" / "config.toml").write_text(toml)
+        return root
+
+    def test_non_table_supervisor_falls_back_to_root_name(self):
+        self.assertEqual(lc.lane_prefix(self._root('supervisor = "x"\n')), "live-my-repo-")
+
+    def test_supervisor_name_still_wins(self):
+        root = self._root('[supervisor]\nname = "Alpha"\n')
+        self.assertEqual(lc.lane_prefix(root), "live-alpha-")
+
+
 class WorktreeTests(unittest.TestCase):
     def test_removes_a_merged_lane_worktree_but_never_the_main_checkout(self):
         fake = Fake({f"{LANES}/r1-a1": "task/a"}, {"task/a": ["MERGED"]})

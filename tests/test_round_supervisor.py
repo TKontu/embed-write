@@ -225,6 +225,7 @@ class StateTests(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.tmp = Path(tmp.name)
+        rs._WARNED.clear()  # warn_once state must not leak between tests
         for name in ("STATE", "ROOT"):
             patcher = mock.patch.object(rs, name, self.tmp)
             patcher.start()
@@ -576,6 +577,18 @@ class HerdrTests(unittest.TestCase):
 
 class RepoNameTests(unittest.TestCase):
     """Herdr names are global, so two repos' loops must never share one."""
+
+    def setUp(self):
+        rs._WARNED.clear()  # warn_once state must not leak between tests
+
+    def test_non_table_project_section_uses_default_branch(self):
+        import io
+        with mock.patch("sys.stderr", new_callable=io.StringIO) as err:
+            section = rs.project_section({"project": "x"})
+        self.assertEqual(section.get("default_branch", "main"), "main")
+        self.assertIn("[project]", err.getvalue())
+        self.assertEqual(rs.project_section({"project": {"default_branch": "dev"}}),
+                         {"default_branch": "dev"})
 
     def test_names_carry_the_repo_slug(self):
         names = rs.repo_names(Path("/work/My Repo.v2"), {})

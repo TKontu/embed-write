@@ -64,9 +64,11 @@ def lane_prefix(root: Path = ROOT) -> str:
     """Same naming rule as round_supervisor.repo_names: live-<slug>-."""
     try:
         with (root / ".agent" / "config.toml").open("rb") as fh:
-            raw = tomllib.load(fh).get("supervisor", {}).get("name")
+            section = tomllib.load(fh).get("supervisor", {})
     except OSError:
-        raw = None
+        section = {}
+    # A non-table `supervisor = "x"` is treated as empty, as in round_supervisor.
+    raw = section.get("name") if isinstance(section, dict) else None
     slug = re.sub(r"[^a-z0-9]+", "-", str(raw or root.name).lower()).strip("-") or "repo"
     return f"live-{slug}-"
 
