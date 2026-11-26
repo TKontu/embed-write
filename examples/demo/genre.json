@@ -1,0 +1,44 @@
+{
+  "_note": "Synthetic, provisional demo genre file (LLM-built placeholder). These four moves are not the expert's inventory and no label is a finding about real text.",
+  "genre": "demo-synthetic",
+  "version": 1,
+  "moves": [
+    {
+      "id": "context",
+      "name": "Context",
+      "definition": "Sets out the background the report starts from.",
+      "positive_examples": ["The site has been monitored since 2019.", "Earlier phases covered the northern block."],
+      "near_miss": "A restatement of the method under a background heading."
+    },
+    {
+      "id": "gap",
+      "name": "Gap",
+      "definition": "Names what is missing or unresolved in the background.",
+      "positive_examples": ["No survey has covered the southern block.", "The cause of the drift remains unclear."],
+      "near_miss": "A limitation of this study's own method."
+    },
+    {
+      "id": "method",
+      "name": "Method",
+      "definition": "Describes how the work was carried out.",
+      "positive_examples": ["Samples were taken at ten points.", "Readings were logged hourly for a month."],
+      "near_miss": "A result reported with its measurement unit."
+    },
+    {
+      "id": "finding",
+      "name": "Finding",
+      "definition": "States what the work found.",
+      "positive_examples": ["Drift was highest near the outlet.", "Readings stayed within the limit."],
+      "near_miss": "An expectation stated before the work began."
+    }
+  ],
+  "legend": {
+    "colors": {
+      "context": "#4f7cac",
+      "gap": "#c0504d",
+      "method": "#4f9d69",
+      "finding": "#d08b2c"
+    },
+    "other": "#9a9a9a"
+  }
+}

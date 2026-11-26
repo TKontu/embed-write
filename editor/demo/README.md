@@ -41,7 +41,9 @@ npm run demo -- --dir /path/to/reports --port 8000
 The folder may also contain:
 
 - `<report>.moves.json` — `[{ "block": 0, "move": "finding" }]`, 0-based top-level block index;
-- `legend.json` — `{ "provisional": true, "moves": { "finding": { "label": "...", "colour": "#..." } } }`.
+- `genre.json` — a genre file in the service/genre.py schema (DE-06); its moves and stored legend
+  drive the legend panel (LG-07) and overlay colours (LG-02 legendCss). Falls back to the demo's.
+- `legend.json` — provisional marking; `{ "provisional": true, "moves": { "finding": { "label": "...", "colour": "#..." } } }`.
 
 If the folder has no `legend.json`, the demo's provisional legend is used. Without a sidecar the
 report still opens and saves; it simply has no move labels.

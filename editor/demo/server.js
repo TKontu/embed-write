@@ -460,6 +460,14 @@ async function handle(req, res, ctx) {
     if (!file) return sendError(res, 404, 'legend.json not found');
     return send(res, 200, MIME['.json'], await readFile(file, 'utf8'));
   }
+  if (pathname === '/api/genre') {
+    // DE-06: the genre file (moves + stored legend, I3); same folder/fallback lookup as legend.json.
+    const own = join(ctx.dir, 'genre.json');
+    const fallback = join(DEFAULT_DIR, 'genre.json');
+    const file = existsSync(own) ? own : (existsSync(fallback) ? fallback : null);
+    if (!file) return sendError(res, 404, 'genre.json not found');
+    return send(res, 200, MIME['.json'], await readFile(file, 'utf8'));
+  }
   if (pathname.startsWith('/api/sample/')) {
     const name = decodeURIComponent(pathname.slice('/api/sample/'.length));
     if (req.method === 'GET') {
@@ -524,7 +532,7 @@ async function handle(req, res, ctx) {
 export async function startServer(opts = {}) {
   const report = opts.report !== undefined ? await resolveReport(opts.report, opts.labels) : null;
   if (!report && opts.labels !== undefined) throw new Error('--labels needs --report');
-  // In single-report mode the legend lookup uses the report's folder (legend.json there, else the demo's).
+  // In single-report mode the legend/genre lookup uses the report's folder (legend.json/genre.json there, else the demo's).
   const dir = report ? dirname(report.file) : resolve(opts.dir ?? DEFAULT_DIR);
   const info = await stat(dir);
   if (!info.isDirectory()) throw new Error(`sample folder is not a directory: ${dir}`);
