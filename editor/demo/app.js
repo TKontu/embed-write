@@ -6,6 +6,8 @@ import { isMoveOverlayOn, moveOverlayPlugin, selectedMoveGranularity, selectedMo
 import { DEFAULT_GRANULARITY, DEFAULT_OFF_SHORTCUT, DEFAULT_OVERLAY, OVERLAYS } from '../src/decorations.js';
 import { legendCss, renderLegendPanel } from '../src/legend.js';
 import { mountCollapsibleMinimap } from '../src/minimap.js';
+import { openIssues, renderIssues } from '../src/issues.js';
+import { Selection } from '@milkdown/prose/state';
 
 const byId = (id) => /** @type {HTMLElement} */ (document.getElementById(id));
 const ui = {
@@ -142,12 +144,37 @@ async function load(name) {
   state.editor = editor;
   // OV-01/OV-04: the move-sequence strip (legendCss colours, I3), collapsed until toggled.
   mountCollapsibleMinimap(ui.minimap, moves, editor.view.state.doc.childCount, genre);
+  // OV-03 (D-009 slice): missing moves and unlabeled passages under the minimap.
+  mountIssues(editor);
   ui.samples.value = name;
   updateSourceButton();
   updateOverlayButton(ui.overlay, isMoveOverlayOn(editor.view.state));
   ui.granularity.value = selectedMoveGranularity(editor.view.state);
   ui.overlaySelect.value = selectedMoveOverlaySelection(editor.view.state);
   setStatus(`Loaded ${name} — ${moves.length} provisional label${moves.length === 1 ? '' : 's'}; ${overlaySummary()}`);
+}
+
+/** @type {HTMLElement | null} */
+let issuesMount = null;
+
+/** OV-03: render the open-issues list; clicking an unlabeled passage selects and reveals its block. */
+function mountIssues(/** @type {any} */ editor) {
+  if (!issuesMount) {
+    issuesMount = document.createElement('div');
+    issuesMount.className = 'issues-mount';
+    ui.minimap.after(issuesMount);
+  }
+  const doc = editor.view.state.doc;
+  const issues = openIssues(moves, doc.childCount, genre);
+  issuesMount.replaceChildren(renderIssues(document, issues, (block) => {
+    const view = editor.view;
+    if (block >= view.state.doc.childCount) return;
+    let pos = 0;
+    for (let i = 0; i < block; i += 1) pos += view.state.doc.child(i).nodeSize;
+    const sel = Selection.near(view.state.doc.resolve(pos + 1));
+    view.dispatch(view.state.tr.setSelection(sel).scrollIntoView());
+    view.focus();
+  }));
 }
 
 async function save() {

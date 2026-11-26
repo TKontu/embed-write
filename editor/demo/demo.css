@@ -174,3 +174,18 @@ body {
   font-size: 0.75rem;
   margin-bottom: 0.25rem;
 }
+
+/* OV-03: open-issues list under the minimap. No colours (I3). */
+.issues-mount {
+  grid-column: 1 / -1;
+}
+
+.issues {
+  margin: 0.25rem 0;
+  padding-left: 1.25rem;
+  font-size: 0.8rem;
+}
+
+.issues button {
+  font: inherit;
+}
