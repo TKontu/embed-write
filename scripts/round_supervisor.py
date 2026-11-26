@@ -57,12 +57,31 @@ def project_config(root: Path = ROOT) -> dict[str, Any]:
         return {}
 
 
+_WARNED: set[str] = set()
+
+
+def warn_once(message: str) -> None:
+    """Print a config warning to stderr at most once per process."""
+    if message not in _WARNED:
+        _WARNED.add(message)
+        print(f"warning: {message}", file=sys.stderr)
+
+
+def supervisor_section(config: dict[str, Any]) -> dict[str, Any]:
+    """`[supervisor]` as a table; a non-table value is treated as empty, with one warning."""
+    section = config.get("supervisor", {})
+    if isinstance(section, dict):
+        return section
+    warn_once(f"[supervisor] must be a table, got {section!r}; using defaults")
+    return {}
+
+
 def repo_names(root: Path, config: dict[str, Any]) -> dict[str, str]:
     """Herdr agent names are global across projects, so every name carries this repo's slug.
 
     The slug is `[supervisor] name` from .agent/config.toml, else the checkout's directory name.
     """
-    raw = str(config.get("supervisor", {}).get("name") or root.name)
+    raw = str(supervisor_section(config).get("name") or root.name)
     slug = re.sub(r"[^a-z0-9]+", "-", raw.lower()).strip("-") or "repo"
     return {
         "slug": slug,
@@ -81,7 +100,7 @@ BRANCH = CONFIG.get("project", {}).get("default_branch", "main")
 # Unattended sessions cannot answer approval dialogs; `auto` lets the round run. Set
 # [supervisor] permission_mode in .agent/config.toml to choose another mode.
 PERMISSION_ARGS = (
-    "--permission-mode", CONFIG.get("supervisor", {}).get("permission_mode", "auto"),
+    "--permission-mode", supervisor_section(CONFIG).get("permission_mode", "auto"),
 )  # fmt: skip
 PROJECT_LOGS = Path.home() / ".claude" / "projects" / re.sub(r"[/.]", "-", str(ROOT))
 LIMIT_RE = re.compile(r"usage limit|limit reached|out of (extra )?usage|rate.limited", re.I)
@@ -1028,14 +1047,13 @@ def dry_run(cfg: Config) -> int:
 
 def config_from(project: dict[str, Any]) -> Config:
     """Config defaults, with `[supervisor] strong_model` from .agent/config.toml when set."""
-    supervisor = project.get("supervisor", {})
+    supervisor = supervisor_section(project)
     if "strong_model" not in supervisor:
         return Config()
     strong = supervisor["strong_model"]
     if isinstance(strong, str) and strong:
         return Config(strong_model=strong)
-    print(f"warning: [supervisor] strong_model must be a non-empty string, got {strong!r}; using default",
-          file=sys.stderr)  # fmt: skip
+    warn_once(f"[supervisor] strong_model must be a non-empty string, got {strong!r}; using default")
     return Config()
 
 
