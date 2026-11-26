@@ -412,6 +412,23 @@ class StateTests(unittest.TestCase):
         self.assertEqual(len(lines), 2)  # one per distinct bad value, never repeated
         self.assertIn("[supervisor]", lines[0])
 
+    def test_invalid_permission_mode_warns_once_and_uses_auto(self):
+        import io
+        for bad in (5, ""):
+            rs._WARNED.clear()
+            with self.subTest(value=bad), mock.patch("sys.stderr", new_callable=io.StringIO) as err:
+                cfg = {"supervisor": {"permission_mode": bad}}
+                self.assertEqual(rs.permission_args(cfg), ("--permission-mode", "auto"))
+                self.assertEqual(rs.permission_args(cfg), ("--permission-mode", "auto"))
+                lines = err.getvalue().splitlines()
+                self.assertEqual(len(lines), 1)
+                self.assertIn("permission_mode", lines[0])
+        with mock.patch("sys.stderr", new_callable=io.StringIO) as err:
+            cfg = {"supervisor": {"permission_mode": "acceptEdits"}}
+            self.assertEqual(rs.permission_args(cfg), ("--permission-mode", "acceptEdits"))
+            self.assertEqual(rs.permission_args({}), ("--permission-mode", "auto"))
+        self.assertEqual(err.getvalue(), "")
+
     def test_strong_model_warning_prints_once_per_process(self):
         import io
         rs._WARNED.clear()

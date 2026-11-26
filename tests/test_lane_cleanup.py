@@ -83,6 +83,9 @@ class LanePrefixTests(unittest.TestCase):
     def test_non_table_supervisor_falls_back_to_root_name(self):
         self.assertEqual(lc.lane_prefix(self._root('supervisor = "x"\n')), "live-my-repo-")
 
+    def test_invalid_toml_falls_back_to_root_name(self):
+        self.assertEqual(lc.lane_prefix(self._root("[supervisor\n")), "live-my-repo-")
+
     def test_supervisor_name_still_wins(self):
         root = self._root('[supervisor]\nname = "Alpha"\n')
         self.assertEqual(lc.lane_prefix(root), "live-alpha-")

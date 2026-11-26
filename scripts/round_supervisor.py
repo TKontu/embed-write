@@ -108,9 +108,18 @@ LANE_PREFIX = NAMES["lane_prefix"]
 BRANCH = project_section(CONFIG).get("default_branch", "main")
 # Unattended sessions cannot answer approval dialogs; `auto` lets the round run. Set
 # [supervisor] permission_mode in .agent/config.toml to choose another mode.
-PERMISSION_ARGS = (
-    "--permission-mode", supervisor_section(CONFIG).get("permission_mode", "auto"),
-)  # fmt: skip
+
+
+def permission_args(config: dict[str, Any]) -> tuple[str, str]:
+    """`--permission-mode` args; a non-string or empty value warns once and uses `auto`."""
+    mode = supervisor_section(config).get("permission_mode", "auto")
+    if not (isinstance(mode, str) and mode):
+        warn_once(f"[supervisor] permission_mode must be a non-empty string, got {mode!r}; using auto")
+        mode = "auto"
+    return ("--permission-mode", mode)
+
+
+PERMISSION_ARGS = permission_args(CONFIG)
 PROJECT_LOGS = Path.home() / ".claude" / "projects" / re.sub(r"[/.]", "-", str(ROOT))
 LIMIT_RE = re.compile(r"usage limit|limit reached|out of (extra )?usage|rate.limited", re.I)
 SELF = Path(__file__).resolve()
