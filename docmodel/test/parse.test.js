@@ -108,7 +108,14 @@ test('code fence containing Markdown stays one literal code_block', () => {
 });
 
 test('thematic_break', () => {
-  assert.deepEqual(blocks('a\n\n***\n\nb')[1], { type: 'thematic_break' });
+  assert.deepEqual(blocks('a\n\n***\n\nb')[1], { type: 'thematic_break', attrs: { marker: '***' } });
+});
+
+// FM-07: the source rule marker is recorded so serialization can reproduce it.
+test('thematic_break records its source marker', () => {
+  for (const m of ['---', '***', '___']) {
+    assert.equal(blocks(`a\n\n${m}\n\nb`)[1].attrs.marker, m);
+  }
 });
 
 test('html_block', () => {

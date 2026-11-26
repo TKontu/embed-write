@@ -107,7 +107,7 @@ test('"``` " without language makes a plain code block', async () => {
 });
 
 for (const s of ['---', '***', '___']) {
-  test(`"${s}" on an empty paragraph makes a thematic break and an empty paragraph`, async () => {
+  test(`"${s}" on an empty paragraph makes a thematic break with a ${s} marker`, async () => {
     const r = await run('after\n', 1, (ed) => {
       ed.view.dispatch(ed.view.state.tr.insert(0, ed.view.state.schema.nodes.paragraph.create()));
       caret(ed, 1); type(ed, s);
@@ -117,7 +117,8 @@ for (const s of ['---', '***', '___']) {
       type(ed, 'next');
     });
     assert.equal(r.doc.firstChild.type.name, 'thematic_break');
-    assert.equal(r.md, '***\n\nnext\n\nafter\n');
+    assert.equal(r.doc.firstChild.attrs.marker, s);
+    assert.equal(r.md, `${s}\n\nnext\n\nafter\n`);
   });
 }
 

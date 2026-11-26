@@ -85,8 +85,11 @@ function block(node, ctx) {
         fence: m ? m[1] : '',
       }, node.value ? schema.text(node.value) : []);
     }
-    case 'thematicBreak':
-      return schema.node('thematic_break');
+    case 'thematicBreak': {
+      // FM-07: keep the source marker (---, ***, ___) so serialization reproduces the line.
+      const m = /^ {0,3}([-*_])\1{2}/.exec(src.slice(startOffset(node)));
+      return schema.node('thematic_break', m ? { marker: m[1].repeat(3) } : null);
+    }
     case 'html':
       return schema.node('html_block', { value: node.value });
     case 'table': {
