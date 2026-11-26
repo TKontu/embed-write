@@ -10,7 +10,21 @@ The server prints its localhost URL. Open it; the page lists the `.md` files in 
 folder, loads one into the editor, shows the provisional move overlay and saves edits through
 `atomicWrite`.
 
-## Sample folder (DE-05 swap)
+## One real report (DE-05 swap, D-011)
+
+Swapping in a real report is this single step:
+
+```sh
+npm run demo -- --report "/path/to/Any Report.md"
+npm run demo -- --report "/path/to/Any Report.md" --labels /path/to/labels.json
+```
+
+The page lists exactly that file (any name, including spaces and non-ASCII), opens it, and saves
+edits back to that same file through `atomicWrite`; every other name is refused. Labels come from
+`--labels`, else `<report>.moves.json` beside the report, else none. The legend says the labels are
+provisional (not "synthetic"); `legend.json` beside the report is used if present.
+
+## Sample folder
 
 The default folder is `examples/demo`. A real report folder is one argument or env var away:
 

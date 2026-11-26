@@ -3,12 +3,13 @@
 // DE-02/DE-03/DE-05: localhost-only demo server.
 // - Serves the demo page, the editor modules and existing node_modules to the browser offline.
 // - Saves Markdown through atomicWrite and never outside the configured sample folder.
-// - Takes the sample folder from `--dir` or DEMO_DIR (one-step swap for a real report folder).
+// - Takes the sample folder from `--dir` or DEMO_DIR, or one report file from `--report`
+//   (optionally `--labels`): the one-step swap for a real report (D-011).
 // No new dependency is used: the import map is generated from the installed module graph.
 import { createServer } from 'node:http';
 import { realpath, readFile, readdir, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { dirname, extname, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { atomicWrite } from '../src/autosave.js';
 
@@ -61,6 +62,37 @@ export async function writeSampleText(dir, name, text) {
   if (typeof text !== 'string') throw Object.assign(new Error('body must be text'), { status: 400 });
   await atomicWrite(join(dir, name), text);
 }
+
+/**
+ * Single-report mode: exactly one Markdown file, addressed by its own base name (any characters).
+ * Labels come from `labels`, else `<report>.moves.json` beside it, else none.
+ * @param {string} reportPath @param {string} [labelsPath]
+ * @returns {Promise<{ file: string, name: string, labels: string | null }>}
+ */
+export async function resolveReport(reportPath, labelsPath) {
+  const file = resolve(reportPath);
+  if (!file.endsWith('.md')) throw new Error(`report must be a .md file: ${file}`);
+  if (!(await stat(file)).isFile()) throw new Error(`report is not a file: ${file}`);
+  let labels = null;
+  if (labelsPath !== undefined) {
+    labels = resolve(labelsPath);
+    if (!(await stat(labels)).isFile()) throw new Error(`labels is not a file: ${labels}`);
+  } else {
+    const beside = join(dirname(file), sidecarName(basename(file)));
+    if (existsSync(beside)) labels = beside;
+  }
+  return { file, name: basename(file), labels };
+}
+
+/** @param {{ name: string }} report @param {unknown} name */
+function checkReportName(report, name) {
+  if (name !== report.name) {
+    throw Object.assign(new Error(`only ${report.name} is served in single-report mode`), { status: 404 });
+  }
+}
+
+export const SYNTHETIC_LEGEND = 'Provisional labels: synthetic';
+export const REPORT_LEGEND = 'Provisional labels: unreviewed placeholders';
 
 /** @param {string} root @param {string} rel @returns {string} */
 function safeJoin(root, rel) {
@@ -383,7 +415,7 @@ export function refusalReason(req, port) {
 /**
  * @param {import('node:http').IncomingMessage} req
  * @param {import('node:http').ServerResponse} res
- * @param {{ dir: string, importMap: { imports: Record<string, string> } }} ctx
+ * @param {{ dir: string, report: { file: string, name: string, labels: string | null } | null, importMap: { imports: Record<string, string> } }} ctx
  */
 async function handle(req, res, ctx) {
   const url = new URL(req.url ?? '/', 'http://127.0.0.1');
@@ -392,11 +424,32 @@ async function handle(req, res, ctx) {
   if (pathname === '/' || pathname === '/index.html') {
     const html = await readFile(join(EDITOR_DIR, 'demo', 'index.html'), 'utf8');
     const map = JSON.stringify(ctx.importMap).replace(/</g, '\\u003c');
-    return send(res, 200, MIME['.html'], html.replace('<!--IMPORTMAP-->', `<script type="importmap">${map}</script>`));
+    const page = ctx.report ? html.replace(SYNTHETIC_LEGEND, REPORT_LEGEND) : html;
+    return send(res, 200, MIME['.html'], page.replace('<!--IMPORTMAP-->', `<script type="importmap">${map}</script>`));
   }
   if (pathname === '/favicon.ico') return send(res, 204, MIME['.ico'], '');
   if (pathname === EMPTY_URL) return send(res, 200, MIME['.js'], 'export {};\n');
 
+  if (ctx.report && pathname === '/api/samples') {
+    return send(res, 200, MIME['.json'], JSON.stringify({ mode: 'report', samples: [ctx.report.name] }));
+  }
+  if (ctx.report && pathname.startsWith('/api/sample/')) {
+    const name = decodeURIComponent(pathname.slice('/api/sample/'.length));
+    checkReportName(ctx.report, name);
+    if (req.method === 'GET') return send(res, 200, MIME['.md'], await readFile(ctx.report.file, 'utf8'));
+    if (req.method === 'PUT') {
+      const text = await readBody(req);
+      await atomicWrite(ctx.report.file, text);
+      return send(res, 200, MIME['.json'], JSON.stringify({ saved: name, bytes: Buffer.byteLength(text) }));
+    }
+    return sendError(res, 405, 'method not allowed');
+  }
+  if (ctx.report && pathname.startsWith('/api/moves/')) {
+    const name = decodeURIComponent(pathname.slice('/api/moves/'.length));
+    checkReportName(ctx.report, name);
+    if (!ctx.report.labels) return sendError(res, 404, `no labels for ${name}`);
+    return send(res, 200, MIME['.json'], await readFile(ctx.report.labels, 'utf8'));
+  }
   if (pathname === '/api/samples') {
     return send(res, 200, MIME['.json'], JSON.stringify({ dir: ctx.dir, samples: await listSamples(ctx.dir) }));
   }
@@ -465,11 +518,14 @@ async function handle(req, res, ctx) {
 }
 
 /**
- * @param {{ dir?: string, port?: number, host?: string }} [opts]
- * @returns {Promise<{ server: import('node:http').Server, url: string, port: number, dir: string, importMap: { imports: Record<string, string> }, close: () => Promise<void> }>}
+ * @param {{ dir?: string, report?: string, labels?: string, port?: number, host?: string }} [opts]
+ * @returns {Promise<{ server: import('node:http').Server, url: string, port: number, dir: string, report: { file: string, name: string, labels: string | null } | null, importMap: { imports: Record<string, string> }, close: () => Promise<void> }>}
  */
 export async function startServer(opts = {}) {
-  const dir = resolve(opts.dir ?? DEFAULT_DIR);
+  const report = opts.report !== undefined ? await resolveReport(opts.report, opts.labels) : null;
+  if (!report && opts.labels !== undefined) throw new Error('--labels needs --report');
+  // In single-report mode the legend lookup uses the report's folder (legend.json there, else the demo's).
+  const dir = report ? dirname(report.file) : resolve(opts.dir ?? DEFAULT_DIR);
   const info = await stat(dir);
   if (!info.isDirectory()) throw new Error(`sample folder is not a directory: ${dir}`);
   const port = opts.port ?? 0;
@@ -484,7 +540,7 @@ export async function startServer(opts = {}) {
       req.resume();
       return;
     }
-    handle(req, res, { dir, importMap }).catch((err) => {
+    handle(req, res, { dir, report, importMap }).catch((err) => {
       if (!res.headersSent) sendError(res, /** @type {any} */ (err).status ?? 500, err instanceof Error ? err.message : String(err));
       else res.end();
     });
@@ -504,6 +560,7 @@ export async function startServer(opts = {}) {
     url: `http://${host}:${actualPort}/`,
     port: actualPort,
     dir,
+    report,
     importMap,
     close: () => new Promise((done) => server.close(() => done(undefined))),
   };
@@ -517,10 +574,15 @@ function argValue(flag) {
 
 const isMain = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isMain) {
+  const reportArg = argValue('--report');
+  const labels = argValue('--labels');
   const dir = resolve(argValue('--dir') ?? process.env.DEMO_DIR ?? DEFAULT_DIR);
   const port = Number(argValue('--port') ?? process.env.PORT ?? 0);
-  const run = await startServer({ dir, port });
-  console.log(`Demo samples: ${run.dir}`);
+  const run = await startServer(reportArg !== undefined ? { report: reportArg, labels, port } : { dir, labels, port });
+  if (run.report) {
+    console.log(`Demo report: ${run.report.file}`);
+    console.log(`Demo labels: ${run.report.labels ?? '(none)'}`);
+  } else console.log(`Demo samples: ${run.dir}`);
   console.log(`Demo URL: ${run.url}`);
   const stop = async () => { await run.close(); process.exit(0); };
   process.on('SIGINT', stop);
