@@ -101,3 +101,64 @@ test('path traversal is refused for reads and writes', async () => {
     rmSync(parent, { recursive: true, force: true });
   }
 });
+
+// DE-02 residual: DNS-rebinding hardening. Raw http.request so Host/Origin can be set freely.
+import { request } from 'node:http';
+
+/** @param {number} port @param {{ method?: string, path: string, host: string, origin?: string, body?: string }} o */
+function rawRequest(port, o) {
+  return new Promise((done, fail) => {
+    /** @type {Record<string, string>} */
+    const headers = { host: o.host };
+    if (o.origin) headers.origin = o.origin;
+    if (o.body !== undefined) headers['content-type'] = 'text/markdown';
+    const req = request({ host: '127.0.0.1', port, method: o.method ?? 'GET', path: o.path, headers }, (res) => {
+      let text = '';
+      res.setEncoding('utf8');
+      res.on('data', (c) => { text += c; });
+      res.on('end', () => done({ status: res.statusCode, text }));
+    });
+    req.on('error', fail);
+    req.end(o.body);
+  });
+}
+
+test('a foreign Host header is refused; loopback hosts are served', async () => {
+  const run = await startServer({ dir: demoDir, port: 0 });
+  try {
+    const path = `/api/sample/${sample}`;
+    const evil = /** @type {any} */ (await rawRequest(run.port, { path, host: `evil.example:${run.port}` }));
+    assert.equal(evil.status, 403);
+    assert.ok(!evil.text.includes('weekly report'), 'no sample content leaks');
+    const wrongPort = /** @type {any} */ (await rawRequest(run.port, { path, host: `127.0.0.1:${run.port + 1}` }));
+    assert.equal(wrongPort.status, 403);
+    for (const host of [`127.0.0.1:${run.port}`, `localhost:${run.port}`, `[::1]:${run.port}`]) {
+      const ok = /** @type {any} */ (await rawRequest(run.port, { path, host }));
+      assert.equal(ok.status, 200, host);
+    }
+  } finally {
+    await run.close();
+  }
+});
+
+test('a save with a foreign Origin is refused and the file is unchanged; own or no Origin saves', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'demo-origin-'));
+  writeFileSync(join(dir, sample), source);
+  const run = await startServer({ dir, port: 0 });
+  try {
+    const path = `/api/sample/${sample}`;
+    const host = `127.0.0.1:${run.port}`;
+    const evil = /** @type {any} */ (await rawRequest(run.port, { method: 'PUT', path, host, origin: 'http://evil.example', body: 'pwned\n' }));
+    assert.equal(evil.status, 403);
+    assert.deepEqual(readFileSync(join(dir, sample)), Buffer.from(source));
+    const own = /** @type {any} */ (await rawRequest(run.port, { method: 'PUT', path, host, origin: `http://${host}`, body: 'own\n' }));
+    assert.equal(own.status, 200);
+    assert.equal(readFileSync(join(dir, sample), 'utf8'), 'own\n');
+    const none = /** @type {any} */ (await rawRequest(run.port, { method: 'PUT', path, host, body: 'none\n' }));
+    assert.equal(none.status, 200);
+    assert.equal(readFileSync(join(dir, sample), 'utf8'), 'none\n');
+  } finally {
+    await run.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

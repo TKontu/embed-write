@@ -364,6 +364,23 @@ function sendError(res, status, message) {
 }
 
 /**
+ * DNS-rebinding guard: Host must be a loopback name at the listening port, and a state-changing
+ * request carrying Origin must come from one of those same origins. Absent Origin is allowed
+ * (same-origin fetch PUTs and non-browser clients may omit it).
+ * @param {import('node:http').IncomingMessage} req @param {number} port @returns {string | null}
+ */
+export function refusalReason(req, port) {
+  const allowed = [`127.0.0.1:${port}`, `localhost:${port}`, `[::1]:${port}`];
+  const host = (req.headers.host ?? '').toLowerCase();
+  if (!allowed.includes(host)) return 'forbidden host';
+  const origin = req.headers.origin;
+  if (req.method !== 'GET' && req.method !== 'HEAD' && origin !== undefined) {
+    if (!allowed.some((h) => origin.toLowerCase() === `http://${h}`)) return 'forbidden origin';
+  }
+  return null;
+}
+
+/**
  * @param {import('node:http').IncomingMessage} req
  * @param {import('node:http').ServerResponse} res
  * @param {{ dir: string, importMap: { imports: Record<string, string> } }} ctx
@@ -458,7 +475,15 @@ export async function startServer(opts = {}) {
   const port = opts.port ?? 0;
   const host = opts.host ?? '127.0.0.1';
   const importMap = await buildImportMap();
+  let listenPort = 0;
   const server = createServer((req, res) => {
+    const refused = refusalReason(req, listenPort);
+    if (refused) {
+      res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
+      res.end(`${refused}\n`);
+      req.resume();
+      return;
+    }
     handle(req, res, { dir, importMap }).catch((err) => {
       if (!res.headersSent) sendError(res, /** @type {any} */ (err).status ?? 500, err instanceof Error ? err.message : String(err));
       else res.end();
@@ -473,6 +498,7 @@ export async function startServer(opts = {}) {
   });
   const address = server.address();
   const actualPort = typeof address === 'object' && address ? address.port : port;
+  listenPort = actualPort;
   return {
     server,
     url: `http://${host}:${actualPort}/`,
