@@ -43,3 +43,5 @@ export { linksPlugin, linksKey, currentLinks, resolveLinks } from './links.js';
 export {
   provenancePlugin, provenanceKey, provenanceOf, currentProvenance, provenanceChanges,
 } from './provenance.js';
+// sectionSkeleton (BH-06) is unwired by design; the BH-06 editor insert-template command wires it.
+export { sectionSkeleton } from './sectiontypes.js';
