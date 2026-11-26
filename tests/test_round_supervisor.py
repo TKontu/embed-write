@@ -288,6 +288,103 @@ class StateTests(unittest.TestCase):
         self.assertNotIn("--model", started[1])
         self.assertTrue((self.tmp / "strategic.json").exists())
 
+    def launcher(self, sent, started, fail_model=False, refuse_prompt=False):
+        class Recording(FakeHerdr):
+            def new_tab(self):
+                return "t", "p"
+
+            def start(self, pane, session, round_no, extra):
+                started.append(list(extra))
+                if fail_model and "--model" in extra:
+                    raise RuntimeError("herdr agent start: model unavailable")
+
+            def prompt(self, text):
+                sent.append(text)
+                return (1, "refused") if refuse_prompt else (0, "")
+
+        return Recording([])
+
+    def begin(self, sup, round_no):
+        with mock.patch.object(rs.time, "sleep"), mock.patch.object(rs, "main_sha", lambda _r: "a"):
+            sup.begin_round(round_no)
+
+    def test_f1_a_failed_strategic_launch_is_not_recorded(self):
+        sup = rs.Supervisor(CFG, (), self.launcher([], [], fail_model=True))
+        self.begin(sup, 1)  # falls back to a normal round, which is not recorded as strategic
+        self.assertFalse((self.tmp / "strategic.json").exists())
+        sup = rs.Supervisor(CFG, (), self.launcher([], [], refuse_prompt=True))
+        with self.assertRaises(RuntimeError):
+            self.begin(sup, 1)
+        self.assertFalse((self.tmp / "strategic.json").exists())
+
+    def test_f2_a_diagnosing_round_falls_back_to_the_default_model(self):
+        sent, started = [], []
+        (self.tmp / "strategic.json").write_text(json.dumps({"at": rs.time.time()}))
+        sup = rs.Supervisor(CFG, (), self.launcher(sent, started, fail_model=True))
+        sup.t = rs.Tracker(diagnosing=True, diagnose_reason="x")
+        with mock.patch.object(rs, "log") as logged:
+            self.begin(sup, 3)
+        self.assertEqual(len(started), 2)
+        self.assertNotIn("--model", started[1])
+        self.assertIn("DIAGNOSING ROUND", sent[0])
+        self.assertTrue(any("fall" in str(c) for c in logged.call_args_list))
+
+    def test_f3_a_non_numeric_strategic_at_counts_as_absent(self):
+        sent, started = [], []
+        (self.tmp / "strategic.json").write_text(json.dumps({"at": "yesterday"}))
+        sup = rs.Supervisor(CFG, (), self.launcher(sent, started))
+        with mock.patch.object(rs, "log") as logged:
+            self.begin(sup, 1)
+        self.assertIn("STRATEGIC ROUND", sent[0])
+        self.assertTrue(any("strategic.json" in str(c) for c in logged.call_args_list))
+
+    def test_f4_a_trial_never_reads_or_writes_the_strategic_slot(self):
+        sent, started = [], []
+        sup = rs.Supervisor(CFG, (), self.launcher(sent, started), prompt="trial {round}", trial=True)
+        with mock.patch.object(rs, "_load", wraps=rs._load) as loaded:
+            self.begin(sup, 1)
+        self.assertNotIn("STRATEGIC ROUND", sent[0])
+        self.assertNotIn("--model", started[0])
+        self.assertFalse((self.tmp / "strategic.json").exists())
+        self.assertFalse(any("strategic" in str(c) for c in loaded.call_args_list))
+
+    def test_a_strategic_start_failure_falls_back_to_a_normal_round(self):
+        sent, started = [], []
+        sup = rs.Supervisor(CFG, (), self.launcher(sent, started, fail_model=True))
+        with mock.patch.object(rs, "log") as logged:
+            self.begin(sup, 1)
+        self.assertEqual(len(started), 2)
+        self.assertNotIn("--model", started[1])
+        self.assertNotIn("STRATEGIC ROUND", sent[0])
+        self.assertFalse((self.tmp / "strategic.json").exists())
+        self.assertTrue(any("fall" in str(c) for c in logged.call_args_list))
+
+    def test_a_trial_is_normal_even_when_a_strategic_round_is_always_due(self):
+        sent, started = [], []
+        cfg = rs.with_overrides(CFG, ["strategic_every_s=0"])
+        sup = rs.Supervisor(cfg, (), self.launcher(sent, started), prompt="trial {round}", trial=True)
+        self.begin(sup, 1)
+        self.assertNotIn("--model", started[0])
+        self.assertNotIn("STRATEGIC ROUND", sent[0])
+        self.assertFalse((self.tmp / "strategic.json").exists())
+
+    def test_f3_a_non_finite_or_future_strategic_at_counts_as_absent(self):
+        for bad in ("nan", "inf", rs.time.time() + 10**7):
+            with self.subTest(at=bad):
+                sent, started = [], []
+                (self.tmp / "strategic.json").write_text(json.dumps({"at": bad}))
+                sup = rs.Supervisor(CFG, (), self.launcher(sent, started))
+                with mock.patch.object(rs, "log") as logged:
+                    self.begin(sup, 1)
+                self.assertIn("STRATEGIC ROUND", sent[0])
+                self.assertTrue(any("strategic.json" in str(c) for c in logged.call_args_list))
+
+    def test_f5_strong_model_comes_from_the_project_config(self):
+        self.assertEqual(rs.config_from({}).strong_model, "claude-fable-5-2")
+        cfg = rs.config_from({"supervisor": {"strong_model": "claude-opus-5-5"}})
+        self.assertEqual(cfg.strong_model, "claude-opus-5-5")
+        self.assertEqual(rs.model_args("diagnose", cfg), ["--model", "claude-opus-5-5"])
+
     def open_round(self, started):
         (self.tmp / "current.json").write_text(json.dumps({"round": 7, "started": started}))
 

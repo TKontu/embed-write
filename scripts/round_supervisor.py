@@ -27,6 +27,7 @@ import dataclasses
 import datetime
 import fcntl
 import json
+import math
 import os
 import re
 import select
@@ -486,6 +487,20 @@ def newest_activity(session: str, floor: float) -> float:
     return max([floor, *(p.stat().st_mtime for p in paths if p.exists())])
 
 
+def last_strategic() -> float:
+    """When the last strategic round launched; 0 when absent or unreadable (logged)."""
+    at = (_load(STATE / "strategic.json") or {}).get("at", 0.0)
+    try:
+        value = float(at)
+    except (TypeError, ValueError):
+        log(f"strategic.json: non-numeric at={at!r}; treated as absent")
+        return 0.0
+    if not math.isfinite(value) or value > time.time():
+        log(f"strategic.json: non-finite or future at={at!r}; treated as absent")
+        return 0.0
+    return value
+
+
 def read_sentinel(round_no: int) -> dict[str, Any] | None:
     data = _load(STATE / "complete.json")
     return data if data and data.get("round") == round_no else None
@@ -498,8 +513,10 @@ class Supervisor:
         extra: Sequence[str],
         herdr: Herdr | None = None,
         prompt: str = ROUND_PROMPT,
+        trial: bool = False,
     ) -> None:
         self.prompt = prompt
+        self.trial = trial  # a --prompt-file trial never touches the strategic slot (D-014)
         self.cfg, self.extra, self.herdr = cfg, (*PERMISSION_ARGS, *extra), herdr or Herdr()
         self.t = Tracker()
         self.tab = ""
@@ -545,11 +562,19 @@ class Supervisor:
         )  # fmt: skip
         self.t = Tracker(**keep)
         time.sleep(2)  # the new tab's shell must reach its prompt
-        strategic = _load(STATE / "strategic.json") or {}
-        kind = round_kind(self.t, now, last_strategic=float(strategic.get("at", 0.0)), cfg=self.cfg)
-        if kind == "strategic":
-            _dump(STATE / "strategic.json", {"at": now, "round": round_no})
-        self.herdr.start(pane, self.session, round_no, [*self.extra, *model_args(kind, self.cfg)])
+        if self.trial:  # a trial never reads the strategic slot; only diagnosis escalates
+            kind = "diagnose" if self.t.diagnosing else "normal"
+        else:
+            kind = round_kind(self.t, now, last_strategic=last_strategic(), cfg=self.cfg)
+        try:
+            self.herdr.start(pane, self.session, round_no, [*self.extra, *model_args(kind, self.cfg)])
+        except RuntimeError as exc:
+            if kind not in ("diagnose", "strategic"):
+                raise
+            log(f"round {round_no}: strong-model launch failed, falling back to default: {exc}")
+            self.herdr.start(pane, self.session, round_no, list(self.extra))
+            if kind == "strategic":  # no preamble, no strategic slot: the next round is normal
+                kind = "normal"
         text = self.prompt.format(round=round_no, script=SELF, lane_prefix=LANE_PREFIX)
         if kind == "diagnose":
             text = DIAGNOSE_PROMPT.format(reason=self.t.diagnose_reason, script=SELF) + text
@@ -558,6 +583,8 @@ class Supervisor:
         rc, out = self.herdr.prompt(text)
         if rc:
             raise RuntimeError(f"round prompt refused: {out[:300]}")
+        if kind == "strategic" and not self.trial:  # recorded only once the round really launched
+            _dump(STATE / "strategic.json", {"at": now, "round": round_no})
         news("round", f"Round {round_no} started")
         log(f"round {round_no} started session={self.session} tab={self.tab} main={sha[:8]}")
 
@@ -999,6 +1026,12 @@ def dry_run(cfg: Config) -> int:
     return 0
 
 
+def config_from(project: dict[str, Any]) -> Config:
+    """Config defaults, with `[supervisor] strong_model` from .agent/config.toml when set."""
+    strong = project.get("supervisor", {}).get("strong_model")
+    return Config(strong_model=strong) if isinstance(strong, str) and strong else Config()
+
+
 def with_overrides(cfg: Config, pairs: Sequence[str]) -> Config:
     """Apply KEY=INT overrides (shortened timers for a trial); unknown keys are an error."""
     changes = {key: int(value) for key, _, value in (pair.partition("=") for pair in pairs)}
@@ -1047,13 +1080,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         extra = [f"--set={item}" for item in args.set]
         extra += ["--allow-other"] if args.allow_other else []
         return up([*extra, *([f"--prompt-file={args.prompt_file}"] if args.prompt_file else [])])
-    cfg = Config()
+    cfg = config_from(project_config())
     if args.cmd == "run":
         cfg = with_overrides(cfg, args.set)
         if args.dry_run:
             return dry_run(cfg)
         prompt = args.prompt_file.read_text() if args.prompt_file else ROUND_PROMPT
-        Supervisor(cfg, args.claude_arg, prompt=prompt).run(allow_other=args.allow_other)
+        Supervisor(cfg, args.claude_arg, prompt=prompt, trial=bool(args.prompt_file)).run(allow_other=args.allow_other)
         return 0
     if args.cmd == "complete":
         return complete(args.outcome, args.reason, cause=args.cause, until=args.until)
