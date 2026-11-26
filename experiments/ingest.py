@@ -60,6 +60,35 @@ WNS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 _HEADING_RE = re.compile(r"^#{1,6}(\s|$)")
 
 
+_MD_INLINE_RE = re.compile(r"([\\`*_\[\]<>])")
+_MD_ORDERED_RE = re.compile(r"(\d{1,9})([.)])(?=\s|$)")
+
+
+def _md_escape_line_starts(text: str) -> str:
+    """Backslash-escape block markers (#, >, -/+ bullets, 1./1) ordered, ===/--- rules)
+    that open a line; inline specials are left to _md_escape."""
+    out = []
+    for line in text.split("\n"):
+        rest = line.lstrip()
+        lead = line[: len(line) - len(rest)]
+        if rest[:1] in ("#", ">") or re.match(r"[-+](\s|$)", rest) \
+                or re.fullmatch(r"(=+|-+)\s*", rest):
+            rest = "\\" + rest
+        else:
+            m = _MD_ORDERED_RE.match(rest)
+            if m:
+                rest = m.group(1) + "\\" + rest[m.end(1):]
+        out.append(lead + rest)
+    return "\n".join(out)
+
+
+def _md_escape(text: str, line_starts: bool = True) -> str:
+    """Escape raw source text so CommonMark reads it literally. Apply before the converter
+    adds its own markup; line_starts=False for fragments that do not open a line."""
+    text = _MD_INLINE_RE.sub(r"\\\1", text)
+    return _md_escape_line_starts(text) if line_starts else text
+
+
 def _esc_cell(text: str) -> str:
     return text.replace("|", "\\|").replace("\n", " ").strip()
 
@@ -123,8 +152,8 @@ def _docx_para_text(p) -> str:
                 text += " "
             elif child.tag in (WNS + "br", WNS + "cr"):
                 text += " "
-        parts.append(_wrap(text, bold, italic))
-    return "".join(parts).replace("****", "")
+        parts.append(_wrap(_md_escape(text, line_starts=False), bold, italic))
+    return _md_escape_line_starts("".join(parts).replace("****", "").strip())
 
 
 def _lvl_props(lvl, base: tuple[str, int] = ("", 1)) -> tuple[str, int]:
@@ -263,6 +292,7 @@ class _HTML(HTMLParser):
         text = re.sub(r"\s+", " ", "".join(self.buf)).strip()
         self.buf = []
         if text:
+            text = _md_escape_line_starts(text)
             self.blocks.append((self.kind if self.kind != "li" else "li", self.prefix + text))
         self.kind, self.prefix = "p", ""
 
@@ -333,7 +363,7 @@ class _HTML(HTMLParser):
 
     def handle_data(self, data):
         if not self.skip:
-            self._out(data)
+            self._out(_md_escape(data, line_starts=False))
 
 
 def convert_html(text: str) -> str:
@@ -346,7 +376,7 @@ def convert_html(text: str) -> str:
 
 def convert_txt(text: str) -> str:
     paras = [p.strip("\n") for p in re.split(r"\n\s*\n", text.replace("\r\n", "\n"))]
-    return _join_blocks([("p", p) for p in paras])
+    return _join_blocks([("p", _md_escape(p)) for p in paras])
 
 
 def _pdf_heading_level(line: str) -> int | None:
@@ -392,14 +422,12 @@ def pdf_text_to_markdown(pages) -> str:
         first, _, rest = para.partition("\n")
         level = _pdf_heading_level(first)
         if level and rest.strip():
-            blocks.append(("h", "#" * level + " " + first))
+            blocks.append(("h", "#" * level + " " + _md_escape(first, line_starts=False)))
             para = rest
         elif level and i + 1 < len(paras) and _pdf_heading_level(paras[i + 1]) is None:
-            blocks.append(("h", "#" * level + " " + para))
+            blocks.append(("h", "#" * level + " " + _md_escape(para, line_starts=False)))
             continue
-        if _HEADING_RE.match(para):
-            para = "\\" + para
-        blocks.append(("p", para))
+        blocks.append(("p", _md_escape(para)))
     return _join_blocks(blocks)
 
 
