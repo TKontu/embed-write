@@ -44,7 +44,7 @@ test('default paragraph decorates only paragraph-level entries', async () => {
     assert.equal(DEFAULT_GRANULARITY, 'paragraph');
     assert.equal(selectedMoveGranularity(t.view.state), 'paragraph');
     const blocks = top(t.view.state.doc);
-    const want = moves.filter((e) => levelOf(e) === 'paragraph')
+    const want = moves.filter((e) => levelOf(e) === 'paragraph' && (e.overlay ?? 'moves') === 'moves')
       .map((e) => [blocks[e.block].offset, blocks[e.block].offset + blocks[e.block].node.nodeSize]);
     const got = decos(t.view.state).map((d) => [d.from, d.to]);
     assert.deepEqual(got.sort((a, b) => a[0] - b[0]), want.sort((a, b) => a[0] - b[0]));
