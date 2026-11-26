@@ -222,3 +222,28 @@ class PassHelperTests(unittest.TestCase):
             self.assertEqual(an.labels_for_pass(store, GENRE, 'first', 'nobody'), [])
             with self.assertRaises(an.AnnotateError):
                 an.labels_for_pass(store, GENRE, 'bogus')
+
+
+class UndoRetractTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.store = AnnotationStore(os.path.join(self.tmp.name, 'l.jsonl'))
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_label_undo_quit_leaves_unlabelled(self):
+        its = items()
+        session(its, self.store, ['1', 'u', 'q'])
+        self.assertEqual(an.export(self.store, GENRE, MANIFEST, 'first'), [])
+        self.assertEqual(an.labels_for_pass(self.store, GENRE, 'first'), [])
+        self.assertEqual(self.store.read(GENRE), [])
+        s = session(its, self.store, ['q'])
+        self.assertIn(its[0]['text'], s.out[0])
+
+    def test_label_undo_relabel_exports_new_label(self):
+        its = items()
+        session(its, self.store, ['1', 'u', '2', 'q'])
+        got = an.export(self.store, GENRE, MANIFEST, 'first')
+        self.assertEqual([(r['sentence_id'], r['label']) for r in got],
+                         [(its[0]['sentence_id'], GENRE['moves'][1]['id'])])

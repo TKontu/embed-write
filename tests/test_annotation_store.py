@@ -226,3 +226,41 @@ class StreamingTests(StoreCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class IterRecordsTests(StoreCase):
+    def test_iter_records_is_generator_equal_to_records(self):
+        import types
+        self.store.append(genre_v1(), rec('s1'))
+        self.store.append(genre_v1(), rec('s2', label='beta'))
+        it = self.store.iter_records()
+        self.assertIsInstance(it, types.GeneratorType)
+        self.assertEqual(list(it), list(self.store._records()))
+        self.assertEqual([o['sentence_id'] for _, o in self.store.iter_records()],
+                         ['s1', 's2'])
+
+
+class RetractionTests(StoreCase):
+    def retraction(self, sid, annotator='ann-x'):
+        return {'sentence_id': sid, 'retracted': True, 'annotator': annotator,
+                'timestamp': '2026-01-02T00:00:00Z'}
+
+    def test_read_hides_retracted_sentence(self):
+        self.store.append(genre_v1(), rec('s1'))
+        self.store.append(genre_v1(), rec('s2'))
+        self.store.append(genre_v1(), self.retraction('s1'))
+        self.assertEqual([r['sentence_id'] for r in self.store.read(genre_v1())], ['s2'])
+        self.assertEqual(len(self.store.history('s1')), 2)
+
+    def test_relabel_after_retraction_is_current(self):
+        self.store.append(genre_v1(), rec('s1'))
+        self.store.append(genre_v1(), self.retraction('s1'))
+        self.store.append(genre_v1(), rec('s1', label='beta'))
+        self.assertEqual([r['label'] for r in self.store.read(genre_v1())], ['beta'])
+
+    def test_retraction_shape_validated(self):
+        for bad in (dict(self.retraction('s1'), label='alpha'),
+                    dict(self.retraction('s1'), retracted='yes'),
+                    {'sentence_id': 's1', 'annotator': 'a', 'timestamp': 't'}):
+            with self.subTest(bad=bad), self.assertRaises(st.AnnotationStoreError):
+                self.store.append(genre_v1(), bad)
