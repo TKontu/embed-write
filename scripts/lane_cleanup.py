@@ -65,7 +65,7 @@ def lane_prefix(root: Path = ROOT) -> str:
     try:
         with (root / ".agent" / "config.toml").open("rb") as fh:
             section = tomllib.load(fh).get("supervisor", {})
-    except (OSError, tomllib.TOMLDecodeError):
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
         section = {}
     # A non-table `supervisor = "x"` is treated as empty, as in round_supervisor.
     raw = section.get("name") if isinstance(section, dict) else None
