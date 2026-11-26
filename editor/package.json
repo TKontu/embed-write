@@ -13,7 +13,8 @@
   },
   "scripts": {
     "demo": "node demo/server.js",
-    "test": "node --test \"test/*.test.js\""
+    "test": "node --test \"test/*.test.js\"",
+    "profile:fp03": "node bench/fp03-profile.js"
   },
   "dependencies": {
     "@milkdown/core": "7.23.0",
