@@ -4,9 +4,11 @@ Pure stdlib. A move's tint is composited over each theme's background at a
 given alpha; the theme's text colour must keep at least MIN_CONTRAST against
 the result (WCAG 2.x relative luminance and contrast ratio).
 
-Unwired by design: the production caller is the overlay theme build
-(RE-04/LG-05), which will supply real themes, palette and alpha. No colours
-are chosen here.
+check() is called by the CLI below; with --genre PATH the palette is the
+genre file's stored legend (every move plus `other`, I3) and the spec JSON
+supplies only alpha and themes. CI wiring is a residual; the overlay theme
+build (RE-04/LG-05) will supply real themes and alpha. No colours are chosen
+here.
 """
 
 import argparse
@@ -15,7 +17,8 @@ import sys
 from dataclasses import dataclass
 from typing import Mapping
 
-from service.palette import _to_linear, parse_hex
+from service.genre import GenreFileError, load_genre
+from service.palette import _to_linear, genre_palette, parse_hex
 
 # Provisional: WCAG AA body text. The expert may revise under G-09.
 MIN_CONTRAST = 4.5
@@ -67,15 +70,29 @@ def check(themes: Mapping[str, Mapping[str, str]], palette: Mapping[str, str],
 
 def main(argv=None):
     parser = argparse.ArgumentParser(prog='python3 -m service.contrast')
-    parser.add_argument('spec', help='JSON {"alpha", "themes", "palette"}')
+    parser.add_argument('spec', help='JSON {"alpha", "themes", "palette"}; '
+                        'without "palette" when --genre is given')
+    parser.add_argument('--genre', metavar='PATH',
+                        help='genre file; palette = legend colours plus other')
     parser.add_argument('--min-ratio', type=float, default=MIN_CONTRAST)
     args = parser.parse_args(argv)
+    palette = None
+    if args.genre is not None:
+        try:
+            palette = genre_palette(load_genre(args.genre))
+        except GenreFileError as exc:
+            print(exc, file=sys.stderr)
+            return 2
     try:
         with open(args.spec, encoding='utf-8') as fh:
             data = json.load(fh)
         if not isinstance(data, dict):
             raise ValueError('spec must be a JSON object')
-        themes, palette = data['themes'], data['palette']
+        if palette is None:
+            palette = data['palette']
+        elif 'palette' in data:
+            raise ValueError('"palette" not allowed in spec with --genre')
+        themes = data['themes']
         if not isinstance(themes, dict) or not isinstance(palette, dict) \
                 or not all(isinstance(t, dict) for t in themes.values()):
             raise ValueError('themes and palette must be JSON objects')
