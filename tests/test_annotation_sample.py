@@ -197,18 +197,48 @@ class SectionTypingTests(unittest.TestCase):
         self.assertTrue(all(t == 'methods' and ix == 1 for t, ix, _ in rows), rows)
 
     def test_container_fence_closes_then_real_heading(self):
-        for open_, inner, close in (('> ```', '> # Odd', '> ```'), ('- ```', '  # Odd', '  ```')):
-            md = (f'# Methods\n\nA one.\n\n{open_}\n{inner}\n```\n# Odd\n{close}\n\n'
-                  '# Results\n\nC three.\n')
-            rows = types(md)
-            self.assertEqual([(t, ix) for t, ix, _ in rows][-1], ('results', 2), (open_, rows))
-            self.assertTrue(all(ix == 1 for _, ix, _ in rows[:-1]), (open_, rows))
+        # blockquote fence closing at its own prefix, then a real heading
+        md = '# Methods\n\nA one.\n\n> ```\n> # Odd\n> ```\n\n# Results\n\nC three.\n'
+        rows = types(md)
+        self.assertEqual([(t, ix) for t, ix, _ in rows][-1], ('results', 2), rows)
+        self.assertTrue(all(ix == 1 for _, ix, _ in rows[:-1]), rows)
+        # an unquoted fence line ends the quote fence and opens a new top-level fence
+        md = ('# Methods\n\nA one.\n\n> ```\n> # Odd\n```\n# Odd\n```\n\n'
+              '# Results\n\nC three.\n')
+        rows = types(md)
+        self.assertEqual([(t, ix) for t, ix, _ in rows][-1], ('results', 2), rows)
+        self.assertTrue(all(ix == 1 for _, ix, _ in rows[:-1]), rows)
+        # list variant: unindented ``` ends the item fence and opens a top-level one
+        md = ('# Methods\n\nA one.\n\n- ```\n  # Odd\n```\n# Odd\n  ```\n\n'
+              '# Results\n\nC three.\n')
+        rows = types(md)
+        self.assertEqual([(t, ix) for t, ix, _ in rows][-1], ('results', 2), rows)
+        self.assertTrue(all(ix == 1 for _, ix, _ in rows[:-1]), rows)
 
-    def test_unclosed_container_fence_runs_to_end(self):
-        for open_ in ('> ```', '- ```'):
-            rows = types(f'# Methods\n\nA one.\n\n{open_}\n\n# Results\n\nC three.\n')
-            self.assertTrue(all((t, ix) == ('methods', 1) for t, ix, _ in rows), (open_, rows))
+    def test_blank_or_unquoted_line_ends_quote_fence(self):
+        for after in ('\n', '', 'Plain line.\n\n'):
+            rows = types(f'# Methods\n\nA one.\n\n> ```\n> code\n{after}# Results\n\nC three.\n')
+            self.assertEqual([(t, ix) for t, ix, _ in rows][-1], ('results', 2), (after, rows))
 
+    def test_unclosed_list_fence_runs_to_end(self):
+        rows = types('# Methods\n\nA one.\n\n- ```\n\n  # Results\n\n  C three.\n')
+        self.assertTrue(all((t, ix) == ('methods', 1) for t, ix, _ in rows), rows)
+
+    def test_quote_fence_ends_at_unquoted_heading(self):
+        rows = types('# Methods\n\nA one.\n\n> ```\n> code\n## Results\n\nC three.\n')
+        self.assertEqual([(t, ix) for t, ix, _ in rows][-1], ('results', 2), rows)
+        self.assertTrue(all((t, ix) == ('methods', 1) for t, ix, _ in rows[:-1]), rows)
+        self.assertEqual(rows[-1][2], 'C three.')
+
+    def test_list_fence_ends_at_unindented_paragraph(self):
+        paras = [p for *_, p in a._sections('# Methods\n\n- ```\n  code\n\nOwn para.\n', H)]
+        self.assertEqual(paras[-1], 'Own para.', paras)
+        self.assertEqual(len(paras), 2, paras)
+
+    def test_blank_line_inside_list_fence_keeps_it_open(self):
+        rows = types('# Methods\n\n- ```\n  a\n\n  # Results\n  ```\n\nTail.\n')
+        self.assertTrue(all((t, ix) == ('methods', 1) for t, ix, _ in rows), rows)
+        self.assertEqual(rows[-1][2], 'Tail.')
 
 if __name__ == '__main__':
     unittest.main()
