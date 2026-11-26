@@ -117,6 +117,7 @@ export function acceptProposal({ view }, { from, to, text }) {
 export function undo({ view }) {
   return pmUndo(view.state, view.dispatch);
 }
+export { insertSectionTemplate } from './template.js';
 export { renderDiff } from './diff.js';
 export { showProposal } from './proposal.js';
 export { proposalRequestKeymap } from './request.js';
