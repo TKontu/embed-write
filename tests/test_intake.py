@@ -157,6 +157,34 @@ class IntakeTest(unittest.TestCase):
         with self.assertRaises(AssertionError):
             self.assert_private(demo.read_text(encoding="utf-8"))
 
+    def test_substep_exception_text_never_reported(self):
+        sentinel = "SENTINEL-co12 " + SECRET
+        for target, step in (("corpus_stats.build_report", "corpus_stats"),
+                             ("annotation_sample.build_manifest", "annotation_sample"),
+                             ("conversion_quality.build_report", "conversion_quality")):
+            with self.subTest(step=step), \
+                    mock.patch(f"experiments.{target}", side_effect=ValueError(sentinel)):
+                _, rep, text, printed = self.run_intake()
+                self.assertEqual(rep["steps"][step]["status"], "failed")
+                self.assertEqual(rep["steps"][step]["reason"], "ValueError")
+                for blob in (text, printed):
+                    self.assertNotIn("SENTINEL-co12", blob)
+                    self.assertNotIn(SECRET, blob)
+                self.assert_private(text, printed)
+
+    def test_genre_load_exception_text_never_printed(self):
+        sentinel = "SENTINEL-co12 " + SECRET
+        so, se = io.StringIO(), io.StringIO()
+        with mock.patch("experiments.intake.load_genre", side_effect=ValueError(sentinel)), \
+                contextlib.redirect_stdout(so), contextlib.redirect_stderr(se):
+            code = intake.main(["run", str(self.src), str(self.out), "--genre", GENRE])
+        self.assertEqual(code, 2)
+        printed = so.getvalue() + se.getvalue()
+        self.assertIn("ValueError", se.getvalue())
+        self.assertNotIn("SENTINEL-co12", printed)
+        self.assertNotIn(SECRET, printed)
+        self.assertFalse((self.out / intake.REPORT_NAME).exists())
+
     def test_discovery_skipped_by_default(self):
         _, rep, _, _ = self.run_intake()
         disc = rep["steps"]["discovery"]
