@@ -27,6 +27,7 @@ A native writing surface over Markdown: the expert sees formatted text, shortcut
 ## Formatting shortcuts
 
 - [ ] **FM-01** `[A]` `Ctrl/Cmd+B`, `+I`, `+K`, `+E` for bold, italic, link, inline code — check: each produces the expected Markdown
+  - partial (R129/A2, PR #328, merge bcfe830): editor/src/format.js `formatKeymap({ isRich, onLinkRequest })` wired in createEditor: Mod-b strong, Mod-i em, Mod-e code toggle the selection; Mod-k removes an existing link or asks `onLinkRequest(text)` for an href (null/empty = no change; a doc change before it resolves cancels it); inactive in source view. Ran on Claude (D-008). Check: jsdom tests assert Markdown after each shortcut and after toggling back. Planner rerun at head 3773a57: editor 80/80, docmodel 256/256, Python gate 1455 OK; combined main bcfe830 Python 1460 OK. Unwired by design until AP-01 supplies the link prompt; not yet seen in the app. Residuals: no link-prompt UI; editor tests not in CI.
 - [ ] **FM-02** `[A]` Heading shortcuts `Ctrl/Cmd+1..6` and `#` + space
 - [ ] **FM-03** `[A]` Input rules for lists, task items, quotes, code fences, rules
 - [ ] **FM-04** `[A]` Inline input rules: typing `*text*` converts live
