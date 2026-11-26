@@ -359,6 +359,59 @@ class GenerateTests(unittest.TestCase):
         self.assertEqual(critic('text', 'context'), 0.0)
         self.assertEqual(critic('text', 'context'), 0.0)
 
+    def test_summary_flags_mixed_models_without_filter(self):
+        target = notes(1)[0]
+        out = gen.generate([target], pool(), FakeModel(), out_path=self.out,
+                           critic=FakeCritic({}), n_candidates=2)
+        uniform = gen.summarize(out, expected_sections=1)
+        self.assertTrue(uniform['complete'])
+        self.assertEqual(uniform['models'], ['fake-1'])
+        self.assertEqual(uniform['prompt_versions'], [gen.PROMPT_VERSION])
+        mixed = [out[0], {**out[1], 'model': 'other'}, out[2]]
+        s = gen.summarize(mixed, expected_sections=1)
+        self.assertFalse(s['complete'])
+        self.assertEqual(s['models'], ['fake-1', 'other'])
+
+    def test_summary_flags_mixed_prompt_versions_without_filter(self):
+        target = notes(1)[0]
+        out = gen.generate([target], pool(), FakeModel(), out_path=self.out,
+                           critic=FakeCritic({}), n_candidates=2)
+        mixed = [out[0], self._stale(out[1]), out[2]]
+        s = gen.summarize(mixed, expected_sections=1)
+        self.assertFalse(s['complete'])
+        self.assertEqual(s['prompt_versions'], ['g02.3-v0', gen.PROMPT_VERSION])
+
+    def test_duplicate_section_id_raises_before_writing_second(self):
+        first = notes(1)[0]
+        second = {**first, 'notes': 'different notes for the duplicate'}
+        with self.assertRaisesRegex(ValueError, re.escape(first['section_id'])):
+            list(gen.iter_generate(iter([first, second]), pool(), FakeModel(),
+                                   out_path=self.out, critic=FakeCritic({}), n_candidates=2))
+        recs = read(self.out)
+        self.assertEqual(len(recs), 3)
+        self.assertFalse(any('different notes' in r['text'] for r in recs))
+
+    def test_cli_duplicate_section_id_exits_2(self):
+        import contextlib
+        import io
+        notes_path = os.path.join(self.tmp.name, 'notes.jsonl')
+        pool_path = os.path.join(self.tmp.name, 'pool.jsonl')
+        dup = notes(1)[0]
+        with open(notes_path, 'w', encoding='utf-8') as fh:
+            for r in (dup, dup):
+                fh.write(json.dumps(r) + '\n')
+        with open(pool_path, 'w', encoding='utf-8') as fh:
+            for r in pool():
+                fh.write(json.dumps(r) + '\n')
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            rc = gen.main(['--notes', notes_path, '--pool', pool_path, '--out', self.out,
+                           '--n-candidates', '2', '--expected-sections', '1'],
+                          model=FakeModel(), critic=FakeCritic({}))
+        self.assertEqual(rc, 2)
+        self.assertIn(dup['section_id'], err.getvalue())
+        self.assertIn('duplicate', err.getvalue())
+
     def test_cli_runs_offline_with_injected_model(self):
         notes_path = os.path.join(self.tmp.name, 'notes.jsonl')
         pool_path = os.path.join(self.tmp.name, 'pool.jsonl')
