@@ -22,6 +22,7 @@ Colour is the expert's main channel into the pattern model. Revision 2 replaces 
   - partial (R33/A1, PR #86): check `service/contrast.py` (WCAG luminance/contrast, tint blended over theme background, CLI exits 1 on shortfall) merged; MIN_CONTRAST=4.5 and alpha provisional for the expert under G-09; unwired until RE-04/LG-05; no theme colours until LG-01 [H]/LG-05, no CI wiring
 - [ ] **LG-05** `[A]` Separate dark-theme palette, validated the same way
 - [ ] **LG-06** `[A]` Neutral rendering for `other` and for unlabeled text
+  - partial (R164/A1, PR #414, merge dbbc5dc): tests only, no behaviour change (comment in `editor/src/signals.css`). `other` takes legend.other; unlabeled text and unknown kinds get no `--signal-color` and fall back to transparent (no invented colour, I3). seen: editor/test/neutral.test.js 4 tests (jsdom, LLM-built placeholder colours), npm test 229/229 and gate 1594 OK at head 55953f1 (rerun by planner); combined main dbbc5dc same. Residual: jsdom cannot paint color-mix, fallback rule checked instead. Stays partial: unwired until AP-01/LG-07 and RE-10 link the stylesheets in the app.
 - [ ] **LG-07** `[A]` Legend panel, always reachable, with each move's definition from the genre file
 
 ---
