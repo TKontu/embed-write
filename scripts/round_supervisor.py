@@ -53,7 +53,7 @@ def project_config(root: Path = ROOT) -> dict[str, Any]:
     """`.agent/config.toml`, or {} when absent or unreadable (defaults apply)."""
     try:
         return tomllib.loads((root / ".agent" / "config.toml").read_text())
-    except (OSError, tomllib.TOMLDecodeError):
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
         return {}
 
 
@@ -111,9 +111,9 @@ BRANCH = project_section(CONFIG).get("default_branch", "main")
 
 
 def permission_args(config: dict[str, Any]) -> tuple[str, str]:
-    """`--permission-mode` args; a non-string or empty value warns once and uses `auto`."""
+    """`--permission-mode` args; a non-string or blank value warns once and uses `auto`."""
     mode = supervisor_section(config).get("permission_mode", "auto")
-    if not (isinstance(mode, str) and mode):
+    if not (isinstance(mode, str) and mode.strip()):
         warn_once(f"[supervisor] permission_mode must be a non-empty string, got {mode!r}; using auto")
         mode = "auto"
     return ("--permission-mode", mode)

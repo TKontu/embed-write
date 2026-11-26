@@ -414,7 +414,7 @@ class StateTests(unittest.TestCase):
 
     def test_invalid_permission_mode_warns_once_and_uses_auto(self):
         import io
-        for bad in (5, ""):
+        for bad in (5, "", "   "):
             rs._WARNED.clear()
             with self.subTest(value=bad), mock.patch("sys.stderr", new_callable=io.StringIO) as err:
                 cfg = {"supervisor": {"permission_mode": bad}}
@@ -481,6 +481,11 @@ class StateTests(unittest.TestCase):
         self.assertEqual(config["project"]["default_branch"], "trunk")
         self.assertEqual(config["supervisor"]["permission_mode"], "default")
         self.assertEqual(rs.project_config(self.tmp / "missing"), {})
+
+    def test_invalid_utf8_project_config_is_treated_as_missing(self):
+        (self.tmp / ".agent").mkdir()
+        (self.tmp / ".agent/config.toml").write_bytes(b"\xff\xfe")
+        self.assertEqual(rs.project_config(self.tmp), {})
 
     def test_a_note_must_be_a_tldr_and_open_items_need_a_ref(self):
         self.assertEqual(rs.note("result", "x" * (rs.NOTE_MAX + 1), "", ""), 2)
