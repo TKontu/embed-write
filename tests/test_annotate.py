@@ -290,7 +290,8 @@ class PrelabelTests(unittest.TestCase):
         self.assertEqual(len(an.labels_for_pass(self.store, GENRE, 'first')), 2)
         self.assertEqual(len(an.export(self.store, GENRE, MANIFEST, 'first')), 2)
         from experiments import g01_inputs
-        cfg = g01_inputs.build_config(self.store, GENRE, MANIFEST, self.ppath)
+        cfg = g01_inputs.build_config(self.store, GENRE, MANIFEST, self.ppath,
+                                      include_non_blind=True)  # pre-labelled = non-blind
         self.assertEqual(cfg['expert'][self.its[0]['sentence_id']], 'beta')
 
     def test_cli_notice_and_default_blind(self):
