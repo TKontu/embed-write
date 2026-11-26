@@ -73,6 +73,35 @@ class HeadingTests(Base):
         )
 
 
+class FenceTests(Base):
+    def headings(self, text):
+        self.write({"a.md": text})
+        return cs.build_report(self.corpus)["headings"]
+
+    def test_backtick_fence_hides_heading(self):
+        h = self.headings("# Real\n\n```python\n# not a heading\n```\n\n## After\n")
+        self.assertEqual(sorted(h), ["after", "real"])
+
+    def test_tilde_fence_hides_heading(self):
+        h = self.headings("# Real\n   ~~~~\n# not a heading\n~~~~~\n## After\n")
+        self.assertEqual(sorted(h), ["after", "real"])
+
+    def test_shorter_or_other_marker_does_not_close(self):
+        h = self.headings(
+            "# Real\n````\n```\n~~~~\n# not a heading\n````\n## After\n"
+        )
+        self.assertEqual(sorted(h), ["after", "real"])
+
+    def test_four_space_indent_does_not_open(self):
+        h = self.headings("# Real\n    ```\n## After\n")
+        self.assertEqual(sorted(h), ["after", "real"])
+
+    def test_unclosed_fence_runs_to_eof(self):
+        self.write({"a.md": "# Real\n```\n# not a heading\nbody.\n"})
+        report = cs.build_report(self.corpus)
+        self.assertEqual(sorted(report["headings"]), ["real"])
+
+
 class SectionStatsTests(Base):
     def test_preamble_section(self):
         self.write({
