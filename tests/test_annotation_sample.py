@@ -333,3 +333,33 @@ class SectionTypingTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class EmptyAtxTests(unittest.TestCase):
+    def test_bare_hash_is_empty_heading_between_paragraphs(self):
+        rows = a.document_sentences('d.md', 'Alpha one.\n#\nBeta two.\n', H)
+        self.assertEqual([r['text'] for r in rows], ['Alpha one.', 'Beta two.'])
+        self.assertEqual([r['section_index'] for r in rows], [0, 1])
+        self.assertEqual(rows[1]['heading'], '')
+
+    def test_empty_heading_variants(self):
+        # Empty text maps like any unmapped heading: a level-1 one ends '# Methods'.
+        for line, after in (('#', 'unknown'), ('#  ', 'unknown'), ('### ###', 'methods'),
+                            ('##  ##', 'methods'), ('######', 'methods')):
+            rows = types(f'# Methods\n\nAlpha one.\n{line}\nBeta two.\n')
+            self.assertEqual([(t, ix) for t, ix, _ in rows], [('methods', 1), (after, 2)], line)
+        for line in ('#######', '#5', '#hash'):
+            rows = types(f'Alpha one.\n{line}\n')
+            self.assertEqual(len({ix for _, ix, _ in rows}), 1, line)
+
+    def test_sentence_counts_agree_with_corpus_stats(self):
+        from experiments import corpus_stats
+        md = ('Lead one.\n#\nAfter bare.\n\n##  ##\nAfter closed.\n\n'
+              '```\n# not a heading\n```\nTail one. Tail two.\n')
+        rows = a.document_sentences('a.md', md, {})
+        self.assertNotIn('# not a heading', ' '.join(r['text'] for r in rows))
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, 'a.md'), 'w', encoding='utf-8') as f:
+                f.write(md)
+            report = corpus_stats.build_report(d)
+        self.assertEqual(report['per_document']['a.md']['sentences'], len(rows))
