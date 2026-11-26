@@ -109,3 +109,38 @@ test('report mode keeps the Host/Origin guard', async () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('legend says synthetic only for the shipped sample folder', async () => {
+  const { SYNTHETIC_LEGEND } = await import('../demo/server.js');
+  let run = await startServer({ port: 0 });
+  try {
+    const page = await (await fetch(run.url)).text();
+    assert.ok(page.includes(SYNTHETIC_LEGEND));
+    assert.ok(page.includes('Provisional labels: synthetic'));
+  } finally { await run.close(); }
+  const dir = mkdtempSync(join(tmpdir(), 'demo-legend-'));
+  try {
+    writeFileSync(join(dir, 'S.md'), source);
+    run = await startServer({ dir, port: 0 });
+    try {
+      const page = await (await fetch(run.url)).text();
+      assert.ok(page.includes('Provisional labels: unreviewed placeholders'));
+      assert.ok(!page.includes(SYNTHETIC_LEGEND));
+    } finally { await run.close(); }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('CLI: --labels without --report is a one-line usage error', async () => {
+  const { spawnSync } = await import('node:child_process');
+  const { fileURLToPath } = await import('node:url');
+  const server = fileURLToPath(new URL('../demo/server.js', import.meta.url));
+  const out = spawnSync(process.execPath, [server, '--labels', 'x.json', '--port', '0'], { encoding: 'utf8', timeout: 10000 });
+  assert.notEqual(out.status, 0);
+  assert.notEqual(out.status, null);
+  const lines = out.stderr.trim().split('\n');
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], /--labels needs --report/);
+  assert.doesNotMatch(out.stderr, /\n\s+at /);
+});

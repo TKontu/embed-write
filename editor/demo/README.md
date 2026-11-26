@@ -22,7 +22,11 @@ npm run demo -- --report "/path/to/Any Report.md" --labels /path/to/labels.json
 The page lists exactly that file (any name, including spaces and non-ASCII), opens it, and saves
 edits back to that same file through `atomicWrite`; every other name is refused. Labels come from
 `--labels`, else `<report>.moves.json` beside the report, else none. The legend says the labels are
-provisional (not "synthetic"); `legend.json` beside the report is used if present.
+provisional (not "synthetic"); `legend.json` beside the report is used if present. `--labels`
+without `--report` is a usage error (one-line message, exit code 2).
+
+The legend says "synthetic" only for the shipped `examples/demo` folder; any other `--dir`/`DEMO_DIR`
+folder is labelled "unreviewed placeholders".
 
 ## Sample folder
 

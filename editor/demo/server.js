@@ -424,7 +424,7 @@ async function handle(req, res, ctx) {
   if (pathname === '/' || pathname === '/index.html') {
     const html = await readFile(join(EDITOR_DIR, 'demo', 'index.html'), 'utf8');
     const map = JSON.stringify(ctx.importMap).replace(/</g, '\\u003c');
-    const page = ctx.report ? html.replace(SYNTHETIC_LEGEND, REPORT_LEGEND) : html;
+    const page = ctx.report || ctx.dir !== DEFAULT_DIR ? html.replace(SYNTHETIC_LEGEND, REPORT_LEGEND) : html;
     return send(res, 200, MIME['.html'], page.replace('<!--IMPORTMAP-->', `<script type="importmap">${map}</script>`));
   }
   if (pathname === '/favicon.ico') return send(res, 204, MIME['.ico'], '');
@@ -574,6 +574,10 @@ function argValue(flag) {
 
 const isMain = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isMain) {
+  if (argValue('--report') === undefined && argValue('--labels') !== undefined) {
+    console.error('usage error: --labels needs --report (e.g. npm run demo -- --report <file.md> --labels <labels.json>)');
+    process.exit(2);
+  }
   const reportArg = argValue('--report');
   const labels = argValue('--labels');
   const dir = resolve(argValue('--dir') ?? process.env.DEMO_DIR ?? DEFAULT_DIR);
