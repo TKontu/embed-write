@@ -11,6 +11,7 @@ folder, loads one into the editor, shows the provisional move overlay and saves 
 `atomicWrite`. A strip above the editor is the document minimap (OV-01): one segment per run of same-move blocks, coloured by legendCss.
 It starts collapsed; "Show minimap" expands it and the choice survives switching samples (OV-04).
 Below it, an open-issues list (OV-03) names each genre move missing from the labels and each unlabeled passage; clicking a passage selects and scrolls to it.
+Hovering a move mark, or putting the cursor in one, fills the signal inspector (IN-01) beside the editor: signal, value, confidence, layer and a "Method" link to that move's genre definition (pattern fit, not a verdict).
 
 ## One real report (DE-05 swap, D-011)
 

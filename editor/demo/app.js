@@ -7,7 +7,8 @@ import { DEFAULT_GRANULARITY, DEFAULT_OFF_SHORTCUT, DEFAULT_OVERLAY, OVERLAYS } 
 import { legendCss, renderLegendPanel } from '../src/legend.js';
 import { mountCollapsibleMinimap } from '../src/minimap.js';
 import { openIssues, renderIssues } from '../src/issues.js';
-import { Selection } from '@milkdown/prose/state';
+import { Plugin, Selection } from '@milkdown/prose/state';
+import { inspectorPlugin, mountInspector, renderMethodTexts } from '../src/inspector.js';
 
 const byId = (id) => /** @type {HTMLElement} */ (document.getElementById(id));
 const ui = {
@@ -136,8 +137,12 @@ async function load(name) {
     onGranularity: granularityChanged,
     onOverlay: overlaySelectionChanged,
   });
+  // IN-01 (D-009 slice): hover or selection inside a move mark fills the inspector panel.
+  inspector?.destroy();
+  inspector = mountInspector(editor.view.dom, inspectorMount(), () => genre);
+  const current = inspector;
   editor.view.updateState(editor.view.state.reconfigure({
-    plugins: [...editor.view.state.plugins, plugin],
+    plugins: [...editor.view.state.plugins, plugin, inspectorPlugin(Plugin, () => current)],
   }));
   // idPlugin assigns block ids on this transaction; the overlay then has nodes to decorate.
   editor.view.dispatch(editor.view.state.tr.setMeta('demo:loaded', true));
@@ -156,6 +161,21 @@ async function load(name) {
 
 /** @type {HTMLElement | null} */
 let issuesMount = null;
+/** @type {ReturnType<typeof mountInspector> | null} */
+let inspector = null;
+/** @type {HTMLElement | null} */
+let inspectorEl = null;
+
+/** IN-01: the inspector panel and the anchored method texts, at the top of the legend column. */
+function inspectorMount() {
+  if (!inspectorEl) {
+    inspectorEl = document.createElement('div');
+    inspectorEl.className = 'inspector-mount';
+    ui.legendMount.before(inspectorEl);
+    ui.legendMount.after(renderMethodTexts(document, genre));
+  }
+  return inspectorEl;
+}
 
 /** OV-03: render the open-issues list; clicking an unlabeled passage selects and reveals its block. */
 function mountIssues(/** @type {any} */ editor) {
