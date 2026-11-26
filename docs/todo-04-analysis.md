@@ -92,6 +92,7 @@ This is the core of revision 2. The pattern model is built and tested offline on
   - done (R28/A2): `analysis/redundancy.py` (Unit, RedundantPair, redundant_pairs; cross-section cosine, adjacent excluded, heap-bounded limit). seen: tests/test_redundancy.py, gate 520 tests OK at head 70729199fc4c39462c8b7978ea0f58d3931b0edf (PR #76). Production caller: unwired by design until RD-02 / G-04. Residual: O(n^2*d) large-document bound untested.
 - [ ] **RD-02** `[A]` Slow layer separates repetition from an intentional recap (summary and conclusion sections restate by design)
 - [ ] **RD-03** `[A]` Per-document suppression: the expert marks a pair as intentional
+  - partial (R185/A2, PR #464, merge 5d92f76; Claude lane, Codex usage-limited): `analysis/redundancy_suppression.py` SuppressionStore(path).mark/suppressed (append-only JSONL per document, unordered pairs, corrupt line raises with line number) and filter_suppressed(pairs, suppressed). seen: tests/test_redundancy_suppression.py 11 tests, gate 1641 OK at head 092504d and on main (rerun by planner). Stays partial: unwired by design until the G-04 redundancy overlay / RD-02 and an expert marking UI. Residual: single writer, no locking, no un-marking.
 
 ---
 
