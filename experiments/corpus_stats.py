@@ -5,7 +5,9 @@ keeps only per-document counts, per-heading document/level usage and integer
 section-length lists; document text is never retained. Sections are split on
 ATX headings (``#``..``######``); text before the first heading is a section
 with heading ``null`` (a preamble counts only when it has non-whitespace text).
-Sentence counts come from service.segment.segment_sentences. Heading text is
+Sentence counts come from service.segment.segment_sentences over the prose paragraphs
+annotation_sample.section_paragraphs yields (fenced/indented code, setext heading text and
+front matter excluded), so per-document counts equal document_sentences. Heading text is
 normalised (stripped, closing ``#`` sequence removed, case-folded); the report
 contains heading strings only, no body excerpts.
 
@@ -30,6 +32,7 @@ import sys
 from pathlib import Path
 from typing import Iterator
 
+from experiments.annotation_sample import section_paragraphs
 from experiments.corpus import iter_documents
 from experiments.corpus_metadata import iter_records, word_count
 from service.segment import segment_sentences
@@ -147,7 +150,9 @@ def build_report(corpus_dir: str | os.PathLike, metadata: str | os.PathLike | No
         used: set[str] = set()
         for heading, body in _iter_sections(document.text):
             sections += 1
-            sentences_in_section = len(segment_sentences(body))
+            # Same paragraph parser as the annotation sample, so per-document counts agree.
+            sentences_in_section = sum(len(segment_sentences(p))
+                                       for p in section_paragraphs(body))
             sentences += sentences_in_section
             word_lengths.append(word_count(body))
             sentence_lengths.append(sentences_in_section)

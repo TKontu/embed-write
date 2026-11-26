@@ -190,6 +190,14 @@ def _sections(markdown, headings):
         yield current, heading, index, '\n'.join(para)
 
 
+def section_paragraphs(markdown):
+    """Prose paragraphs of ``markdown`` exactly as document_sentences segments them.
+
+    Production caller: corpus_stats.build_report (CO-09 counts agree with the sample).
+    """
+    return [para for _, _, _, para in _sections(markdown, {})]
+
+
 def document_sentences(doc_id, markdown, headings):
     """Sentences of one document in order, with the ids the manifest uses.
 

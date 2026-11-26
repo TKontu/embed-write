@@ -246,6 +246,51 @@ class IntakeTest(unittest.TestCase):
         for p in (REPO / "experiments" / "intake.py", Path(__file__)):
             self.assertNotIn("CO-" + "11", p.read_text(encoding="utf-8"), p)
 
+    MIXED = ("---\ntitle: synthetic\n---\n# Overview\n\nThe valve opened early. Flow rose.\n\n"
+             "Key findings\n\nThe pump failed. It was replaced.\n\nMethods\n-------\n\n"
+             "We logged pressure. Then we waited.\n\n```\nraw = read(). more = 2.\n```\n\n"
+             "    indented code. not prose.\n\nResults\n=======\n\nIt worked.\n")
+
+    def test_stats_and_sample_sentence_counts_agree(self):
+        from experiments import annotation_sample
+        (self.src / "mixed.md").write_text(self.MIXED, encoding="utf-8")
+        code, rep, _, _ = self.run_intake()
+        self.assertEqual(code, 0)
+        stats = json.loads((self.out / "corpus_stats.json").read_text(encoding="utf-8"))
+        conv = self.out / intake.CONVERTED
+        total = 0
+        for rel, d in stats["per_document"].items():
+            n = len(annotation_sample.document_sentences(
+                rel, (conv / rel).read_text(encoding="utf-8"), {}))
+            self.assertEqual(d["sentences"], n, rel)
+            total += n
+        self.assertEqual(rep["steps"]["corpus_stats"]["counts"]["sentences"], total)
+
+    def test_force_owned_name_is_directory(self):
+        self.out.mkdir()
+        (self.out / "manifest.json").mkdir()
+        se = io.StringIO()
+        with contextlib.redirect_stderr(se), contextlib.redirect_stdout(io.StringIO()):
+            code = intake.main(["run", str(self.src), str(self.out), "--genre", GENRE,
+                                "--force"])
+        self.assertEqual(code, 2)
+        self.assertIn("manifest.json", se.getvalue())
+        self.assertNotIn("Traceback", se.getvalue())
+
+    def test_metadata_inside_out_owned_name_refused(self):
+        self.out.mkdir()
+        for name in ("corpus_stats.json", intake.CONVERTED + "/meta.jsonl"):
+            meta = self.out / name
+            meta.parent.mkdir(parents=True, exist_ok=True)
+            meta.write_text("{}\n", encoding="utf-8")
+            se = io.StringIO()
+            with contextlib.redirect_stderr(se), contextlib.redirect_stdout(io.StringIO()):
+                code = intake.main(["run", str(self.src), str(self.out), "--genre", GENRE,
+                                    "--force", "--metadata", str(meta)])
+            self.assertEqual(code, 2, name)
+            self.assertIn("--metadata", se.getvalue())
+            self.assertTrue(meta.exists(), name)
+
     def test_usage_errors(self):
         self.out.mkdir()
         (self.out / "x").write_text("x")
