@@ -331,10 +331,6 @@ class SectionTypingTests(unittest.TestCase):
         rows = types('# Methods\n\n- Item one.\n\n    Item more.\n')
         self.assertIn('Item more.', ' '.join(s for *_, s in rows))
 
-if __name__ == '__main__':
-    unittest.main()
-
-
 class EmptyAtxTests(unittest.TestCase):
     def test_bare_hash_is_empty_heading_between_paragraphs(self):
         rows = a.document_sentences('d.md', 'Alpha one.\n#\nBeta two.\n', H)
@@ -388,9 +384,10 @@ class AtxClosingSequenceTests(unittest.TestCase):
 
     def test_agrees_with_corpus_stats(self):
         from experiments import corpus_stats as cs
-        # Empty closed headings ('### ###') are a corpus_stats residual (it keeps '###').
         for line, text in self.CASES:
-            if not text:
-                continue
             want = cs._heading_text(cs._ATX.match(line).group(2))
             self.assertEqual(self.heading(line).casefold(), want, line)
+
+
+if __name__ == '__main__':
+    unittest.main()
