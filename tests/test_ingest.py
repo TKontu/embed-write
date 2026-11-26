@@ -315,7 +315,41 @@ class IngestTest(unittest.TestCase):
         body = _np("a", 1) + _np("a1", 1, 1) + _np("a2", 1, 1) + _np("b", 1) + _np("b1", 1, 1)
         make_numbered_docx(self.src / "x.docx", body, numbering_xml({1: ["decimal", "lowerLetter"]}))
         self.assertEqual(ingest.convert_docx(self.src / "x.docx"),
-                         "1. a\n   - a1\n   - a2\n2. b\n   - b1\n")
+                         "1. a\n   1. a1\n   2. a2\n2. b\n   1. b1\n")
+
+    def _num_raw(self, abstract_lvls: str, num_extra: str = "") -> str:
+        return (f'<?xml version="1.0"?><w:numbering {W}>'
+                f'<w:abstractNum w:abstractNumId="11">{abstract_lvls}</w:abstractNum>'
+                f'<w:num w:numId="1"><w:abstractNumId w:val="11"/>{num_extra}</w:num>'
+                f'</w:numbering>')
+
+    def test_docx_abstract_start_honoured(self):
+        num = self._num_raw('<w:lvl w:ilvl="0"><w:start w:val="3"/><w:numFmt w:val="decimal"/></w:lvl>')
+        make_numbered_docx(self.src / "s.docx", _np("a", 1) + _np("b", 1), num)
+        self.assertEqual(ingest.convert_docx(self.src / "s.docx"), "3. a\n4. b\n")
+
+    def test_docx_start_override_honoured(self):
+        num = self._num_raw('<w:lvl w:ilvl="0"><w:start w:val="3"/><w:numFmt w:val="decimal"/></w:lvl>',
+                            '<w:lvlOverride w:ilvl="0"><w:startOverride w:val="5"/></w:lvlOverride>')
+        make_numbered_docx(self.src / "o.docx", _np("a", 1) + _np("b", 1), num)
+        self.assertEqual(ingest.convert_docx(self.src / "o.docx"), "5. a\n6. b\n")
+
+    def test_docx_lvl_override_fmt_and_start(self):
+        num = self._num_raw('<w:lvl w:ilvl="0"><w:numFmt w:val="bullet"/></w:lvl>',
+                            '<w:lvlOverride w:ilvl="0"><w:lvl w:ilvl="0"><w:start w:val="7"/>'
+                            '<w:numFmt w:val="upperRoman"/></w:lvl></w:lvlOverride>')
+        make_numbered_docx(self.src / "v.docx", _np("a", 1) + _np("b", 1), num)
+        self.assertEqual(ingest.convert_docx(self.src / "v.docx"), "7. a\n8. b\n")
+
+    def test_docx_letter_formats_ordered(self):
+        make_numbered_docx(self.src / "l.docx", _np("a", 1) + _np("b", 1),
+                           numbering_xml({1: ["lowerLetter"]}))
+        self.assertEqual(ingest.convert_docx(self.src / "l.docx"), "1. a\n2. b\n")
+
+    def test_docx_empty_paragraph_keeps_counting(self):
+        body = _np("a", 1) + _p("") + _np("b", 1) + _p("x") + _np("c", 1)
+        make_numbered_docx(self.src / "e.docx", body, numbering_xml({1: ["decimal"]}))
+        self.assertEqual(ingest.convert_docx(self.src / "e.docx"), "1. a\n2. b\n\nx\n\n1. c\n")
 
     @unittest.skipUnless(ingest.node_available(), "node unavailable")
     def test_numbered_docx_roundtrip(self):
