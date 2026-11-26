@@ -1,0 +1,56 @@
+{
+  "item": "FP-03",
+  "environment": "jsdom (not a browser)",
+  "node": "v22.23.2",
+  "document": "LLM-built synthetic, generated deterministically in memory",
+  "words": 100000,
+  "blocks": 1396,
+  "signalled_blocks": 466,
+  "repetitions": 5,
+  "mount": {
+    "median_ms": 1662.63,
+    "max_ms": 2761.28,
+    "runs_ms": [
+      1662.63,
+      2761.28,
+      2131.59,
+      1358.78,
+      1498.96
+    ]
+  },
+  "overlay_on": {
+    "median_ms": 55.34,
+    "max_ms": 120.31,
+    "runs_ms": [
+      120.31,
+      55.34,
+      52.56,
+      57.96,
+      54.06
+    ]
+  },
+  "keystroke": {
+    "median_ms": 10.1,
+    "max_ms": 27.22,
+    "runs_ms": [
+      27.22,
+      10.1,
+      3.17,
+      14.05,
+      5.25
+    ]
+  },
+  "granularity_change": {
+    "median_ms": 107.56,
+    "max_ms": 153.5,
+    "runs_ms": [
+      153.5,
+      126.74,
+      55.5,
+      91.86,
+      107.56
+    ]
+  },
+  "peak_heap_used_mb": 237.5,
+  "keystroke_over_50ms": false
+}
