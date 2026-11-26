@@ -36,6 +36,8 @@ The corpus defines what "good" means for a genre. The selection is the single mo
   - fence fix (R161/A1, PR #405, merge b97e11e, reviewed head 8bdf73e): `_iter_sections` tracks CommonMark backtick/tilde fences, so ATX-looking lines inside fences stay body text; 5 FenceTests; gate 1588 OK. Ran on Claude (Codex usage-limited, D-008). Residuals: fences inside list items/blockquotes not handled; setext headings not parsed.
 - [x] **CO-10** `[A]` Network guard: corpus processing fails closed if a remote endpoint is configured without explicit opt-in (invariant I9) — check: test with a remote URL fails — seen: tests/test_corpus_network_guard.py (prelabel, g02_generate, AnalysisClient); gate 1282 OK
   - done (R105/A1, PR #275, merge b82df4d, reviewed head 06eaf64): test-only; existing guards already covered prelabel.local_model, g02_generate (via local_model) and service.client.AnalysisClient, so no product code changed. Residual: none new.
+- [x] **CO-11** `[A]` Ingest roundtrip check skips (not errors) when docmodel dependencies are absent, so tests/test_ingest.py passes in a fresh lane worktree — check: no failures without docmodel/node_modules — seen: planner run at 1880dec in a fresh worktree, tests.test_ingest OK (skipped=8); gate 1618 OK
+  - done (R175/A1, PR #440, merge a7fb8ce, reviewed head 1880dec; Claude lane, Codex usage-limited): `roundtrip_unavailable_reason()` checks node and `docmodel/node_modules`; report says `skipped: docmodel dependencies not installed`. Residual: a broken or incomplete install still reports `error: ...`.
 
 ---
 
