@@ -50,7 +50,7 @@ dry run.
 | 2 consecutive recycles, or the default branch unchanged over 3 rounds | | Diagnosing round (below) |
 | A planner's `--outcome halt` | | Diagnosing round (below) |
 | A planner's `--outcome wait --cause C --until T` | up to 12 h | Wait for T, then diagnose again |
-| The same cause unresolved by 2 diagnosing rounds in a row | | HALT and notify, with that cause |
+| The same cause unresolved by 2 diagnosing rounds in a row (a planner's halt or wait cause, or the breaker's own `no-advance`/`recycled` when a diagnosing round left main unmoved) | | HALT and notify, with that cause |
 
 **Diagnosing rounds (D-012).** No progress and failed rounds are solved by reconciliation, not by
 retry. When the breaker trips, the next round gets a diagnosing preamble before the normal
@@ -63,7 +63,9 @@ instructions:
 
 Only if only an external event can unblock every lane does the round end with `wait`, naming the
 cause and when it clears. Only the operator's `stop` and `stop-after-round` halt the loop directly.
-An advance of the default branch resets the cause count.
+An advance of the default branch resets the cause count; a round ending `continue` without moving it
+does not. A wait whose `until` is still in the future is pending, not unresolved, so a multi-day
+limit waits in 12 h steps without halting; once its time has passed, the same cause escalates.
 
 Only outward progress refunds nudges, so a session that merely keeps its transcript busy cannot
 extend a round forever. `run --set KEY=SECONDS` shortens any timer for a trial.

@@ -141,12 +141,47 @@ class PolicyTests(unittest.TestCase):
         # it may wait for a named external cause, then diagnose again
         t = tracker(diagnosing=True)
         w = rs.Action("wait_requested", "codex", cause="executor-limit", until=T0 + 600)
-        out = rs.between_rounds(CFG, t, w, breaker)
+        out = rs.between_rounds(CFG, t, w, breaker, now=T0)
         self.assertEqual((out.kind, out.until), ("wait", T0 + 600))
-        # the same unresolved cause twice in a row is a real halt, with that cause
-        out = rs.between_rounds(CFG, t, w, breaker)
+        # once its time has passed, the same unresolved cause twice in a row is a real halt
+        late = rs.Action("wait_requested", "codex", cause="executor-limit", until=T0 - 1)
+        self.assertEqual(rs.between_rounds(CFG, t, late, breaker, now=T0).until, T0)  # no past waits
+        out = rs.between_rounds(CFG, t, late, breaker, now=T0)
         self.assertEqual(out.kind, "halt")
         self.assertIn("executor-limit", out.reason)
+
+    def test_a_frozen_main_escalates_even_when_diagnosing_rounds_claim_they_acted(self):
+        # review of #359: breaker-triggered diagnosis must count as a cause and escalate
+        t = tracker(main_at_start="a")
+        cont = rs.Action("next")
+        routes = []
+        for _ in range(6):
+            breaker = rs.after_round(CFG, t, recycled=False, main_sha="a")
+            routes.append(rs.between_rounds(CFG, t, cont, breaker).kind)
+            if routes[-1] == "halt":
+                break
+        self.assertEqual(routes, ["next", "next", "diagnose", "diagnose", "halt"])
+
+    def test_continue_without_progress_keeps_the_count_and_progress_resets_it(self):
+        t = tracker(main_at_start="a", diagnosing=True, last_cause="no-advance", repeats=1)
+        breaker = rs.after_round(CFG, t, recycled=False, main_sha="b")  # main advanced
+        self.assertIsNone(breaker)
+        self.assertEqual(rs.between_rounds(CFG, t, rs.Action("next"), breaker).kind, "next")
+        self.assertEqual((t.repeats, t.last_cause, t.diagnosing), (0, "", False))
+
+    def test_a_pending_external_wait_does_not_escalate_until_its_time_has_passed(self):
+        t = tracker(diagnosing=True)
+        w = rs.Action("wait_requested", "codex", cause="executor-limit", until=T0 + 5 * CFG.wait_max_s)
+        for _ in range(4):  # a multi-day limit: wait, re-diagnose, wait again
+            self.assertEqual(rs.between_rounds(CFG, t, w, None, now=T0).kind, "wait")
+        past = rs.Action("wait_requested", "codex", cause="executor-limit", until=T0 - 1)
+        self.assertEqual(rs.between_rounds(CFG, t, past, None, now=T0).kind, "wait")
+        self.assertEqual(rs.between_rounds(CFG, t, past, None, now=T0).kind, "halt")
+
+    def test_a_halt_without_a_cause_code_uses_one_stable_cause(self):
+        a = rs.decide(CFG, tracker(), obs(1, sentinel={"outcome": "halt", "reason": "first words"}))
+        b = rs.decide(CFG, tracker(), obs(1, sentinel={"outcome": "halt", "reason": "other words"}))
+        self.assertEqual(a.cause, b.cause)
 
     def test_a_wait_is_capped(self):
         t = tracker(diagnosing=True)
@@ -293,6 +328,14 @@ class StateTests(unittest.TestCase):
         sentinel = rs.read_sentinel(7)
         self.assertEqual((sentinel["outcome"], sentinel["cause"]), ("wait", "executor-limit"))
         self.assertGreater(sentinel["until"], 1_700_000_000)
+
+    def test_complete_refuses_a_halt_without_a_cause_and_a_bad_until(self):
+        self.open_round(1.0)
+        (self.tmp / "HANDOFF.md").write_text("x")
+        ok = lambda _c, _t: (0, "")  # noqa: E731
+        self.assertEqual(rs.complete("halt", "why", ok), 2)
+        self.assertEqual(rs.complete("wait", "why", ok, cause="c", until="not-a-time"), 2)
+        self.assertEqual(rs.complete("halt", "why", ok, cause="tool-broken"), 0)
 
     def test_complete_validates_with_round_py_and_records_the_round(self):
         self.open_round(1.0)
