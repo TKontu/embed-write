@@ -176,13 +176,17 @@ export function moveDecorations(doc, moves, genre, granularity = DEFAULT_GRANULA
     const attrs = {
       class: `signal signal-provisional signal-${strength}${isMove ? ` move move-${kind}` : ''}`,
       'data-signal-kind': kind,
-      'data-signal-layer': 'provisional',
+      // IN-05: an expert correction (applyCorrections) carries its own layer; styling is unchanged (I3).
+      'data-signal-layer': entry.layer === 'expert correction' ? entry.layer : 'provisional',
       'data-signal-confidence': String(confidence),
       'data-signal-strength': strength,
       'data-signal-overlay': entryOverlay,
       'data-signal-level': level,
     };
     if (isMove) attrs['data-move'] = kind;
+    if (isMove && entry.layer === 'expert correction' && typeof entry.previous === 'string') {
+      attrs['data-signal-previous'] = entry.previous;
+    }
     if (range) {
       const id = node.attrs.id;
       if (typeof id !== 'string' || !id) continue;

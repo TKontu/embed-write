@@ -7,11 +7,12 @@
 //   (optionally `--labels`): the one-step swap for a real report (D-011).
 // No new dependency is used: the import map is generated from the installed module graph.
 import { createServer } from 'node:http';
-import { realpath, readFile, readdir, stat } from 'node:fs/promises';
+import { mkdir, realpath, readFile, readdir, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { atomicWrite } from '../src/autosave.js';
+import { checkCorrections } from '../src/corrections.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const EDITOR_DIR = resolve(HERE, '..');
@@ -19,6 +20,8 @@ export const REPO_DIR = resolve(EDITOR_DIR, '..');
 export const DOCMODEL_DIR = join(REPO_DIR, 'docmodel');
 export const DEFAULT_DIR = join(REPO_DIR, 'examples', 'demo');
 const MAX_BODY = 5 * 1024 * 1024;
+/** IN-05: expert corrections (private, gitignored `edit-log/`), never under examples/. */
+export const DEFAULT_CORRECTIONS_DIR = join(REPO_DIR, 'edit-log', 'demo-corrections');
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -415,7 +418,7 @@ export function refusalReason(req, port) {
 /**
  * @param {import('node:http').IncomingMessage} req
  * @param {import('node:http').ServerResponse} res
- * @param {{ dir: string, report: { file: string, name: string, labels: string | null } | null, importMap: { imports: Record<string, string> } }} ctx
+ * @param {{ dir: string, correctionsDir: string, report: { file: string, name: string, labels: string | null } | null, importMap: { imports: Record<string, string> } }} ctx
  */
 async function handle(req, res, ctx) {
   const url = new URL(req.url ?? '/', 'http://127.0.0.1');
@@ -509,6 +512,33 @@ async function handle(req, res, ctx) {
     return send(res, 200, MIME['.json'], await readFile(file, 'utf8'));
   }
 
+  if (!ctx.report && pathname.startsWith('/api/corrections/')) {
+    // IN-05 (D-009 slice): expert move-label corrections, one whole-file JSON per sample.
+    const name = checkSampleName(decodeURIComponent(pathname.slice('/api/corrections/'.length)));
+    const file = join(ctx.correctionsDir, name.replace(/\.md$/, '') + '.corrections.json');
+    if (req.method === 'GET') {
+      if (!existsSync(file)) return send(res, 200, MIME['.json'], '[]');
+      return send(res, 200, MIME['.json'], await readFile(file, 'utf8'));
+    }
+    if (req.method === 'PUT') {
+      const text = await readBody(req);
+      let list;
+      try { list = JSON.parse(text); } catch { return sendError(res, 400, 'body must be JSON'); }
+      const own = join(ctx.dir, 'genre.json');
+      const genreFile = existsSync(own) ? own : join(DEFAULT_DIR, 'genre.json');
+      const genre = JSON.parse(await readFile(genreFile, 'utf8'));
+      const ids = new Set((Array.isArray(genre.moves) ? genre.moves : []).map((/** @type {any} */ m) => m && m.id));
+      try { checkCorrections(list, ids); } catch (err) {
+        return sendError(res, 400, /** @type {Error} */ (err).message);
+      }
+      const body = JSON.stringify(list, null, 2) + '\n';
+      await mkdir(ctx.correctionsDir, { recursive: true });
+      await atomicWrite(file, body);
+      return send(res, 200, MIME['.json'], JSON.stringify({ saved: name, corrections: list.length }));
+    }
+    return sendError(res, 405, 'method not allowed');
+  }
+
   const mounts = [
     ['/@app/', EDITOR_DIR],
     ['/@docmodel/', DOCMODEL_DIR],
@@ -542,7 +572,7 @@ async function handle(req, res, ctx) {
 }
 
 /**
- * @param {{ dir?: string, report?: string, labels?: string, port?: number, host?: string }} [opts]
+ * @param {{ dir?: string, report?: string, labels?: string, port?: number, host?: string, correctionsDir?: string }} [opts]
  * @returns {Promise<{ server: import('node:http').Server, url: string, port: number, dir: string, report: { file: string, name: string, labels: string | null } | null, importMap: { imports: Record<string, string> }, close: () => Promise<void> }>}
  */
 export async function startServer(opts = {}) {
@@ -552,6 +582,7 @@ export async function startServer(opts = {}) {
   const dir = report ? dirname(report.file) : resolve(opts.dir ?? DEFAULT_DIR);
   const info = await stat(dir);
   if (!info.isDirectory()) throw new Error(`sample folder is not a directory: ${dir}`);
+  const correctionsDir = resolve(opts.correctionsDir ?? process.env.DEMO_CORRECTIONS_DIR ?? DEFAULT_CORRECTIONS_DIR);
   const port = opts.port ?? 0;
   const host = opts.host ?? '127.0.0.1';
   const importMap = await buildImportMap();
@@ -564,7 +595,7 @@ export async function startServer(opts = {}) {
       req.resume();
       return;
     }
-    handle(req, res, { dir, report, importMap }).catch((err) => {
+    handle(req, res, { dir, correctionsDir, report, importMap }).catch((err) => {
       if (!res.headersSent) sendError(res, /** @type {any} */ (err).status ?? 500, err instanceof Error ? err.message : String(err));
       else res.end();
     });

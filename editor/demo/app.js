@@ -10,6 +10,7 @@ import { blockEvidence, moveSequence, mountComparison, transitionStats } from '.
 import { openIssues, renderIssues } from '../src/issues.js';
 import { Plugin, Selection } from '@milkdown/prose/state';
 import { inspectorPlugin, mountInspector, registerFlag, renderMethodTexts, supportEvidence } from '../src/inspector.js';
+import { addCorrection, applyCorrections } from '../src/corrections.js';
 
 const byId = (id) => /** @type {HTMLElement} */ (document.getElementById(id));
 const ui = {
@@ -124,6 +125,9 @@ async function load(name) {
   let flags = [];
   const supportRes = await fetch(`/api/support/${encodeURIComponent(name)}`);
   if (supportRes.ok) flags = await supportRes.json();
+  // IN-05: expert corrections for this sample (GET returns [] when none are stored).
+  const corrRes = await fetch(`/api/corrections/${encodeURIComponent(name)}`);
+  const corr = corrRes.ok ? await corrRes.json() : [];
   let regFlags = [];
   const registerRes = await fetch(`/api/register/${encodeURIComponent(name)}`);
   if (registerRes.ok) regFlags = await registerRes.json();
@@ -131,7 +135,9 @@ async function load(name) {
 
   if (state.editor) await state.editor.destroy();
   state.editor = null;
-  moves = sidecar;
+  sidecarMoves = sidecar;
+  corrections = corr;
+  moves = applyCorrections(sidecar, corr);
   supportFlags = flags;
   registerFlags = regFlags;
   state.sample = name;
@@ -154,7 +160,9 @@ async function load(name) {
     // IN-03 (D-009 slice): synthetic, LLM-built support flags for this block (no support model).
     (el) => supportFor(editor.view, el),
     // IN-04 (D-009 slice): synthetic, LLM-built register flags for this block (no register model).
-    (el) => registerFor(editor.view, el));
+    (el) => registerFor(editor.view, el),
+    // IN-05 (D-009 slice): the expert overrules a move label; stored, outranks the sidecar.
+    (el, label) => { correctLabel(editor.view, el, label); });
   const current = inspector;
   editor.view.updateState(editor.view.state.reconfigure({
     plugins: [...editor.view.state.plugins, plugin, inspectorPlugin(Plugin, () => current)],
@@ -234,6 +242,36 @@ function registerFor(/** @type {any} */ view, /** @type {Element} */ el) {
     const block = view.state.doc.resolve(view.posAtDOM(el, 0)).index(0);
     return registerFlag(registerFlags, block);
   } catch { return null; }
+}
+
+/** IN-05: the sample's sidecar labels (fast layer) and the stored expert corrections. */
+/** @type {any[]} */
+let sidecarMoves = [];
+/** @type {import('../src/corrections.js').Correction[]} */
+let corrections = [];
+
+/** IN-05: store an expert correction for the element's block, then relabel the mark. */
+async function correctLabel(/** @type {any} */ view, /** @type {Element} */ el, /** @type {string} */ label) {
+  const sample = state.sample;
+  if (!sample) return;
+  try {
+    const block = view.state.doc.resolve(view.posAtDOM(el, 0)).index(0);
+    const next = addCorrection(corrections, sidecarMoves, block, label);
+    const res = await fetch(`/api/corrections/${encodeURIComponent(sample)}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(next),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+    if (state.sample !== sample || state.editor?.view !== view) return;
+    corrections = next;
+    moves = applyCorrections(sidecarMoves, corrections);
+    view.dispatch(view.state.tr.setMeta('demo:corrected', true));
+    inspector?.update(view);
+    setStatus(`Saved expert correction for block ${block}: ${label}`);
+  } catch (err) {
+    setStatus(`Correction failed: ${err instanceof Error ? err.message : String(err)}`, true);
+  }
 }
 
 /** @param {string[]} names */
