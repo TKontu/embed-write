@@ -1,8 +1,9 @@
 // @ts-check
 // DE-02: the thin demo page. One document at a time; no corpus loop.
 import { createEditor } from '../src/index.js';
-import { isMoveOverlayOn, moveOverlayPlugin, toggleMoveOverlay, updateOverlayButton } from './overlay.js';
-import { DEFAULT_OFF_SHORTCUT } from '../src/decorations.js';
+import { isMoveOverlayOn, moveOverlayPlugin, selectedMoveGranularity, setMoveGranularity, toggleMoveOverlay,
+  updateOverlayButton } from './overlay.js';
+import { DEFAULT_GRANULARITY, DEFAULT_OFF_SHORTCUT } from '../src/decorations.js';
 import { legendCss, renderLegendPanel } from '../src/legend.js';
 
 const byId = (id) => /** @type {HTMLElement} */ (document.getElementById(id));
@@ -11,6 +12,7 @@ const ui = {
   save: /** @type {HTMLButtonElement} */ (byId('save-btn')),
   source: /** @type {HTMLButtonElement} */ (byId('source-btn')),
   overlay: /** @type {HTMLButtonElement} */ (byId('overlay-btn')),
+  granularity: /** @type {HTMLSelectElement} */ (byId('granularity-select')),
   status: byId('status'),
   root: byId('editor'),
   legendMount: byId('legend-panel'),
@@ -26,6 +28,8 @@ let genre = null;
 let loadToken = 0;
 /** RE-11: overlay on/off survives switching samples. */
 let overlayOn = true;
+/** RE-09: the selected granularity survives switching samples too. */
+let granularity = DEFAULT_GRANULARITY;
 
 /** @param {string} message @param {boolean} [bad] */
 function setStatus(message, bad = false) {
@@ -56,7 +60,20 @@ function updateSourceButton() {
 /** @param {boolean} on */
 function overlayChanged(on) {
   updateOverlayButton(ui.overlay, on);
-  setStatus(on ? 'Overlay on' : `Overlay off (${DEFAULT_OFF_SHORTCUT} to show)`);
+  setStatus(on ? `Overlay on (${granularity} level)` : `Overlay off (${DEFAULT_OFF_SHORTCUT} to show)`);
+}
+
+/** @param {string} name */
+function granularityChanged(name) {
+  granularity = name;
+  ui.granularity.value = name;
+  setStatus(`Showing ${name}-level labels`);
+}
+
+function selectGranularity() {
+  if (!state.editor) return;
+  setMoveGranularity(ui.granularity.value)(state.editor.view.state, state.editor.view.dispatch);
+  state.editor.view.focus();
 }
 
 function toggleOverlay() {
@@ -85,7 +102,12 @@ async function load(name) {
   ui.root.replaceChildren();
   const editor = await createEditor({ root: ui.root, markdown });
   if (token !== loadToken) { await editor.destroy(); return; }
-  const plugin = moveOverlayPlugin(() => moves, () => genre, { initiallyOn: overlayOn, onToggle: (on) => { overlayOn = on; overlayChanged(on); } });
+  const plugin = moveOverlayPlugin(() => moves, () => genre, {
+    initiallyOn: overlayOn,
+    initialGranularity: granularity,
+    onToggle: (on) => { overlayOn = on; overlayChanged(on); },
+    onGranularity: granularityChanged,
+  });
   editor.view.updateState(editor.view.state.reconfigure({
     plugins: [...editor.view.state.plugins, plugin],
   }));
@@ -95,7 +117,8 @@ async function load(name) {
   ui.samples.value = name;
   updateSourceButton();
   updateOverlayButton(ui.overlay, isMoveOverlayOn(editor.view.state));
-  setStatus(`Loaded ${name} — ${moves.length} provisional label${moves.length === 1 ? '' : 's'}`);
+  ui.granularity.value = selectedMoveGranularity(editor.view.state);
+  setStatus(`Loaded ${name} — ${moves.length} provisional label${moves.length === 1 ? '' : 's'}, ${ui.granularity.value} level`);
 }
 
 async function save() {
@@ -159,6 +182,7 @@ async function init() {
     ui.save.addEventListener('click', () => { save(); });
     ui.source.addEventListener('click', toggleSource);
     ui.overlay.addEventListener('click', toggleOverlay);
+    ui.granularity.addEventListener('change', selectGranularity);
     await load(listing.samples[0]);
   } catch (err) {
     setStatus(`Demo failed: ${err instanceof Error ? err.message : String(err)}`, true);

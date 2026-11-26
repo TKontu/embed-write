@@ -41,6 +41,7 @@ npm run demo -- --dir /path/to/reports --port 8000
 The folder may also contain:
 
 - `<report>.moves.json` — `[{ "block": 0, "move": "finding" }]`, 0-based top-level block index;
+  optional `"level"` (`section` on a heading block, `paragraph` default, or `sentence` with a 0-based `"sentence"`) is shown by the Granularity select (RE-09);
 - `genre.json` — a genre file in the service/genre.py schema (DE-06); its moves and stored legend
   drive the legend panel (LG-07) and overlay colours (LG-02 legendCss). Falls back to the demo's.
 - `legend.json` — provisional marking; `{ "provisional": true, "moves": { "finding": { "label": "...", "colour": "#..." } } }`.
