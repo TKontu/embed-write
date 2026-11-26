@@ -197,7 +197,7 @@ class IngestTest(unittest.TestCase):
         statuses = sorted(f["status"] for f in self.report().values())
         self.assertEqual(statuses, ["failed", "ok"])
 
-    @unittest.skipUnless(ingest.node_available(), "node unavailable")
+    @unittest.skipIf(ingest.roundtrip_unavailable_reason(), ingest.roundtrip_unavailable_reason())
     def test_roundtrip_check(self):
         make_docx(self.src / "r.docx")
         code, _ = self.run_cli(check=True)
@@ -212,6 +212,17 @@ class IngestTest(unittest.TestCase):
         self.addCleanup(setattr, ingest, "node_available", orig)
         self.run_cli(check=True)
         self.assertEqual(self.report()["a.txt"]["roundtrip"], "skipped: node unavailable")
+
+    def test_roundtrip_skipped_without_docmodel_deps(self):
+        (self.src / "a.txt").write_text("hi\n")
+        orig_node, orig_deps = ingest.node_available, ingest.DOCMODEL_DEPS
+        ingest.node_available = lambda: True
+        ingest.DOCMODEL_DEPS = self.src / "no-such-node_modules"
+        self.addCleanup(setattr, ingest, "node_available", orig_node)
+        self.addCleanup(setattr, ingest, "DOCMODEL_DEPS", orig_deps)
+        self.run_cli(check=True)
+        self.assertEqual(self.report()["a.txt"]["roundtrip"],
+                         "skipped: docmodel dependencies not installed")
 
     @unittest.skipUnless(ingest.HAVE_PYPDF, PDF_SKIP)
     def test_pdf_two_pages_heading(self):
@@ -277,7 +288,8 @@ class IngestTest(unittest.TestCase):
         e = self.report()["p.pdf"]
         self.assertEqual((e["status"], e["reason"]), ("unsupported", "pypdf not installed"))
 
-    @unittest.skipUnless(ingest.HAVE_PYPDF and ingest.node_available(), "pypdf or node unavailable")
+    @unittest.skipUnless(ingest.HAVE_PYPDF and not ingest.roundtrip_unavailable_reason(),
+                         "pypdf or roundtrip check unavailable")
     def test_pdf_roundtrip_check(self):
         (self.src / "r.pdf").write_bytes(make_pdf([["1. Intro", "", "Body."], ["1.1 More", "", "Text."]]))
         code, _ = self.run_cli(check=True)
@@ -410,7 +422,7 @@ class IngestTest(unittest.TestCase):
         make_numbered_docx(self.src / "en.docx", body, numbering_xml({1: ["decimal"]}))
         self.assertEqual(ingest.convert_docx(self.src / "en.docx"), "1. a\n2. b\n")
 
-    @unittest.skipUnless(ingest.node_available(), "node unavailable")
+    @unittest.skipIf(ingest.roundtrip_unavailable_reason(), ingest.roundtrip_unavailable_reason())
     def test_numbered_docx_roundtrip(self):
         body = _p("T", style="Heading1") + _np("a", 1) + _np("a1", 1, 1) + _np("b", 1)
         make_numbered_docx(self.src / "n.docx", body, numbering_xml({1: ["decimal", "decimal"]}))

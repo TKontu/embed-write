@@ -21,7 +21,8 @@ Files under OUT_DIR are never scanned as input, even when OUT_DIR is inside SRC_
 
 Files are processed one at a time. After conversion each output is checked by
 docmodel/scripts/check-roundtrip.js (batches of at most 50 paths) when ``node``
-is available; otherwise ``roundtrip`` is ``"skipped: node unavailable"``.
+and its dependencies (docmodel/node_modules) are available; otherwise ``roundtrip``
+is ``"skipped: node unavailable"`` or ``"skipped: docmodel dependencies not installed"``.
 
 CLI: python -m experiments.ingest convert SRC_DIR OUT_DIR [--force] [--no-check]
 Exit 0 when every supported file converted, 1 when any failed/unsupported,
@@ -49,6 +50,7 @@ except ImportError:  # pragma: no cover - exercised by monkeypatching HAVE_PYPDF
 
 REPO = Path(__file__).resolve().parent.parent
 CHECK_SCRIPT = REPO / "docmodel" / "scripts" / "check-roundtrip.js"
+DOCMODEL_DEPS = REPO / "docmodel" / "node_modules"
 REPORT_NAME = "ingest_report.json"
 BATCH = 50
 FORMATS = {".pdf": "pdf", ".docx": "docx", ".html": "html", ".htm": "html", ".txt": "txt", ".md": "md"}
@@ -538,6 +540,15 @@ def node_available() -> bool:
     return shutil.which("node") is not None
 
 
+def roundtrip_unavailable_reason() -> str | None:
+    """Why the node roundtrip check cannot run, or None when it can."""
+    if not node_available():
+        return "node unavailable"
+    if not DOCMODEL_DEPS.is_dir():
+        return "docmodel dependencies not installed"
+    return None
+
+
 def _run_node(paths: list[str]) -> list[dict]:
     proc = subprocess.run(["node", str(CHECK_SCRIPT), *paths], capture_output=True,
                           text=True, check=True, timeout=600)
@@ -602,9 +613,9 @@ def convert_dir(src_dir: Path, out_dir: Path, check: bool = True) -> dict:
     if not check:
         for e in ok:
             e["roundtrip"] = "skipped: check disabled"
-    elif not node_available():
+    elif (reason := roundtrip_unavailable_reason()) is not None:
         for e in ok:
-            e["roundtrip"] = "skipped: node unavailable"
+            e["roundtrip"] = f"skipped: {reason}"
     else:
         res = check_roundtrip([e["output"] for e in ok])
         for e in ok:
