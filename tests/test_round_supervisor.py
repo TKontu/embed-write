@@ -59,13 +59,18 @@ class PolicyTests(unittest.TestCase):
         late = obs(60 + CFG.settle_s, sentinel=done, status="working")
         self.assertEqual(rs.decide(CFG, t, late).kind, "next")
 
-    def test_requested_halts_win_over_the_next_round(self):
-        halt = obs(1, sentinel={"outcome": "halt"})
-        self.assertEqual(rs.decide(CFG, tracker(), halt).kind, "halt")
+    def test_a_planner_halt_asks_for_diagnosis_but_operator_stops_still_halt(self):
+        asked = rs.decide(CFG, tracker(), obs(1, sentinel={"outcome": "halt", "reason": "r"}))
+        self.assertEqual(asked.kind, "halt_requested")
         after = obs(1, sentinel={"outcome": "continue"}, stop_after_round=True)
         self.assertEqual(rs.decide(CFG, tracker(), after).kind, "halt")
         self.assertEqual(rs.decide(CFG, tracker(), obs(1, stop_now=True)).kind, "halt")
         self.assertEqual(rs.decide(CFG, tracker(), obs(1, stop_after_round=True)).kind, "wait")
+
+    def test_a_wait_outcome_carries_its_cause_and_time(self):
+        s = {"outcome": "wait", "cause": "executor-limit", "until": T0 + 600, "reason": "codex"}
+        action = rs.decide(CFG, tracker(), obs(1, sentinel=s))
+        self.assertEqual((action.kind, action.cause, action.until), ("wait_requested", "executor-limit", T0 + 600))
 
     def test_silence_nudges_after_the_threshold_only(self):
         quiet = obs(CFG.silence_s - 1, activity=T0)
@@ -107,18 +112,47 @@ class PolicyTests(unittest.TestCase):
         late = obs(CFG.silence_s + CFG.limit_max_s, activity=T0, limited=True)
         self.assertNotEqual(rs.decide(CFG, t, late).reason, "usage limit")
 
-    def test_breaker_halts_on_repeated_recycles_and_on_a_frozen_main(self):
+    def test_breaker_asks_for_a_diagnosing_round_not_a_halt(self):
         t = tracker(main_at_start="a")
         self.assertIsNone(rs.after_round(CFG, t, recycled=True, main_sha="b"))
-        stop = rs.after_round(CFG, t, recycled=True, main_sha="c")
-        self.assertEqual(stop.kind, "halt")
+        self.assertEqual(rs.after_round(CFG, t, recycled=True, main_sha="c").kind, "diagnose")
         t = tracker(main_at_start="a")
         self.assertIsNone(rs.after_round(CFG, t, recycled=False, main_sha="a"))
         self.assertIsNone(rs.after_round(CFG, t, recycled=False, main_sha="a"))
-        self.assertIsNotNone(rs.after_round(CFG, t, recycled=False, main_sha="a"))
-        t = tracker(main_at_start="a", recycles=1, no_advance=2)
+        self.assertIn("main unchanged", rs.after_round(CFG, t, recycled=False, main_sha="a").reason)
+        t = tracker(main_at_start="a", recycles=1, no_advance=2, last_cause="x", repeats=1)
         self.assertIsNone(rs.after_round(CFG, t, recycled=False, main_sha="b"))
-        self.assertEqual((t.recycles, t.no_advance), (0, 0))
+        self.assertEqual((t.recycles, t.no_advance, t.last_cause, t.repeats), (0, 0, "", 0))
+
+    def test_between_rounds_routes_to_diagnosis_wait_or_a_real_halt(self):
+        nxt = rs.Action("next")
+        breaker = rs.Action("diagnose", "main unchanged across 3 rounds")
+        # an ordinary round: the breaker or a halt request starts a diagnosing round
+        t = tracker()
+        self.assertEqual(rs.between_rounds(CFG, t, nxt, None).kind, "next")
+        self.assertEqual(rs.between_rounds(CFG, t, nxt, breaker).kind, "diagnose")
+        self.assertTrue(t.diagnosing)
+        t = tracker()
+        self.assertEqual(rs.between_rounds(CFG, t, rs.Action("halt_requested", "x"), None).kind, "diagnose")
+        # a diagnosing round that acted resumes normal rounds
+        t = tracker(diagnosing=True)
+        self.assertEqual(rs.between_rounds(CFG, t, nxt, None).kind, "next")
+        self.assertFalse(t.diagnosing)
+        # it may wait for a named external cause, then diagnose again
+        t = tracker(diagnosing=True)
+        w = rs.Action("wait_requested", "codex", cause="executor-limit", until=T0 + 600)
+        out = rs.between_rounds(CFG, t, w, breaker)
+        self.assertEqual((out.kind, out.until), ("wait", T0 + 600))
+        # the same unresolved cause twice in a row is a real halt, with that cause
+        out = rs.between_rounds(CFG, t, w, breaker)
+        self.assertEqual(out.kind, "halt")
+        self.assertIn("executor-limit", out.reason)
+
+    def test_a_wait_is_capped(self):
+        t = tracker(diagnosing=True)
+        w = rs.Action("wait_requested", "r", cause="c", until=T0 + 10 * CFG.wait_max_s)
+        out = rs.between_rounds(CFG, t, w, None, now=T0)
+        self.assertEqual(out.until, T0 + CFG.wait_max_s)
 
     def test_overrides_shorten_timers_and_reject_unknown_keys(self):
         self.assertEqual(rs.with_overrides(CFG, ["silence_s=60"]).silence_s, 60)
@@ -146,6 +180,39 @@ class StateTests(unittest.TestCase):
             patcher = mock.patch.object(rs, name, self.tmp)
             patcher.start()
             self.addCleanup(patcher.stop)
+
+    def test_a_diagnosing_round_gets_the_diagnose_prompt(self):
+        sent = []
+
+        class Recording(FakeHerdr):
+            def new_tab(self):
+                return "t", "p"
+
+            def start(self, *_a):
+                return None
+
+            def prompt(self, text):
+                sent.append(text)
+                return 0, ""
+
+        sup = rs.Supervisor(CFG, (), Recording([]))
+        sup.t = rs.Tracker(diagnosing=True, diagnose_reason="main unchanged across 3 rounds")
+        with mock.patch.object(rs.time, "sleep"), mock.patch.object(rs, "main_sha", lambda _r: "a"):
+            sup.begin_round(5)
+        self.assertIn("DIAGNOSING ROUND", sent[0])
+        self.assertIn("main unchanged across 3 rounds", sent[0])
+        sup.t = rs.Tracker()
+        with mock.patch.object(rs.time, "sleep"), mock.patch.object(rs, "main_sha", lambda _r: "a"):
+            sup.begin_round(6)
+        self.assertNotIn("DIAGNOSING ROUND", sent[1])
+
+    def test_a_wait_obeys_the_operator_stop(self):
+        sup = rs.Supervisor(rs.with_overrides(CFG, ["poll_s=0"]), (), FakeHerdr([]))
+        (self.tmp / "STOP").touch()
+        route = rs.Action("wait", "r", cause="executor-limit", until=rs.time.time() + 3600)
+        with mock.patch.object(rs.time, "sleep"):
+            self.assertFalse(sup.wait_until(route))
+        self.assertIn("operator stop", (self.tmp / "HALT").read_text())
 
     def open_round(self, started):
         (self.tmp / "current.json").write_text(json.dumps({"round": 7, "started": started}))
@@ -214,6 +281,18 @@ class StateTests(unittest.TestCase):
         (self.tmp / "HANDOFF.md").write_text("x")
         self.assertEqual(rs.complete("continue", "", lambda _c, _t: (0, "")), 1)
         self.assertFalse((self.tmp / "complete.json").exists())
+
+    def test_complete_records_a_wait_with_its_cause_and_time(self):
+        self.open_round(1.0)
+        (self.tmp / "HANDOFF.md").write_text("x")
+        ok = lambda _c, _t: (0, "")  # noqa: E731
+        self.assertEqual(rs.complete("wait", "codex limit", ok), 2)  # a wait needs a cause
+        self.assertEqual(
+            rs.complete("wait", "codex limit", ok, cause="executor-limit", until="2026-11-30T08:24:00Z"), 0
+        )
+        sentinel = rs.read_sentinel(7)
+        self.assertEqual((sentinel["outcome"], sentinel["cause"]), ("wait", "executor-limit"))
+        self.assertGreater(sentinel["until"], 1_700_000_000)
 
     def test_complete_validates_with_round_py_and_records_the_round(self):
         self.open_round(1.0)

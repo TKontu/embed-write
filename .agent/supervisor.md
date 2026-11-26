@@ -47,7 +47,23 @@ dry run.
 | Usage limit on screen | up to 6 h | Wait, no nudge spent |
 | 3 nudges with no outward progress | | Recycle: new session; takeoff rebuilds from Git |
 | Round older than | 12 h | Recycle |
-| 2 consecutive recycles, or the default branch unchanged over 3 rounds | | HALT and notify |
+| 2 consecutive recycles, or the default branch unchanged over 3 rounds | | Diagnosing round (below) |
+| A planner's `--outcome halt` | | Diagnosing round (below) |
+| A planner's `--outcome wait --cause C --until T` | up to 12 h | Wait for T, then diagnose again |
+| The same cause unresolved by 2 diagnosing rounds in a row | | HALT and notify, with that cause |
+
+**Diagnosing rounds (D-012).** No progress and failed rounds are solved by reconciliation, not by
+retry. When the breaker trips, the next round gets a diagnosing preamble before the normal
+instructions:
+1. Reconcile the failed or empty rounds.
+2. Classify the cause: `executor-limit`, `backlog-exhausted`, `blocked-on-operator`,
+   `tool-broken`, `lanes-failing` or `other`.
+3. Act on it: switch harness, re-rank or split rows, repair a tool, or turn a block into a
+   precise owed item.
+
+Only if only an external event can unblock every lane does the round end with `wait`, naming the
+cause and when it clears. Only the operator's `stop` and `stop-after-round` halt the loop directly.
+An advance of the default branch resets the cause count.
 
 Only outward progress refunds nudges, so a session that merely keeps its transcript busy cannot
 extend a round forever. `run --set KEY=SECONDS` shortens any timer for a trial.
