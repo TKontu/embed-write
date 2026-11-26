@@ -1,7 +1,8 @@
 // @ts-check
 // DE-02: the thin demo page. One document at a time; no corpus loop.
 import { createEditor } from '../src/index.js';
-import { moveOverlayPlugin } from './overlay.js';
+import { isMoveOverlayOn, moveOverlayPlugin, toggleMoveOverlay, updateOverlayButton } from './overlay.js';
+import { DEFAULT_OFF_SHORTCUT } from '../src/decorations.js';
 import { legendCss, renderLegendPanel } from '../src/legend.js';
 
 const byId = (id) => /** @type {HTMLElement} */ (document.getElementById(id));
@@ -9,6 +10,7 @@ const ui = {
   samples: /** @type {HTMLSelectElement} */ (byId('samples')),
   save: /** @type {HTMLButtonElement} */ (byId('save-btn')),
   source: /** @type {HTMLButtonElement} */ (byId('source-btn')),
+  overlay: /** @type {HTMLButtonElement} */ (byId('overlay-btn')),
   status: byId('status'),
   root: byId('editor'),
   legendMount: byId('legend-panel'),
@@ -22,6 +24,8 @@ let moves = [];
 /** @type {any} */
 let genre = null;
 let loadToken = 0;
+/** RE-11: overlay on/off survives switching samples. */
+let overlayOn = true;
 
 /** @param {string} message @param {boolean} [bad] */
 function setStatus(message, bad = false) {
@@ -49,6 +53,18 @@ function updateSourceButton() {
   ui.source.textContent = state.editor?.isSourceView() ? 'Rich view' : 'Source view';
 }
 
+/** @param {boolean} on */
+function overlayChanged(on) {
+  updateOverlayButton(ui.overlay, on);
+  setStatus(on ? 'Overlay on' : `Overlay off (${DEFAULT_OFF_SHORTCUT} to show)`);
+}
+
+function toggleOverlay() {
+  if (!state.editor) return;
+  toggleMoveOverlay(state.editor.view.state, state.editor.view.dispatch);
+  state.editor.view.focus();
+}
+
 /** @param {string} name */
 async function load(name) {
   const token = ++loadToken;
@@ -69,7 +85,7 @@ async function load(name) {
   ui.root.replaceChildren();
   const editor = await createEditor({ root: ui.root, markdown });
   if (token !== loadToken) { await editor.destroy(); return; }
-  const plugin = moveOverlayPlugin(() => moves, () => genre);
+  const plugin = moveOverlayPlugin(() => moves, () => genre, { initiallyOn: overlayOn, onToggle: (on) => { overlayOn = on; overlayChanged(on); } });
   editor.view.updateState(editor.view.state.reconfigure({
     plugins: [...editor.view.state.plugins, plugin],
   }));
@@ -78,6 +94,7 @@ async function load(name) {
   state.editor = editor;
   ui.samples.value = name;
   updateSourceButton();
+  updateOverlayButton(ui.overlay, isMoveOverlayOn(editor.view.state));
   setStatus(`Loaded ${name} — ${moves.length} provisional label${moves.length === 1 ? '' : 's'}`);
 }
 
@@ -141,6 +158,7 @@ async function init() {
     });
     ui.save.addEventListener('click', () => { save(); });
     ui.source.addEventListener('click', toggleSource);
+    ui.overlay.addEventListener('click', toggleOverlay);
     await load(listing.samples[0]);
   } catch (err) {
     setStatus(`Demo failed: ${err instanceof Error ? err.message : String(err)}`, true);
