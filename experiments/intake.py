@@ -45,7 +45,9 @@ CLI: python -m experiments.intake run SRC OUT --genre GENRE.json [--metadata MET
      [--discover-sample N]] [--force]
 
 --force first removes the files a previous intake run wrote into OUT (``OWNED`` names and
-OUT/converted only; every other file survives), so a rerun leaves no stale output.
+OUT/converted only; every other file survives), so a rerun leaves no stale output. An owned
+name that is a directory, or --metadata pointing at an owned file or into OUT/converted, is
+refused with exit 2 before anything is removed (metadata is never deleted unread).
 Exit 0 when every step is ok or skipped, 1 when any step failed, 2 on usage errors.
 """
 from __future__ import annotations
@@ -209,6 +211,12 @@ def _next_steps(steps: dict, out: Path, converted: Path, genre_path: str,
     return lines
 
 
+def _owned_by_intake(path: Path, out: Path) -> bool:
+    """True when ``path`` is a file a run deletes before reading inputs (OWNED or CONVERTED)."""
+    p, o = path.resolve(), out.resolve()
+    return p in {(o / n) for n in OWNED} or (o / CONVERTED) in p.parents
+
+
 def run(args, model=None) -> tuple[int, dict]:
     """Run the chain; ``model`` overrides --model-url (tests inject a fake)."""
     src, out = Path(args.src), Path(args.out)
@@ -319,6 +327,18 @@ def main(argv: list[str] | None = None, model=None) -> int:
         return 2
     if args.metadata and not Path(args.metadata).is_file():
         print(f"error: metadata file not found: {args.metadata}", file=sys.stderr)
+        return 2
+    if args.metadata and _owned_by_intake(Path(args.metadata), out):
+        print(f"error: --metadata {args.metadata} is an intake output in OUT that a run "
+              "removes first; move it outside OUT", file=sys.stderr)
+        return 2
+    for name in OWNED:
+        if (out / name).is_dir():
+            print(f"error: {out / name} is a directory; intake owns that name in OUT "
+                  "and will not remove a directory", file=sys.stderr)
+            return 2
+    if (out / CONVERTED).exists() and not (out / CONVERTED).is_dir():
+        print(f"error: {out / CONVERTED} is not a directory", file=sys.stderr)
         return 2
     try:
         load_genre(args.genre)
