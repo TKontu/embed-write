@@ -5,9 +5,8 @@ import { isMoveOverlayOn, moveOverlayPlugin, selectedMoveGranularity, selectedMo
   setMoveGranularity, setMoveOverlaySelection, toggleMoveOverlay, updateOverlayButton } from './overlay.js';
 import { DEFAULT_GRANULARITY, DEFAULT_OFF_SHORTCUT, DEFAULT_OVERLAY, OVERLAYS } from '../src/decorations.js';
 import { legendCss, renderLegendPanel } from '../src/legend.js';
-import { mountCollapsibleMinimap } from '../src/minimap.js';
+import { refreshOverview } from '../src/overview.js';
 import { blockEvidence, moveSequence, mountComparison, transitionStats } from '../src/comparison.js';
-import { openIssues, renderIssues } from '../src/issues.js';
 import { Plugin, Selection } from '@milkdown/prose/state';
 import { inspectorPlugin, mountInspector, registerFlag, renderMethodTexts, supportEvidence } from '../src/inspector.js';
 import { addCorrection, applyCorrections } from '../src/corrections.js';
@@ -170,11 +169,9 @@ async function load(name) {
   // idPlugin assigns block ids on this transaction; the overlay then has nodes to decorate.
   editor.view.dispatch(editor.view.state.tr.setMeta('demo:loaded', true));
   state.editor = editor;
-  // OV-01/OV-04: the move-sequence strip (legendCss colours, I3), collapsed until toggled.
-  mountCollapsibleMinimap(ui.minimap, moves, editor.view.state.doc.childCount, genre);
   // OV-02 (D-009 slice): the draft's move order beside the typical order of all demo samples.
   mountComparisonStrip();
-  // OV-03 (D-009 slice): missing moves and unlabeled passages under the minimap.
+  // OV-01/OV-04 minimap (collapsed until toggled) and OV-03 open issues under it.
   mountIssues(editor);
   ui.samples.value = name;
   updateSourceButton();
@@ -268,6 +265,8 @@ async function correctLabel(/** @type {any} */ view, /** @type {Element} */ el, 
     moves = applyCorrections(sidecarMoves, corrections);
     view.dispatch(view.state.tr.setMeta('demo:corrected', true));
     inspector?.update(view);
+    // OV-01/OV-03: the minimap and the open-issues list follow the corrected labels.
+    if (state.editor) mountIssues(state.editor);
     setStatus(`Saved expert correction for block ${block}: ${label}`);
   } catch (err) {
     setStatus(`Correction failed: ${err instanceof Error ? err.message : String(err)}`, true);
@@ -299,16 +298,14 @@ function inspectorMount() {
   return inspectorEl;
 }
 
-/** OV-03: render the open-issues list; clicking an unlabeled passage selects and reveals its block. */
+/** OV-01/OV-03: render the minimap and the open-issues list; clicking an unlabeled passage selects and reveals its block. */
 function mountIssues(/** @type {any} */ editor) {
   if (!issuesMount) {
     issuesMount = document.createElement('div');
     issuesMount.className = 'issues-mount';
     ui.minimap.after(issuesMount);
   }
-  const doc = editor.view.state.doc;
-  const issues = openIssues(moves, doc.childCount, genre);
-  issuesMount.replaceChildren(renderIssues(document, issues, (block) => {
+  refreshOverview({ minimapMount: ui.minimap, issuesMount, moves, blockCount: editor.view.state.doc.childCount, genre, onNavigate: (block) => {
     const view = editor.view;
     if (block >= view.state.doc.childCount) return;
     let pos = 0;
@@ -316,7 +313,7 @@ function mountIssues(/** @type {any} */ editor) {
     const sel = Selection.near(view.state.doc.resolve(pos + 1));
     view.dispatch(view.state.tr.setSelection(sel).scrollIntoView());
     view.focus();
-  }));
+  } });
 }
 
 async function save() {
