@@ -22,6 +22,9 @@ jobs:
       - name: docmodel tests
         working-directory: docmodel
         run: npm ci && npm test
+      - name: editor tests
+        working-directory: editor
+        run: npm ci && npm test
       - name: Unit tests
         run: python3 -m unittest discover -s tests
       - name: No-aggregate-score lint
