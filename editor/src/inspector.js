@@ -164,14 +164,89 @@ export function renderSupportEvidence(doc, ev, excerptOf) {
 }
 
 /**
+ * @typedef {{ block: number, feature: string, note?: string, distance?: number }} RegisterFlag
+ */
+
+/**
+ * IN-04: the register flag for one block from a register-flag list
+ * `[{ block, feature, note?, distance? }]` (the feature the slow layer named; D-009 slice: a
+ * synthetic, LLM-built file). Pure; validates the whole list and throws on malformed input or a
+ * duplicate block. Null when the block has no flag. O(flags).
+ * @param {unknown} flags @param {number} block @returns {RegisterFlag | null}
+ */
+export function registerFlag(flags, block) {
+  if (!Array.isArray(flags)) throw new TypeError('register flags must be an array');
+  const seen = new Set();
+  /** @type {RegisterFlag | null} */
+  let found = null;
+  for (const f of flags) {
+    if (!f || typeof f !== 'object' || !isBlock(f.block) || typeof f.feature !== 'string'
+      || !f.feature.trim()) {
+      throw new TypeError('register flag must be { block: int >= 0, feature: non-empty string }');
+    }
+    if (f.note !== undefined && typeof f.note !== 'string') {
+      throw new TypeError('register flag note must be a string');
+    }
+    if (f.distance !== undefined && (typeof f.distance !== 'number' || !Number.isFinite(f.distance)
+      || f.distance < 0 || f.distance > 1)) {
+      throw new TypeError('register flag distance must be a number 0..1');
+    }
+    if (seen.has(f.block)) throw new TypeError(`duplicate register flag for block ${f.block}`);
+    seen.add(f.block);
+    if (f.block === block) {
+      /** @type {RegisterFlag} */
+      const out = { block: f.block, feature: f.feature };
+      if (f.note !== undefined) out.note = f.note;
+      if (f.distance !== undefined) out.distance = f.distance;
+      found = out;
+    }
+  }
+  return found;
+}
+
+/**
+ * IN-04: the register section: the named off-register feature, plus note and distance when given.
+ * Labels say synthetic register flags, LLM-built, and pattern fit, not a verdict (I8). No colours.
+ * @param {Document} doc @param {RegisterFlag} flag
+ */
+export function renderRegisterFlag(doc, flag) {
+  const section = doc.createElement('section');
+  section.className = 'inspector-register';
+  const h = doc.createElement('h3');
+  h.textContent = 'Register (synthetic register flags, LLM-built)';
+  const feature = doc.createElement('p');
+  feature.className = 'inspector-register-feature';
+  feature.textContent = `Feature: ${flag.feature}`;
+  section.append(h, feature);
+  if (flag.note !== undefined) {
+    const p = doc.createElement('p');
+    p.className = 'inspector-register-detail';
+    p.textContent = `Note: ${flag.note}`;
+    section.append(p);
+  }
+  if (flag.distance !== undefined) {
+    const p = doc.createElement('p');
+    p.className = 'inspector-register-distance';
+    p.textContent = `Distance: ${flag.distance.toFixed(2)}`;
+    section.append(p);
+  }
+  const note = doc.createElement('p');
+  note.className = 'inspector-register-note';
+  note.textContent = 'Pattern fit, not a verdict.';
+  section.append(note);
+  return section;
+}
+
+/**
  * The inspector panel for one signal, or "No signal here" for null. I8: says pattern fit.
  * IN-02: an optional `evidence` adds the sequence-evidence section.
  * @param {Document} doc
  * @param {ReturnType<typeof inspectSignal>} info
  * @param {SequenceEvidence | null} [evidence]
  * @param {SupportView | null} [support] IN-03: adds the candidate-evidence section.
+ * @param {RegisterFlag | null} [register] IN-04: adds the register section.
  */
-export function renderInspector(doc, info, evidence = null, support = null) {
+export function renderInspector(doc, info, evidence = null, support = null, register = null) {
   const aside = doc.createElement('aside');
   aside.className = 'inspector';
   aside.setAttribute('aria-live', 'polite');
@@ -202,6 +277,7 @@ export function renderInspector(doc, info, evidence = null, support = null) {
   aside.append(dl, note, link);
   if (evidence) aside.append(renderSequenceEvidence(doc, evidence));
   if (support) aside.append(renderSupportEvidence(doc, support.evidence, support.excerptOf));
+  if (register) aside.append(renderRegisterFlag(doc, register));
   return aside;
 }
 
@@ -236,8 +312,9 @@ export function renderMethodTexts(doc, genre) {
  * @param {HTMLElement} editorDom @param {HTMLElement} mount @param {() => any} getGenre
  * @param {(el: Element) => SequenceEvidence | null} [getEvidence]
  * @param {(el: Element) => SupportView | null} [getSupport] IN-03: support flag for a move mark.
+ * @param {(el: Element) => RegisterFlag | null} [getRegister] IN-04: register flag for a move mark.
  */
-export function mountInspector(editorDom, mount, getGenre, getEvidence, getSupport) {
+export function mountInspector(editorDom, mount, getGenre, getEvidence, getSupport, getRegister) {
   const doc = mount.ownerDocument;
   /** @type {Element | null} */
   let selected = null;
@@ -246,7 +323,8 @@ export function mountInspector(editorDom, mount, getGenre, getEvidence, getSuppo
     const info = el ? inspectSignal(signalAttrs(el), getGenre()) : null;
     const ev = el && info && getEvidence ? getEvidence(el) : null;
     const sup = el && info && getSupport ? getSupport(el) : null;
-    mount.replaceChildren(renderInspector(doc, info, ev, sup));
+    const reg = el && info && getRegister ? getRegister(el) : null;
+    mount.replaceChildren(renderInspector(doc, info, ev, sup, reg));
   };
   /** @param {Event} e */
   const over = (e) => {

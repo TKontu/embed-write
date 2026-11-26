@@ -9,7 +9,7 @@ import { mountCollapsibleMinimap } from '../src/minimap.js';
 import { blockEvidence, moveSequence, mountComparison, transitionStats } from '../src/comparison.js';
 import { openIssues, renderIssues } from '../src/issues.js';
 import { Plugin, Selection } from '@milkdown/prose/state';
-import { inspectorPlugin, mountInspector, renderMethodTexts, supportEvidence } from '../src/inspector.js';
+import { inspectorPlugin, mountInspector, registerFlag, renderMethodTexts, supportEvidence } from '../src/inspector.js';
 
 const byId = (id) => /** @type {HTMLElement} */ (document.getElementById(id));
 const ui = {
@@ -124,12 +124,16 @@ async function load(name) {
   let flags = [];
   const supportRes = await fetch(`/api/support/${encodeURIComponent(name)}`);
   if (supportRes.ok) flags = await supportRes.json();
+  let regFlags = [];
+  const registerRes = await fetch(`/api/register/${encodeURIComponent(name)}`);
+  if (registerRes.ok) regFlags = await registerRes.json();
   if (token !== loadToken) return;
 
   if (state.editor) await state.editor.destroy();
   state.editor = null;
   moves = sidecar;
   supportFlags = flags;
+  registerFlags = regFlags;
   state.sample = name;
   ui.root.replaceChildren();
   const editor = await createEditor({ root: ui.root, markdown });
@@ -148,7 +152,9 @@ async function load(name) {
   inspector = mountInspector(editor.view.dom, inspectorMount(), () => genre,
     (el) => evidenceFor(editor.view, el),
     // IN-03 (D-009 slice): synthetic, LLM-built support flags for this block (no support model).
-    (el) => supportFor(editor.view, el));
+    (el) => supportFor(editor.view, el),
+    // IN-04 (D-009 slice): synthetic, LLM-built register flags for this block (no register model).
+    (el) => registerFor(editor.view, el));
   const current = inspector;
   editor.view.updateState(editor.view.state.reconfigure({
     plugins: [...editor.view.state.plugins, plugin, inspectorPlugin(Plugin, () => current)],
@@ -215,6 +221,18 @@ function supportFor(/** @type {any} */ view, /** @type {Element} */ el) {
     const block = view.state.doc.resolve(view.posAtDOM(el, 0)).index(0);
     const evidence = supportEvidence(supportFlags, block);
     return evidence ? { evidence, excerptOf: (/** @type {number} */ b) => blockExcerpt(view.state.doc, b) } : null;
+  } catch { return null; }
+}
+
+/** IN-04: this sample's register flags (synthetic, LLM-built), `<sample>.register.json`. */
+/** @type {unknown} */
+let registerFlags = [];
+
+/** IN-04: the register flag for a decorated element's top-level block, or null. */
+function registerFor(/** @type {any} */ view, /** @type {Element} */ el) {
+  try {
+    const block = view.state.doc.resolve(view.posAtDOM(el, 0)).index(0);
+    return registerFlag(registerFlags, block);
   } catch { return null; }
 }
 
