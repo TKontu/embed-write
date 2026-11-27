@@ -134,6 +134,21 @@ class BuildTest(Base):
         self.assertNotIn('#s', out)
         self.assertIn(f'python -m experiments.blind_ui {self.out} {self.choices}', out)
 
+    def test_prints_draft_line_with_actual_paths(self):
+        import shlex
+        write_jsonl(self.gen, gen_records(3))
+        write_jsonl(self.orig, orig_records(3))
+        rc, out, _ = self.run_cli('--seed', '4')
+        self.assertEqual(rc, 0)
+        lines = [l for l in out.splitlines() if l.startswith('after judging: ')]
+        self.assertEqual(len(lines), 1)
+        argv = shlex.split(lines[0][len('after judging: '):])
+        self.assertEqual(argv[:3], ['python', '-m', 'experiments.g02_draft'])
+        self.assertEqual(dict(zip(argv[3::2], argv[4::2])),
+                         {'--session': self.out, '--choices': self.choices, '--seed': '4',
+                          '--text-model': MODEL,
+                          '--out': os.path.join(self.tmp.name, 'g02_draft')})
+
     def test_docstring_privacy_and_caller(self):
         doc = gs.__doc__.lower()
         self.assertIn('private', doc)

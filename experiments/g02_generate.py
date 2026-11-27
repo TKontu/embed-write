@@ -55,6 +55,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import sys
 from collections import Counter
 from functools import partial
@@ -328,6 +329,8 @@ def main(argv=None, *, model: Model | None = None, critic: Critic | None = None)
     ap.add_argument('--temperature', type=float, default=None,
                     help='sampling temperature for arm C candidates (default: '
                          f'{DEFAULT_C_TEMPERATURE} when --n-candidates > 1; 0 is honoured)')
+    ap.add_argument('--originals', default='ORIGINALS_JSONL',
+                    help='originals JSONL (g02_notes --sections-out); only named in the next line')
     a = ap.parse_args(argv)
     if model is None:
         if not a.model_url:
@@ -345,6 +348,12 @@ def main(argv=None, *, model: Model | None = None, critic: Critic | None = None)
     summary = summarize(read_jsonl(a.out), expected_sections=a.expected_sections,
                         model=getattr(model, 'model_id', 'unknown'), prompt_version=PROMPT_VERSION)
     summary['written'] = len(records)
+    if summary['complete']:
+        d = os.path.dirname(a.out)
+        print('next: ' + shlex.join([
+            'python', '-m', 'experiments.g02_session', '--generations', a.out,
+            '--originals', a.originals, '--out', os.path.join(d, 'g02_session.json'),
+            '--choices', os.path.join(d, 'g02_choices.jsonl')]))
     print(json.dumps(summary, sort_keys=True))
     return 0 if summary['complete'] else 1
 
