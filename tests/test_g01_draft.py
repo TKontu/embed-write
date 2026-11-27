@@ -270,6 +270,32 @@ class DraftTest(DraftFixture):
                                annotator='ann', model_id='m1', seed=7, out_path=self.out,
                                n_resamples=20, preregistration_root=self.prereg)
 
+    def _md_dir_failure(self, prior_json):
+        os.makedirs(self.out + '.md')
+        if prior_json is not None:
+            Path(self.out + '.json').write_bytes(prior_json)
+        code, out = self.main(self.argv())
+        self.assertEqual(code, 2, out)
+        self.assertNotIn('Traceback', out)
+        self.assertIn(self.out + '.md', out)
+        self.assertEqual(sorted(os.listdir(os.path.dirname(self.out))),
+                         sorted(['g01-draft.md'] + (['g01-draft.json'] if prior_json else [])))
+        return out
+
+    def test_md_failure_preserves_prior_json(self):
+        self._md_dir_failure(b'old json bytes\n')
+        self.assertEqual(Path(self.out + '.json').read_bytes(), b'old json bytes\n')
+
+    def test_md_failure_leaves_no_new_json(self):
+        self._md_dir_failure(None)
+        self.assertFalse(os.path.lexists(self.out + '.json'))
+
+    def test_success_leaves_no_temp_files(self):
+        code, err = self.main(self.argv())
+        self.assertEqual(code, 0, err)
+        self.assertEqual(sorted(os.listdir(os.path.dirname(self.out))),
+                         ['g01-draft.json', 'g01-draft.md'])
+
     @unittest.skipIf(hasattr(os, 'geteuid') and os.geteuid() == 0, 'root ignores chmod')
     def test_unwritable_out_dir_exit_2(self):
         ro = os.path.join(self.tmp.name, 'ro')
