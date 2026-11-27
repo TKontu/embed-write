@@ -212,9 +212,9 @@ def _write_pair(items):
             with contextlib.suppress(OSError):
                 st = os.lstat(target)
                 if stat.S_ISREG(st.st_mode):
-                    mode = stat.S_IMODE(st.st_mode)
-            os.chmod(tmp, mode)
+                    mode = stat.S_IMODE(st.st_mode) & 0o777
             Path(tmp).write_text(text, encoding='utf-8')
+            os.chmod(tmp, mode)
         for target, _ in items:
             backup = None
             if target is not items[-1][0] and os.path.lexists(target):

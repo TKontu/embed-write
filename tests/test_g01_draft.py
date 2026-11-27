@@ -346,6 +346,15 @@ class WritePairResidualTest(unittest.TestCase):
         self.assertEqual(self.md.stat().st_mode & 0o777, 0o644)
         self.no_temps()
 
+    @unittest.skipIf(os.geteuid() == 0, 'root bypasses file modes')
+    def test_redraft_prior_without_owner_write(self):
+        self.json.write_text('old')
+        os.chmod(self.json, 0o444)
+        self.write()
+        self.assertEqual(self.json.stat().st_mode & 0o777, 0o444)
+        self.assertNotEqual(self.json.read_text(), 'old')
+        self.no_temps()
+
     def test_double_fault_names_backup(self):
         self.json.write_text('old json')
         os.makedirs(self.md)
