@@ -132,8 +132,8 @@ intake run (intake defaults: 0 and 0.5).
 
 ### 2.4 Build the blind session (G-02.4 enabler, agent)
 
-- Command:
-  `python -m experiments.g02_session --generations <PRIVATE:G02>/g02_generations.jsonl --originals <PRIVATE:G02>/originals.jsonl --out <PRIVATE:G02>/session.json --choices <PRIVATE:G02>/choices.jsonl`
+- Command (the `next:` line g02_generate prints):
+  `python -m experiments.g02_session --generations <PRIVATE:G02>/g02_generations.jsonl --originals <PRIVATE:G02>/originals.jsonl --out <PRIVATE:G02>/g02_session.json --choices <PRIVATE:G02>/g02_choices.jsonl`
 - Worked: prints model, sections, pairs, per-comparison counts and a `serve:` line. Exit 2 says
   what is incomplete and writes nothing.
 
@@ -142,14 +142,14 @@ intake run (intake defaults: 0 and 0.5).
 - Decides: for each pair, which text is better (A vs C, A vs B, C vs original), without knowing
   which arm is which.
 - Command (the `serve:` line):
-  `python -m experiments.blind_ui <PRIVATE:G02>/session.json <PRIVATE:G02>/choices.jsonl`
-- Worked: prints `Open http://127.0.0.1:PORT/`; each choice appends to `choices.jsonl`. Stop
+  `python -m experiments.blind_ui <PRIVATE:G02>/g02_session.json <PRIVATE:G02>/g02_choices.jsonl`
+- Worked: prints `Open http://127.0.0.1:PORT/`; each choice appends to `<PRIVATE:G02>/g02_choices.jsonl`. Stop
   with Ctrl-C and resume later with the same line.
 
 ### 2.6 G-02 DRAFT result (agent half of G-02.5)
 
 - Command:
-  `python -m experiments.g02_draft --session <PRIVATE:G02>/session.json --choices <PRIVATE:G02>/choices.jsonl --out <PRIVATE:G02>/g02-draft --seed 0 --text-model <MODEL_NAME> --judge-is-expert`
+  `python -m experiments.g02_draft --session <PRIVATE:G02>/g02_session.json --choices <PRIVATE:G02>/g02_choices.jsonl --out <PRIVATE:G02>/g02-draft --seed 0 --text-model <MODEL_NAME> --judge-is-expert`
 - Reads: session, choices, `experiments/preregistration/g02.json`. Writes `g02-draft.json`
   and `g02-draft.md`. Use `--judge-is-expert` only when the expert made every choice.
 - Worked: prints `draft written: ... (verdict owed to the expert)`.
