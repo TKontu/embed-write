@@ -37,12 +37,18 @@ in the main checkout or outside the lane paths (e.g. <repo>/.claude/worktrees/..
 
 --sweep also covers Claude agent worktrees (<repo>/.claude/worktrees/<name>, same rules) and prunes
 branches: a local branch whose PR is merged or closed (no OPEN PR), that no worktree has checked
-out, is not the default branch, not an unresolved lane of an open round, not carried, and whose tip
-is contained in a PR head (else `newer-than-pr`), is deleted with `git branch -D`; such a branch on
-origin with `git push origin --delete`. Both only under --go.
+out, is not the default branch or the base of an open PR, not an unresolved lane of an open round,
+not carried, and whose tip is contained in a PR head (else `newer-than-pr`), is deleted with
+`git branch -D`. Origin is first refreshed with `git fetch --prune origin`; such a branch there is
+deleted in batches of 50 per push, each leased to the tip inspected (--force-with-lease), so commits
+pushed later survive; "remote ref does not exist" counts as already deleted and its tracking ref is
+dropped. Both only under --go. A ledger-mapped tab whose lane worktree still exists and is held stays
+open (`worktree-kept`), even in a closed round.
 
 --preflight runs the --sweep dry run and lists what a closed round still has to remove (tabs,
-worktrees, branches); it fails closed when herdr or gh cannot answer. `round.py init` runs it.
+worktrees, branches) that --go would actually act on: busy trees and items the last --go run failed
+on (.agent-runs/lane-cleanup-failed.json) do not count; it fails closed when herdr or gh cannot
+answer. `round.py init` runs it.
 
 /merge-round runs `--go --sweep` after its merges, /reconcile before handoff; a summary of counts by
 action and reason ends the report.
@@ -315,6 +321,7 @@ def _items(
     settle: float,
     ledger: Ledger | None,
     sweep: bool,
+    state: Path | None = None,
 ) -> list[tuple[str, str | None]]:
     """(report line, closed round it belongs to or None). Tabs first, then worktrees, branches."""
     prefix = prefix or lane_prefix(root)
@@ -369,8 +376,11 @@ def _items(
             hold = "active: " + ",".join(sorted(str(x) for x in statuses - SETTLED))
         elif _is_carried([label, *paths], carried):
             hold = "carried"
-        elif known is not None:
-            hold = None if _finished(known) else f"lane {rid}/{aid} {known[1] or 'unassigned'}"
+        elif known is not None and not _finished(known):
+            hold = f"lane {rid}/{aid} {known[1] or 'unassigned'}"
+        elif known is not None:  # finished, but its worktree is still here and held
+            lane_trees = {t for t, ln in tree_lanes.items() if ln == (rid, aid)} | (paths & set(trees))
+            hold = "worktree-kept" if any(holds.get(t) for t in lane_trees) else None
         elif not paths or not all(
             _is_lane_path(c.removesuffix(DELETED), root) and (c.endswith(DELETED) or c in trees)
             for c in raw
@@ -437,7 +447,35 @@ def _items(
             root=root, go=go, run=run, ledger=ledger, by_branch=by_branch,
             checked=checked, carried=carried,
         )
+    if go:
+        failed = sorted(
+            {subject(line) for line, _ in report if line.startswith("hold ") and FAILED.search(line)}
+        )
+        try:
+            path = state or root / ".agent-runs" / STATE_FILE
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(failed, indent=1) + "\n", encoding="utf-8")
+        except OSError:
+            pass  # best effort: the preflight then counts those items again
     return report
+
+
+STATE_FILE = "lane-cleanup-failed.json"  # what the last --go run tried and could not do
+FAILED = re.compile(r": (close failed|remove failed|remove timed out|delete failed|busy)")
+
+
+def subject(line: str) -> str:
+    """The tab, path or branch a report line is about, e.g. `branch task/a`, `tab t1 live-x`."""
+    rest = re.sub(r"^(would close|would remove|would delete|hold|closed|removed|deleted) ", "", line)
+    return re.split(r" \(|: ", rest, maxsplit=1)[0]
+
+
+def _last_failed(root: Path, state: Path | None) -> set[str]:
+    try:
+        data = json.loads((state or root / ".agent-runs" / STATE_FILE).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError):
+        return set()
+    return {str(x) for x in data} if isinstance(data, list) else set()
 
 
 def _refs(run: Run, namespace: str) -> list[tuple[str, str]]:
@@ -460,15 +498,17 @@ def prune_branches(
     """Delete branches whose PR is merged or closed (see the module doc); never main or open PRs."""
     rc, out = run(
         ["gh", "pr", "list", "--state", "all", "--limit", "10000",
-         "--json", "headRefName,state,headRefOid"]
+         "--json", "headRefName,state,headRefOid,baseRefName"]
     )
     if rc:
         return [(f"branches skipped: gh pr list failed: {out[:160]}", None)]
     prs: dict[str, list[dict]] = {}
     for pr in json.loads(out or "[]"):
         prs.setdefault(str(pr.get("headRefName")), []).append(pr)
+    open_bases = {str(pr.get("baseRefName")) for f in prs.values() for pr in f if pr.get("state") == "OPEN"}
     protected = {"main", "master", "HEAD", default_branch(root)}
     report: list[tuple[str, str | None]] = []
+    remote_deletes: list[tuple[str, str, str, str | None]] = []  # branch, expected tip, why, tag
 
     def consider(branch: str, tip: str, remote: bool) -> None:
         found = prs.get(branch) or []
@@ -478,7 +518,9 @@ def prune_branches(
         name = f"remote branch origin/{branch}" if remote else f"branch {branch}"
         lane = by_branch.get(branch)
         known = _lane(ledger, *lane) if lane else None
-        if not remote and branch in checked:
+        if branch in open_bases:
+            hold = "base-of-open-pr"
+        elif not remote and branch in checked:
             hold = "checked-out"
         elif known is not None and not _finished(known):
             hold = f"lane {lane[0]}/{lane[1]} {known[1] or 'unassigned'}"
@@ -500,8 +542,10 @@ def prune_branches(
         if not go:
             report.append((f"would delete {name}: {why}", tag))
             return
-        cmd = ["git", "push", "origin", "--delete", branch] if remote else ["git", "branch", "-D", branch]
-        rc, out = run(cmd)
+        if remote:
+            remote_deletes.append((branch, tip, why, tag))
+            return
+        rc, out = run(["git", "branch", "-D", branch])
         if rc:
             report.append((f"hold {name}: delete failed: {out[:160]}", None))
         else:
@@ -509,9 +553,38 @@ def prune_branches(
 
     for branch, tip in _refs(run, "refs/heads"):
         consider(branch, tip, remote=False)
+    rc, out = run(["git", "fetch", "--prune", "origin"])  # drop stale tracking refs first
+    if rc:
+        report.append((f"branches skipped: remote: git fetch --prune failed: {out[:160]}", None))
+        return report
     for ref, tip in _refs(run, "refs/remotes/origin"):
         if ref.startswith("origin/") and ref != "origin":
             consider(ref.removeprefix("origin/"), tip, remote=True)
+    for i in range(0, len(remote_deletes), PUSH_BATCH):
+        report += _push_deletes(run, remote_deletes[i : i + PUSH_BATCH])
+    return report
+
+
+PUSH_BATCH = 50
+
+
+def _push_deletes(run: Run, batch: list[tuple[str, str, str, str | None]]) -> list:
+    """One push deleting many origin branches, each leased to the tip this run inspected."""
+    leases = [f"--force-with-lease=refs/heads/{b}:{tip}" for b, tip, _, _ in batch]
+    specs = [f":refs/heads/{b}" for b, _, _, _ in batch]
+    rc, out = run(["git", "push", "--porcelain", *leases, "origin", *specs], timeout=REMOVE_TIMEOUT)
+    report = []
+    for branch, _, why, tag in batch:
+        name = f"remote branch origin/{branch}"
+        spec = f":refs/heads/{branch}"
+        if f"unable to delete '{branch}': remote ref does not exist" in out:
+            run(["git", "update-ref", "-d", f"refs/remotes/origin/{branch}"])
+            report.append((f"deleted {name}: {why} (already gone)", tag))
+        elif any(line.startswith("-\t" + spec + "\t") for line in out.splitlines()):
+            report.append((f"deleted {name}: {why}", tag))
+        else:
+            mine = [line for line in out.splitlines() if spec + "\t" in line] or [out[:160]]
+            report.append((f"hold {name}: delete failed: {mine[0][:160]}", None))
     return report
 
 
@@ -534,11 +607,12 @@ def cleanup(
     settle: float = 2.0,
     ledger: Ledger | None = None,
     sweep: bool = False,
+    state: Path | None = None,
 ) -> list[str]:
     """Tabs first, so a finished lane's idle shell no longer pins its worktree; then worktrees."""
     items = _items(
         root=root, prefix=prefix, go=go, handoff=handoff, run=run, busy=busy, settle=settle,
-        ledger=ledger, sweep=sweep,
+        ledger=ledger, sweep=sweep, state=state,
     )
     return [line for line, _ in items]
 
@@ -551,13 +625,23 @@ def preflight(
     run: Run = _run,
     busy: Callable[[], list[str]] = _busy,
     ledger: Ledger | None = None,
+    state: Path | None = None,
 ) -> list[str]:
-    """What a closed round still has that the sweep would remove, or why that is unknown."""
+    """What a closed round still has that `--go --sweep` would remove, or why that is unknown.
+
+    A dry run already holds trees busy with other processes; items the last --go run tried and
+    failed on (recorded in .agent-runs/lane-cleanup-failed.json) are not counted either.
+    """
     items = _items(
         root=root, prefix=prefix, go=False, handoff=handoff, run=run, busy=busy, settle=0,
         ledger=ledger, sweep=True,
     )
-    problems = [f"{rid}: {line}" for line, rid in items if rid and line.startswith("would ")]
+    failed = _last_failed(root, state)
+    problems = [
+        f"{rid}: {line}"
+        for line, rid in items
+        if rid and line.startswith("would ") and subject(line) not in failed
+    ]
     problems += [line for line, _ in items if "skipped:" in line or line.endswith(": unreachable")]
     return problems
 

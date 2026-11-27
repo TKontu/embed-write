@@ -478,6 +478,7 @@ class BranchFake(Fake):
         self.local, self.remote = list(local), list(remote)  # branch names; tip "t-<name>"
         self.pr_heads = pr_heads or {}  # {branch: [(state, head oid)]}, default head = tip
         self.ahead = set(ahead)  # branches whose tip is newer than every PR head
+        self.stale, self.leased, self.bases, self.order = set(), set(), {}, []  # bases: {head: base of OPEN PR}
 
     def run(self, cmd, timeout=None):
         cmd = list(cmd)
@@ -486,18 +487,40 @@ class BranchFake(Fake):
             for branch, states in self.prs.items():
                 head = f"h-{branch}" if branch in self.ahead else f"t-{branch}"
                 heads = self.pr_heads.get(branch) or [(s, head) for s in states]
-                rows += [{"headRefName": branch, "state": s, "headRefOid": h} for s, h in heads]
+                rows += [
+                    {"headRefName": branch, "state": s, "headRefOid": h,
+                     "baseRefName": self.bases.get(branch, "main")}
+                    for s, h in heads
+                ]
             return 0, json.dumps(rows)
         if cmd[:2] == ["git", "for-each-ref"]:
+            self.order.append(cmd[-1])
             if cmd[-1] == "refs/heads":
                 return 0, "\n".join(f"{b} t-{b}" for b in ["main", *self.local])
             return 0, "\n".join(f"origin/{b} t-{b}" for b in ["HEAD", "main", *self.remote])
         if cmd[:3] == ["git", "merge-base", "--is-ancestor"]:
             branch = cmd[3].removeprefix("t-")
             return (1, "") if branch in self.ahead else (0, "")
-        if cmd[:3] == ["git", "branch", "-D"] or cmd[:4] == ["git", "push", "origin", "--delete"]:
+        if cmd[:3] == ["git", "branch", "-D"] or cmd[:3] == ["git", "update-ref", "-d"]:
             self.done.append(cmd)
             return 0, ""
+        if cmd[:3] == ["git", "fetch", "--prune"]:
+            self.order.append("fetch")
+            return 0, ""
+        if cmd[:2] == ["git", "push"]:
+            self.done.append(cmd)
+            out, rc = [], 0
+            for spec in (c for c in cmd if c.startswith(":refs/heads/")):
+                b = spec.removeprefix(":refs/heads/")
+                if b in self.stale:
+                    out.append(f"error: unable to delete '{b}': remote ref does not exist")
+                    rc = 1
+                elif b in self.leased:
+                    out.append(f"!\t{spec}\t[rejected] (stale info)")
+                    rc = 1
+                else:
+                    out.append(f"-\t{spec}\t[deleted]")
+            return rc, "\n".join(out)
         return super().run(cmd, timeout=timeout)
 
 
@@ -625,7 +648,10 @@ class BranchPruneTests(unittest.TestCase):
         sweep(fake, sweep=True)
         self.assertIn(["git", "branch", "-D", "task/m"], fake.done)
         self.assertIn(["git", "branch", "-D", "task/c"], fake.done)
-        self.assertIn(["git", "push", "origin", "--delete", "task/m"], fake.done)
+        [push] = [c for c in fake.done if c[:2] == ["git", "push"]]
+        self.assertIn("--force-with-lease=refs/heads/task/m:t-task/m", push)
+        self.assertIn(":refs/heads/task/m", push)
+        self.assertNotIn(":refs/heads/task/c", push)  # not on origin
 
     def test_never_touches_main_open_pr_checked_out_pr_less_or_newer_branches(self):
         fake = BranchFake(
@@ -649,7 +675,77 @@ class BranchPruneTests(unittest.TestCase):
         self.assertIn("hold branch task/c: lane R7/A1 assigned", report)
 
 
+class ReviewFixTests(unittest.TestCase):
+    def test_fetch_prune_runs_before_remote_branches_are_listed(self):
+        fake = BranchFake({}, {"task/m": ["MERGED"]}, remote=["task/m"])
+        sweep(fake, go=False, sweep=True)
+        self.assertEqual(fake.order, ["refs/heads", "fetch", "refs/remotes/origin"])
+
+    def test_a_stale_tracking_ref_counts_as_deleted_and_is_dropped(self):
+        fake = BranchFake({}, {"task/s": ["MERGED"]}, remote=["task/s"])
+        fake.stale = {"task/s"}
+        report = sweep(fake, sweep=True)
+        self.assertIn("deleted remote branch origin/task/s: merged (already gone)", report)
+        self.assertIn(["git", "update-ref", "-d", "refs/remotes/origin/task/s"], fake.done)
+
+    def test_a_lease_rejection_is_held_not_deleted(self):
+        fake = BranchFake({}, {"task/m": ["MERGED"]}, remote=["task/m"])
+        fake.leased = {"task/m"}
+        report = sweep(fake, sweep=True)
+        self.assertTrue(any(l.startswith("hold remote branch origin/task/m: delete failed")
+                            for l in report), report)
+
+    def test_remote_deletes_are_batched(self):
+        names = [f"task/b{i}" for i in range(120)]
+        fake = BranchFake({}, {n: ["MERGED"] for n in names}, remote=names)
+        sweep(fake, sweep=True)
+        pushes = [c for c in fake.done if c[:2] == ["git", "push"]]
+        self.assertEqual(len(pushes), 3)
+
+    def test_skips_the_base_of_an_open_pr(self):
+        fake = BranchFake({}, {"task/base": ["MERGED"], "task/top": ["OPEN"]}, local=["task/base"])
+        fake.bases = {"task/top": "task/base"}
+        report = sweep(fake, sweep=True)
+        self.assertNotIn(["git", "branch", "-D", "task/base"], fake.done)
+        self.assertIn("hold branch task/base: base-of-open-pr", report)
+
+    def test_a_closed_rounds_tab_stays_while_its_held_worktree_exists(self):
+        path = f"{LANES}/r5-a1"
+        meta, pane = tab("t1", "live-repo-r5-a1", path)
+        other, po = tab("t2", "live-repo-r5-a2", str(ROOT))
+        led = ledger(R5=("closed", {"A1": ("task/a", "merged"), "A2": ("task/b", "merged")}))
+        fake = Fake({path: "task/a", f"{LANES}/r5-a2": "task/b"}, {"task/a": ["MERGED"]},
+                    tabs=[meta, other], panes=[pane, po], dirty=[path], unpushed=[f"{LANES}/r5-a2"])
+        report = sweep(fake, led=led)
+        self.assertEqual(fake.done, [])
+        self.assertIn("hold tab t1 live-repo-r5-a1: worktree-kept", report)
+        self.assertIn("hold tab t2 live-repo-r5-a2: worktree-kept", report)
+
+
 class PreflightTests(unittest.TestCase):
+    def test_a_tree_busy_with_another_process_does_not_block(self):
+        fake = BranchFake({f"{LANES}/r5-a1": "task/a"}, {"task/a": ["MERGED"]},
+                          busy=[f"{LANES}/r5-a1/sub"])
+        led = ledger(R5=("closed", {"A1": ("task/a", "merged")}))
+        problems = lc.preflight(
+            root=ROOT, prefix="live-repo-", handoff="", run=fake.run, busy=fake.busy, ledger=led
+        )
+        self.assertEqual(problems, [])
+
+    def test_what_failed_last_go_run_does_not_block(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = Path(tmp) / "failed.json"
+            fake = BranchFake({f"{LANES}/r5-a1": "task/a"}, {"task/a": ["MERGED"]})
+            fake.remove_out = (1, "fatal: cannot remove")
+            led = ledger(R5=("closed", {"A1": ("task/a", "merged")}))
+            sweep(fake, led=led, state=state)
+            problems = lc.preflight(root=ROOT, prefix="live-repo-", handoff="", run=fake.run,
+                                    busy=fake.busy, ledger=led, state=state)
+            self.assertEqual(problems, [])
+            fake.remove_out = None
+            sweep(fake, led=led, state=state)  # a later run that succeeds clears the record
+            self.assertEqual(json.loads(state.read_text()), [])
+
     def test_refuses_while_a_closed_round_has_removable_leftovers(self):
         fake = BranchFake({f"{LANES}/r5-a1": "task/a"}, {"task/a": ["MERGED"]}, local=["task/a"])
         led = ledger(R5=("closed", {"A1": ("task/a", "merged")}))

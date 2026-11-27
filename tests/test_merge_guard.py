@@ -1,6 +1,8 @@
 """The merge guard: the only merge path for unattended planners (decision D-002)."""
 
 import importlib.util
+import contextlib
+import io
 import json
 import unittest
 from pathlib import Path
@@ -51,21 +53,29 @@ class MergeGuardTests(unittest.TestCase):
         self.assertEqual(merge[merge.index("--match-head-commit") + 1], HEAD)
         self.assertEqual(gh.calls[-1][:3], ["gh", "pr", "view"])  # merge state re-read
 
-    def test_deletes_the_head_branch_with_the_merge(self):
+    def test_never_deletes_the_head_branch(self):  # gh would bypass lane_cleanup's holds
         gh = FakeGh()
         self.assertEqual(mg.guard(7, HEAD, run=gh), 0)
         [merge] = gh.merge_calls()
-        self.assertIn("--delete-branch", merge)
+        self.assertNotIn("--delete-branch", merge)
 
-    def test_a_branch_delete_failure_after_a_confirmed_merge_is_not_a_failed_merge(self):
+    def test_a_failed_merge_is_reported_even_when_the_pr_cannot_be_reread(self):
+        def run(cmd):
+            return (1, "merge boom") if cmd[:3] == ["gh", "pr", "merge"] else (0, "")
+
         gh = FakeGh()
-        real = gh.__call__
+        calls = {"n": 0}
 
-        def run(cmd):  # gh merges, then cannot delete a branch a lane worktree has checked out
-            rc, out = real(cmd)
-            return (1, "failed to delete local branch") if cmd[:3] == ["gh", "pr", "merge"] else (rc, out)
+        def flaky(cmd):  # the first view works; after the failed merge gh is down
+            if cmd[:3] == ["gh", "pr", "view"]:
+                calls["n"] += 1
+                return gh(cmd) if calls["n"] == 1 else (1, "gh down")
+            return run(cmd)
 
-        self.assertEqual(mg.guard(7, HEAD, run=run), 0)
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertEqual(mg.guard(7, HEAD, run=flaky), 1)
+        self.assertIn("gh pr merge 7 failed", err.getvalue())
 
     def test_refuses_a_head_that_moved_after_review(self):
         gh = FakeGh(headRefOid="b" * 40)

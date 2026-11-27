@@ -7,8 +7,8 @@ The only merge path for planners: raw `gh pr merge` stays denied in .claude/sett
 It merges only when the PR is open, not a draft, mergeable, targets the default branch, still
 has exactly the reviewed head, and touches no operator-owned path. GitHub re-checks the head
 at merge time (--match-head-commit), and the merge is confirmed by re-reading the PR. The head
-branch is deleted with the merge (--delete-branch); a delete that fails after a confirmed merge
-(e.g. a lane worktree still has it checked out) is reported, and lane_cleanup.py --sweep prunes it.
+branch is left in place: `gh pr merge --delete-branch` would remove a lane worktree that has it
+checked out and force-delete its branches, bypassing every hold; lane_cleanup.py --sweep prunes it.
 Review and the gate are the planner's /review-round and /merge-round duties; this script cannot
 see them, nor whether a PR decides an [H] item.
 """
@@ -86,15 +86,11 @@ def guard(pr: int, head: str, *, run: Run = _run, branch: str | None = None) -> 
         for problem in found:
             print(f"refusing PR #{pr}: {problem}", file=sys.stderr)
         return 1
-    rc, out = run(
-        ["gh", "pr", "merge", str(pr), "--merge", "--delete-branch", "--match-head-commit", head]
-    )
-    state = view(pr, run).get("state")
-    if rc and state == "MERGED":
-        print(f"PR #{pr} merged; branch deletion reported: {out[:300]}", file=sys.stderr)
-    elif rc:
+    rc, out = run(["gh", "pr", "merge", str(pr), "--merge", "--match-head-commit", head])
+    if rc:
         print(f"gh pr merge {pr} failed: {out[:300]}", file=sys.stderr)
         return 1
+    state = view(pr, run).get("state")
     if state != "MERGED":
         print(f"PR #{pr} state is {state} after merge; not merged", file=sys.stderr)
         return 1
