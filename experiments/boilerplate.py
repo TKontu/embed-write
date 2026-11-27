@@ -21,8 +21,14 @@ Documents are identified by their POSIX path relative to CORPUS_DIR without suff
 Output is deterministic: same input -> byte-identical JSON. Production caller is the CLI;
 unwired otherwise by design.
 
+``review`` prints a deterministic plain-text listing of a written report's flags (numbered blocks:
+kind, count, sorted documents, passage text for ``repeated``, similarity for near-duplicates) to
+the expert's terminal only; its production caller is the review line intake adds to next_steps
+when the boilerplate step found flags. It reads one report and prints at most ``--limit`` flags.
+
 CLI: python -m experiments.boilerplate report CORPUS_DIR OUT.json
      [--min-docs N] [--threshold T] [--min-words N] [--max-passages N] [--force]
+     python -m experiments.boilerplate review REPORT.json [--limit N]
 """
 from __future__ import annotations
 
@@ -33,6 +39,7 @@ import os
 import random
 import re
 import sys
+from collections import Counter
 from itertools import combinations
 from pathlib import Path
 from typing import Iterator
@@ -158,6 +165,63 @@ def write_report(report: dict, out: str | os.PathLike, force: bool = False) -> N
         fh.write(data)
 
 
+class ReportError(ValueError):
+    """A review input that is not a boilerplate report."""
+
+
+def load_report(path: str | os.PathLike) -> dict:
+    """Read and shape-check a report written by ``report``; raise ReportError otherwise."""
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError) as e:
+        raise ReportError(f"cannot read report: {path} ({type(e).__name__})") from None
+    except json.JSONDecodeError:
+        raise ReportError(f"invalid JSON in report: {path}") from None
+    ok = (isinstance(data, dict) and isinstance(data.get("flags"), list)
+          and isinstance(data.get("totals"), dict))
+    for f in data.get("flags", []) if ok else []:
+        ok = (isinstance(f, dict) and f.get("kind") in ("repeated", "near_duplicate_docs")
+              and isinstance(f.get("documents"), list)
+              and all(isinstance(d, str) for d in f["documents"])
+              and isinstance(f.get("count"), int)
+              and (isinstance(f.get("text"), str) if f["kind"] == "repeated"
+                   else isinstance(f.get("similarity"), (int, float))))
+        if not ok:
+            break
+    if not ok:
+        raise ReportError(f"not a boilerplate report: {path}")
+    return data
+
+
+def format_review(report: dict, limit: int = 50) -> str:
+    """Plain-text review listing of at most ``limit`` flags (deterministic)."""
+    flags = report["flags"]
+    totals = report["totals"]
+    by_kind = Counter(f["kind"] for f in flags)
+    lines = [f"{len(flags)} flag(s): repeated {by_kind['repeated']}, "
+             f"near_duplicate_docs {by_kind['near_duplicate_docs']}; "
+             f"documents {totals.get('documents', '?')}"]
+    if totals.get("passage_table_capped"):
+        lines.append("note: passage table capped; some repeated passages may be missing")
+    for i, f in enumerate(flags[:limit], 1):
+        lines += ["", f"[{i}] {f['kind']}  count: {f['count']}",
+                  f"    documents: {', '.join(sorted(f['documents']))}"]
+        if f["kind"] == "repeated":
+            lines.append(f"    text: {f['text']}")
+        else:
+            lines.append(f"    similarity: {f['similarity']}")
+    if len(flags) > limit:
+        lines += ["", f"... {len(flags) - limit} more flag(s) omitted (use --limit)"]
+    return "\n".join(lines) + "\n"
+
+
+def _positive(value: str) -> int:
+    n = int(value)
+    if n < 1:
+        raise argparse.ArgumentTypeError("must be >= 1")
+    return n
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m experiments.boilerplate")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -171,7 +235,18 @@ def main(argv: list[str] | None = None) -> int:
                              "or digit; punctuation-only tokens are not counted)")
     report.add_argument("--max-passages", type=int, default=1_000_000)
     report.add_argument("--force", action="store_true", help="overwrite an existing OUT")
+    review = sub.add_parser("review", help="print a report's flags for the expert's review")
+    review.add_argument("report")
+    review.add_argument("--limit", type=_positive, default=50, help="flags to print (>= 1)")
     args = parser.parse_args(argv)
+    if args.cmd == "review":
+        try:
+            data = load_report(args.report)
+        except ReportError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
+        sys.stdout.write(format_review(data, args.limit))
+        return 0
     if not Path(args.corpus).is_dir():
         print(f"error: corpus directory not found: {args.corpus}", file=sys.stderr)
         return 2
