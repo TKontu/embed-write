@@ -53,3 +53,6 @@ Thumbs.db
 
 # docmodel (Node) dependencies
 docmodel/node_modules/
+
+# Private corpus inputs (never committed; AGENTS.md "Private data is absent from fresh checkouts")
+/input/
