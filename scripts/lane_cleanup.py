@@ -37,13 +37,18 @@ ROOT = Path(__file__).resolve().parents[1]
 PROTECTED = re.compile(r"round[-_ ]?loop|review[-_ ]?server|planner|supervisor|manager", re.I)
 DELETED = " (deleted)"
 SETTLED = {"idle", "done", "unknown", None}  # any other pane state keeps the tab
-Run = Callable[[Sequence[str]], tuple[int, str]]
+Run = Callable[..., tuple[int, str]]  # run(cmd, timeout=None) -> (returncode, output)
+TIMED_OUT = "timed out after "
+REMOVE_TIMEOUT = 600  # a lane with a large .venv can take minutes to remove
 
 
-def _run(cmd: Sequence[str]) -> tuple[int, str]:
+def _run(cmd: Sequence[str], timeout: float | None = None) -> tuple[int, str]:
+    limit = 120 if timeout is None else timeout
     try:
-        done = subprocess.run(list(cmd), capture_output=True, text=True, timeout=120, cwd=ROOT)
-    except (OSError, subprocess.TimeoutExpired) as exc:
+        done = subprocess.run(list(cmd), capture_output=True, text=True, timeout=limit, cwd=ROOT)
+    except subprocess.TimeoutExpired:
+        return 1, f"{TIMED_OUT}{limit:g}s"
+    except OSError as exc:
         return 1, str(exc)
     return done.returncode, done.stdout.strip() or done.stderr.strip()
 
@@ -242,8 +247,10 @@ def cleanup(
                 continue
             for link in links:
                 link.unlink()  # the symlink only; its target is untouched
-            rc, out = run(["git", "worktree", "remove", path])
-            if rc:
+            rc, out = run(["git", "worktree", "remove", path], timeout=REMOVE_TIMEOUT)
+            if rc and out.startswith(TIMED_OUT):
+                report.append(f"hold {path} ({branch}): remove {out}")
+            elif rc:
                 report.append(f"hold {path} ({branch}): remove failed: {out[:160]}")
             else:
                 report.append(f"removed {path} ({branch})")
