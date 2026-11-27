@@ -16,6 +16,9 @@ duplicated logic):
    then the real BGE-M3 OnnxEmbedder. The discovery report holds corpus sentences and stays under
    OUT (private); intake_report.json records only its path, status and counts (clusters per
    section type, sentences sampled/seen, whether the embedder is development-only).
+8. ``sections``: CO-14 ``section_inference.infer_sections`` for documents with no ATX headings
+   (D-015) -> OUT/sections.json (private; line numbers and methods, marked inferred). The report
+   holds documents by status and sections by method only.
 
 It writes OUT/intake_report.json: per step ``status`` (ok/failed/skipped), ``reason``, ``output``
 and counts only, then ``next_steps`` (exact expert command lines built from the actual paths).
@@ -62,7 +65,7 @@ from collections import Counter
 from pathlib import Path
 
 from experiments import annotate, annotation_sample, conversion_quality, corpus_metadata
-from experiments import corpus_stats, ingest, move_discovery, prelabel
+from experiments import corpus_stats, ingest, move_discovery, prelabel, section_inference
 from experiments.corpus import iter_documents
 from experiments.splits import split_documents
 from service.genre import load_genre
@@ -70,19 +73,20 @@ from service.genre import load_genre
 REPORT_NAME = "intake_report.json"
 CONVERTED = "converted"
 STEPS = ("ingest", "conversion_quality", "corpus_stats", "metadata", "annotation_sample",
-         "prelabel", "discovery")
+         "prelabel", "discovery", "sections")
 DEPENDS = {"conversion_quality": "ingest", "corpus_stats": "ingest",
            "annotation_sample": "ingest", "prelabel": "annotation_sample",
-           "discovery": "corpus_stats"}
+           "discovery": "corpus_stats", "sections": "corpus_stats"}
 NO_METADATA = "metadata owed by the expert (CO-06)"
 NO_MODEL = "no local model endpoint given"
 NO_DISCOVER = "not requested"
 DISCOVERY_NAME = "move_discovery.json"
+SECTIONS_NAME = "sections.json"
 MODEL_DIR_ENV = "EMBED_WRITE_MODEL_DIR"
 # Files intake itself writes into OUT (besides CONVERTED); a run removes these first so a
 # --force rerun leaves no stale output. Never other files (annotations.jsonl is the expert's).
 OWNED = ("conversion_quality.json", "corpus_stats.json", "manifest.json", "prelabels.jsonl",
-         DISCOVERY_NAME, REPORT_NAME)
+         DISCOVERY_NAME, SECTIONS_NAME, REPORT_NAME)
 
 
 def _code(exc: BaseException) -> str:
@@ -190,6 +194,32 @@ def _discover(converted: Path, out: Path, genre, k: int | None = None,
         "development_only_embedder": report["embedder"]["development_only"], **params})
 
 
+def _sections(converted: Path, out: Path) -> dict:
+    """CO-14 (D-015): infer provisional sections for documents with no ATX headings.
+
+    Headings are used as written when ``corpus_stats._iter_sections`` finds a non-preamble one.
+    Sections (line numbers, methods) go to private OUT/sections.json; counts only reach the report.
+    """
+    documents: dict[str, dict] = {}
+    by_status: Counter = Counter()
+    by_method: Counter = Counter()
+    for doc in iter_documents(converted):  # one document at a time
+        name = doc.path.relative_to(converted).as_posix()
+        if any(h is not corpus_stats._PREAMBLE for h, _ in corpus_stats._iter_sections(doc.text)):
+            status, secs = "has_headings", []
+        else:
+            secs = section_inference.infer_sections(doc.text)
+            status = "inferred" if secs else "none_found"
+        by_status[status] += 1
+        by_method.update(s["method"] for s in secs)
+        documents[name] = {"status": status, "sections": secs}
+    path = out / SECTIONS_NAME
+    path.write_text(json.dumps({"schema": 1, "documents": documents}, indent=2, sort_keys=True)
+                    + "\n", encoding="utf-8")
+    return _step("ok", None, str(path), {"documents": dict(sorted(by_status.items())),
+                                         "sections": dict(sorted(by_method.items()))})
+
+
 def _editor_path(path: str) -> str:
     """The converted file as seen from editor/ (npm runs the demo there)."""
     return path if Path(path).is_absolute() else str(Path("..") / path)
@@ -266,6 +296,7 @@ def run(args, model=None) -> tuple[int, dict]:
                 args.discover_sample)
     else:
         steps["discovery"] = _step("skipped", NO_DISCOVER)
+    attempt("sections", _sections, converted, out)
     report = {"schema_version": 1, "source": args.src, "out": args.out,
               "steps": {name: steps[name] for name in STEPS},
               "next_steps": _next_steps(steps, out, converted, args.genre, outputs)}

@@ -68,7 +68,8 @@ class IntakeTest(unittest.TestCase):
         st = {k: v["status"] for k, v in rep["steps"].items()}
         self.assertEqual(st, {"ingest": "ok", "conversion_quality": "ok", "corpus_stats": "ok",
                               "metadata": "skipped", "annotation_sample": "ok",
-                              "prelabel": "skipped", "discovery": "skipped"})
+                              "prelabel": "skipped", "discovery": "skipped",
+                              "sections": "ok"})
         self.assertEqual(rep["steps"]["metadata"]["reason"], intake.NO_METADATA)
         self.assertEqual(rep["steps"]["prelabel"]["reason"], intake.NO_MODEL)
         self.assertEqual(rep["steps"]["ingest"]["counts"]["documents"]["ok"], 3)
@@ -318,6 +319,47 @@ class IntakeTest(unittest.TestCase):
             self.assertEqual(code, 2, name)
             self.assertIn("--metadata", se.getvalue())
             self.assertTrue(meta.exists(), name)
+
+    def test_sections_demo_all_have_headings(self):
+        code, rep, _, printed = self.run_intake()
+        self.assertEqual(code, 0)
+        step = rep["steps"]["sections"]
+        self.assertEqual(step["counts"]["documents"], {"has_headings": 3})
+        self.assertEqual(step["counts"]["sections"], {})
+        self.assertIn("sections:", printed)
+        data = json.loads((self.out / intake.SECTIONS_NAME).read_text(encoding="utf-8"))
+        self.assertEqual(data["schema"], 1)
+        self.assertEqual({d["status"] for d in data["documents"].values()}, {"has_headings"})
+        self.assertTrue(all(d["sections"] == [] for d in data["documents"].values()))
+
+    def test_sections_inferred_privately(self):
+        """LLM-built synthetic fixtures: a canary sits in a title and in a body."""
+        canary = "Zorblax canary kumquat"
+        (self.src / "flat.md").write_text(
+            f"1. {canary} title\n\n{canary} body sentence here.\n\n"
+            "**Second part**\n\nMore plain text.\n", encoding="utf-8")
+        (self.src / "none.md").write_text("Just one plain sentence.\n", encoding="utf-8")
+        (self.src / "empty.md").write_text("", encoding="utf-8")
+        code, rep, text, printed = self.run_intake()
+        self.assertEqual(code, 0)
+        counts = rep["steps"]["sections"]["counts"]
+        self.assertEqual(counts["documents"],
+                         {"has_headings": 3, "inferred": 1, "none_found": 2})
+        self.assertEqual(counts["sections"], {"formatting": 1, "numbering": 1})
+        for blob in (text, printed):
+            self.assertNotIn("Zorblax", blob)
+            self.assertNotIn("Second part", blob)
+        data = json.loads((self.out / intake.SECTIONS_NAME).read_text(encoding="utf-8"))
+        doc = data["documents"]["flat.md"]
+        self.assertEqual(doc["status"], "inferred")
+        self.assertEqual([s["method"] for s in doc["sections"]], ["numbering", "formatting"])
+        self.assertTrue(all(s["inferred"] for s in doc["sections"]))
+        first = (self.out / intake.SECTIONS_NAME).read_bytes()
+        self.run_intake()
+        self.assertEqual((self.out / intake.SECTIONS_NAME).read_bytes(), first)
+
+    def test_sections_is_owned(self):
+        self.assertIn(intake.SECTIONS_NAME, intake.OWNED)
 
     def test_usage_errors(self):
         self.out.mkdir()
