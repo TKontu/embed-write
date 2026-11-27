@@ -115,6 +115,51 @@ class DraftTest(DraftFixture):
     def test_leaf_symlink_json_into_results_refused(self):
         self._leaf_symlink_refused('.json')
 
+    def _fake_results(self):
+        fake = Path(self.tmp.name, 'fake-results').resolve()
+        fake.mkdir()
+        orig = g01_draft.RESULTS_DIR
+        g01_draft.RESULTS_DIR = fake
+        self.addCleanup(setattr, g01_draft, 'RESULTS_DIR', orig)
+        return fake
+
+    def _loop_refused(self, link):
+        fake = self._fake_results()
+        os.makedirs(os.path.dirname(self.out))
+        os.symlink(link, link)  # self-referential symlink loop
+        code, err = self.main(self.argv())
+        self.assertEqual(code, 2, err)
+        self.assertNotIn('Traceback', err)
+        self.assertIn('symlink loop', err)
+        self.assertEqual(list(fake.iterdir()), [])
+        out_dir = Path(os.path.dirname(self.out))
+        self.assertEqual(sorted(p.name for p in out_dir.iterdir()),
+                         [os.path.basename(link)])
+
+    def test_symlink_loop_stem_exit_2_nothing_written(self):
+        self._loop_refused(self.out)
+
+    def test_symlink_loop_leaf_json_exit_2_nothing_written(self):
+        self._loop_refused(self.out + '.json')
+
+    def test_symlink_loop_leaf_md_exit_2_nothing_written(self):
+        self._loop_refused(self.out + '.md')
+
+    def test_symlinked_results_dir_refused(self):
+        # RESULTS_DIR itself is a symlink to a temp dir; an output resolving into the target
+        # must still be refused (containment compares against the resolved RESULTS_DIR).
+        target = Path(self.tmp.name, 'real-results').resolve()
+        target.mkdir()
+        link = Path(self.tmp.name, 'results-link')
+        os.symlink(target, link)
+        orig = g01_draft.RESULTS_DIR
+        g01_draft.RESULTS_DIR = link
+        self.addCleanup(setattr, g01_draft, 'RESULTS_DIR', orig)
+        code, err = self.main(self.argv(out=str(target / 'g01-draft')))
+        self.assertEqual(code, 2, err)
+        self.assertIn('experiments/results', err)
+        self.assertEqual(list(target.iterdir()), [])
+
     def test_missing_preregistration_exit_2(self):
         empty = os.path.join(self.tmp.name, 'empty')
         os.mkdir(empty)

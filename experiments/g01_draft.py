@@ -13,6 +13,8 @@ non-blind counts, ``verdict_hint`` labelled as a hint and the placeholder
 An output path (the stem or either written file, symlinks resolved) inside
 ``experiments/results/`` is refused (``DraftError``; CLI exit 2)
 before anything runs or is written: that directory holds only the expert's actual results.
+The comparison uses the resolved ``RESULTS_DIR``; a symlink loop in the output path is also
+``DraftError`` (exit 2). Not handled: TOCTOU races and hard links.
 
 Public symbols: unwired by design until the real G-01.6 run (needs AN-03 labels and a G-01.4 local-model run).
 Memory: bounded by build_config's streaming (maps O(manifest sample size)).
@@ -41,16 +43,30 @@ class DraftError(ValueError):
     """The draft cannot be produced (refused output path, missing preregistration)."""
 
 
+def _resolve(p):
+    # A symlink loop raises RuntimeError (Python < 3.13) or OSError; on 3.13+ non-strict
+    # resolve() returns the looping link unresolved, so a symlink left after resolving is a loop.
+    try:
+        r = Path(p).resolve()
+    except (RuntimeError, OSError) as e:
+        raise DraftError(f'refusing output path: symlink loop or unresolvable ({p}): {e}') from e
+    if r.is_symlink():
+        raise DraftError(f'refusing output path: symlink loop ({p})')
+    return r
+
+
 def _inside_results(p):
-    return p == RESULTS_DIR or RESULTS_DIR in p.parents
+    # Resolve RESULTS_DIR too: a symlinked experiments/results must not escape the check.
+    results = _resolve(RESULTS_DIR)
+    return p == results or results in p.parents
 
 
 def _paths(out_path):
-    base = Path(out_path).expanduser().resolve()
+    base = _resolve(Path(out_path).expanduser())
     json_path, md_path = base.with_name(base.name + '.json'), base.with_name(base.name + '.md')
     # Check the resolved base and each resolved final path: a leaf symlink (even dangling)
     # named <stem>.json / <stem>.md would otherwise redirect the write into results/.
-    for p in (base, json_path.resolve(), md_path.resolve()):
+    for p in (base, _resolve(json_path), _resolve(md_path)):
         if _inside_results(p):
             raise DraftError(f'refusing output inside experiments/results/ ({p}): '
                              'that directory holds only actual expert-judged results')
