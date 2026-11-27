@@ -251,9 +251,31 @@ def _next_steps(steps: dict, out: Path, converted: Path, genre_path: str,
         if steps["prelabel"]["status"] == "ok":
             cmd += f" --prelabels {q(str(out / 'prelabels.jsonl'))}"
         lines.append(cmd)
+    inferred = _inferred_documents(steps, out)
+    sections = q(_editor_path(str(out / SECTIONS_NAME)))
     for path in outputs:
-        lines.append(f"cd editor && npm run demo -- --report {q(_editor_path(path))}")
+        cmd = f"cd editor && npm run demo -- --report {q(_editor_path(path))}"
+        if _converted_key(path, converted) in inferred:  # CO-14: show them as provisional
+            cmd += f" --sections {sections}"
+        lines.append(cmd)
     return lines
+
+
+def _inferred_documents(steps: dict, out: Path) -> set[str]:
+    """Documents the sections step wrote inferred sections for (empty unless it succeeded)."""
+    if steps["sections"]["status"] != "ok":
+        return set()
+    data = json.loads((out / SECTIONS_NAME).read_text(encoding="utf-8"))
+    return {name for name, d in data["documents"].items()
+            if d["status"] == "inferred" and d["sections"]}
+
+
+def _converted_key(path: str, converted: Path) -> str | None:
+    """``path``'s sections.json key (relative to CONVERTED), or None outside it."""
+    try:
+        return Path(path).resolve().relative_to(converted.resolve()).as_posix()
+    except ValueError:
+        return None
 
 
 def _owned_by_intake(path: Path, out: Path) -> bool:

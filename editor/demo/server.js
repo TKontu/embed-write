@@ -5,6 +5,8 @@
 // - Saves Markdown through atomicWrite and never outside the configured sample folder.
 // - Takes the sample folder from `--dir` or DEMO_DIR, or one report file from `--report`
 //   (optionally `--labels`): the one-step swap for a real report (D-011).
+// - CO-14 (D-015): with `--report`, `--sections <sections.json>` (intake output) serves that
+//   document's inferred sections; the page shows them as provisional markers (demo/sections.js).
 // No new dependency is used: the import map is generated from the installed module graph.
 import { createServer } from 'node:http';
 import { mkdir, realpath, readFile, readdir, stat } from 'node:fs/promises';
@@ -92,6 +94,28 @@ function checkReportName(report, name) {
   if (name !== report.name) {
     throw Object.assign(new Error(`only ${report.name} is served in single-report mode`), { status: 404 });
   }
+}
+
+/**
+ * CO-14: the report's entry in an intake sections.json ({schema: 1, documents: {rel: {status,
+ * sections}}}). The entry is the key the report path ends with (longest wins); none -> [].
+ * @param {string} sectionsPath @param {string} reportFile
+ * @returns {Promise<{ file: string, document: string | null, sections: any[] }>}
+ */
+export async function resolveSections(sectionsPath, reportFile) {
+  const file = resolve(sectionsPath);
+  const data = JSON.parse(await readFile(file, 'utf8'));
+  if (!data || data.schema !== 1 || typeof data.documents !== 'object' || !data.documents) {
+    throw new Error(`not an intake sections.json (schema 1): ${file}`);
+  }
+  const report = reportFile.split(sep).join('/');
+  const keys = Object.keys(data.documents)
+    .filter((k) => report === k || report.endsWith('/' + k))
+    .sort((a, b) => b.length - a.length);
+  const document = keys[0] ?? null;
+  const entry = document ? data.documents[document] : null;
+  const sections = entry && Array.isArray(entry.sections) ? entry.sections.filter((s) => s && s.inferred === true) : [];
+  return { file, document, sections };
 }
 
 export const SYNTHETIC_LEGEND = 'Provisional labels: synthetic';
@@ -418,7 +442,7 @@ export function refusalReason(req, port) {
 /**
  * @param {import('node:http').IncomingMessage} req
  * @param {import('node:http').ServerResponse} res
- * @param {{ dir: string, correctionsDir: string, genreFallback?: string | null, report: { file: string, name: string, labels: string | null } | null, importMap: { imports: Record<string, string> } }} ctx
+ * @param {{ dir: string, correctionsDir: string, genreFallback?: string | null, report: { file: string, name: string, labels: string | null } | null, sections?: { file: string, document: string | null, sections: any[] } | null, importMap: { imports: Record<string, string> } }} ctx
  */
 /**
  * The genre file: the sample folder's own genre.json, else the fallback (the demo's by default;
@@ -465,6 +489,12 @@ async function handle(req, res, ctx) {
     checkReportName(ctx.report, name);
     if (!ctx.report.labels) return sendError(res, 404, `no labels for ${name}`);
     return send(res, 200, MIME['.json'], await readFile(ctx.report.labels, 'utf8'));
+  }
+  if (ctx.report && pathname.startsWith('/api/sections/')) {
+    const name = decodeURIComponent(pathname.slice('/api/sections/'.length));
+    checkReportName(ctx.report, name);
+    if (!ctx.sections) return sendError(res, 404, `no sections for ${name}`);
+    return send(res, 200, MIME['.json'], JSON.stringify(ctx.sections.sections));
   }
   if (pathname === '/api/samples') {
     return send(res, 200, MIME['.json'], JSON.stringify({ dir: ctx.dir, samples: await listSamples(ctx.dir) }));
@@ -587,12 +617,14 @@ async function handle(req, res, ctx) {
 }
 
 /**
- * @param {{ dir?: string, report?: string, labels?: string, port?: number, host?: string, correctionsDir?: string, genreFallback?: string | null }} [opts]
- * @returns {Promise<{ server: import('node:http').Server, url: string, port: number, dir: string, report: { file: string, name: string, labels: string | null } | null, importMap: { imports: Record<string, string> }, close: () => Promise<void> }>}
+ * @param {{ dir?: string, report?: string, labels?: string, sections?: string, port?: number, host?: string, correctionsDir?: string, genreFallback?: string | null }} [opts]
+ * @returns {Promise<{ server: import('node:http').Server, url: string, port: number, dir: string, report: { file: string, name: string, labels: string | null } | null, sections: { file: string, document: string | null, sections: any[] } | null, importMap: { imports: Record<string, string> }, close: () => Promise<void> }>}
  */
 export async function startServer(opts = {}) {
   const report = opts.report !== undefined ? await resolveReport(opts.report, opts.labels) : null;
   if (!report && opts.labels !== undefined) throw new Error('--labels needs --report');
+  if (!report && opts.sections !== undefined) throw new Error('--sections needs --report');
+  const sections = report && opts.sections !== undefined ? await resolveSections(opts.sections, report.file) : null;
   // In single-report mode the legend/genre lookup uses the report's folder (legend.json/genre.json there, else the demo's).
   const dir = report ? dirname(report.file) : resolve(opts.dir ?? DEFAULT_DIR);
   const info = await stat(dir);
@@ -611,7 +643,7 @@ export async function startServer(opts = {}) {
       req.resume();
       return;
     }
-    handle(req, res, { dir, correctionsDir, genreFallback, report, importMap }).catch((err) => {
+    handle(req, res, { dir, correctionsDir, genreFallback, report, sections, importMap }).catch((err) => {
       if (!res.headersSent) sendError(res, /** @type {any} */ (err).status ?? 500, err instanceof Error ? err.message : String(err));
       else res.end();
     });
@@ -632,6 +664,7 @@ export async function startServer(opts = {}) {
     port: actualPort,
     dir,
     report,
+    sections,
     importMap,
     close: () => new Promise((done) => server.close(() => done(undefined))),
   };
@@ -649,14 +682,20 @@ if (isMain) {
     console.error('usage error: --labels needs --report (e.g. npm run demo -- --report <file.md> --labels <labels.json>)');
     process.exit(2);
   }
+  if (argValue('--report') === undefined && argValue('--sections') !== undefined) {
+    console.error('usage error: --sections needs --report (e.g. npm run demo -- --report <file.md> --sections <sections.json>)');
+    process.exit(2);
+  }
   const reportArg = argValue('--report');
   const labels = argValue('--labels');
+  const sectionsArg = argValue('--sections');
   const dir = resolve(argValue('--dir') ?? process.env.DEMO_DIR ?? DEFAULT_DIR);
   const port = Number(argValue('--port') ?? process.env.PORT ?? 0);
-  const run = await startServer(reportArg !== undefined ? { report: reportArg, labels, port } : { dir, labels, port });
+  const run = await startServer(reportArg !== undefined ? { report: reportArg, labels, sections: sectionsArg, port } : { dir, labels, port });
   if (run.report) {
     console.log(`Demo report: ${run.report.file}`);
     console.log(`Demo labels: ${run.report.labels ?? '(none)'}`);
+    if (run.sections) console.log(`Demo inferred sections: ${run.sections.sections.length} (${run.sections.document ?? 'document not in sections file'})`);
   } else console.log(`Demo samples: ${run.dir}`);
   console.log(`Demo URL: ${run.url}`);
   const stop = async () => { await run.close(); process.exit(0); };

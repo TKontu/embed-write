@@ -358,6 +358,27 @@ class IntakeTest(unittest.TestCase):
         self.run_intake()
         self.assertEqual((self.out / intake.SECTIONS_NAME).read_bytes(), first)
 
+    def test_next_steps_add_sections_only_for_inferred_documents(self):
+        """CO-14 demo half: --sections only on the demo line of a document with inferred sections."""
+        (self.src / "flat.md").write_text(
+            "1. Invented title\n\nInvented body sentence here.\n\n**Second part**\n\n"
+            "More plain text.\n", encoding="utf-8")
+        (self.src / "none.md").write_text("Just one plain sentence.\n", encoding="utf-8")
+        _, rep, _, _ = self.run_intake()
+        demos = [c for c in rep["next_steps"] if c.startswith("cd editor && npm run demo")]
+        with_sections = [c for c in demos if "--sections" in c]
+        self.assertEqual(len(demos), 5)
+        self.assertEqual(len(with_sections), 1)
+        args = with_sections[0].split()
+        self.assertTrue(args[args.index("--report") + 1].endswith("flat.md"))
+        path = Path(args[args.index("--sections") + 1])
+        path = path if path.is_absolute() else REPO / "editor" / path
+        self.assertEqual(path.resolve(), (self.out / intake.SECTIONS_NAME).resolve())
+        # a run whose documents all have headings adds no --sections
+        (self.src / "flat.md").unlink()
+        _, rep, _, _ = self.run_intake()
+        self.assertFalse(any("--sections" in c for c in rep["next_steps"]))
+
     def test_inferred_sections_become_strata(self):
         """LLM-built synthetic fixture: bold-line titles, no ATX headings; canary stays private."""
         for p in self.src.iterdir():
