@@ -175,7 +175,7 @@ def load_report(path: str | os.PathLike) -> dict:
         data = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError) as e:
         raise ReportError(f"cannot read report: {path} ({type(e).__name__})") from None
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, RecursionError):
         raise ReportError(f"invalid JSON in report: {path}") from None
     ok = (isinstance(data, dict) and isinstance(data.get("flags"), list)
           and isinstance(data.get("totals"), dict))
@@ -183,9 +183,10 @@ def load_report(path: str | os.PathLike) -> dict:
         ok = (isinstance(f, dict) and f.get("kind") in ("repeated", "near_duplicate_docs")
               and isinstance(f.get("documents"), list)
               and all(isinstance(d, str) for d in f["documents"])
-              and isinstance(f.get("count"), int)
+              and isinstance(f.get("count"), int) and not isinstance(f["count"], bool)
               and (isinstance(f.get("text"), str) if f["kind"] == "repeated"
-                   else isinstance(f.get("similarity"), (int, float))))
+                   else (isinstance(f.get("similarity"), (int, float))
+                         and not isinstance(f["similarity"], bool))))
         if not ok:
             break
     if not ok:
