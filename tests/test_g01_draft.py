@@ -93,6 +93,28 @@ class DraftTest(DraftFixture):
         for p in written:
             self.assertFalse(p.exists(), p)
 
+    def _leaf_symlink_refused(self, suffix):
+        # Hermetic: a temp dir stands in for experiments/results; the real one is never touched.
+        fake = Path(self.tmp.name, 'fake-results').resolve()
+        fake.mkdir()
+        orig = g01_draft.RESULTS_DIR
+        g01_draft.RESULTS_DIR = fake
+        self.addCleanup(setattr, g01_draft, 'RESULTS_DIR', orig)
+        os.makedirs(os.path.dirname(self.out))
+        os.symlink(fake / ('x' + suffix), self.out + suffix)  # dangling leaf link into "results"
+        code, err = self.main(self.argv())
+        self.assertEqual(code, 2, err)
+        self.assertIn('experiments/results', err)
+        self.assertEqual(list(fake.iterdir()), [])
+        other = '.json' if suffix == '.md' else '.md'
+        self.assertFalse(os.path.lexists(self.out + other))
+
+    def test_leaf_symlink_md_into_results_refused(self):
+        self._leaf_symlink_refused('.md')
+
+    def test_leaf_symlink_json_into_results_refused(self):
+        self._leaf_symlink_refused('.json')
+
     def test_missing_preregistration_exit_2(self):
         empty = os.path.join(self.tmp.name, 'empty')
         os.mkdir(empty)

@@ -10,7 +10,8 @@ LLM-built, κ rows with intervals, ``other`` share, per-move P/R/F1, missing / d
 non-blind counts, ``verdict_hint`` labelled as a hint and the placeholder
 "Verdict: owed to the expert (G-01.6 [H])"). It never emits a gate status.
 
-An output path resolving inside ``experiments/results/`` is refused (``DraftError``; CLI exit 2)
+An output path (the stem or either written file, symlinks resolved) inside
+``experiments/results/`` is refused (``DraftError``; CLI exit 2)
 before anything runs or is written: that directory holds only the expert's actual results.
 
 Public symbols: unwired by design until the real G-01.6 run (needs AN-03 labels and a G-01.4 local-model run).
@@ -40,12 +41,20 @@ class DraftError(ValueError):
     """The draft cannot be produced (refused output path, missing preregistration)."""
 
 
+def _inside_results(p):
+    return p == RESULTS_DIR or RESULTS_DIR in p.parents
+
+
 def _paths(out_path):
     base = Path(out_path).expanduser().resolve()
-    if base == RESULTS_DIR or RESULTS_DIR in base.parents:
-        raise DraftError(f'refusing output inside experiments/results/ ({base}): '
-                         'that directory holds only actual expert-judged results')
-    return base.with_name(base.name + '.json'), base.with_name(base.name + '.md')
+    json_path, md_path = base.with_name(base.name + '.json'), base.with_name(base.name + '.md')
+    # Check the resolved base and each resolved final path: a leaf symlink (even dangling)
+    # named <stem>.json / <stem>.md would otherwise redirect the write into results/.
+    for p in (base, json_path.resolve(), md_path.resolve()):
+        if _inside_results(p):
+            raise DraftError(f'refusing output inside experiments/results/ ({p}): '
+                             'that directory holds only actual expert-judged results')
+    return json_path, md_path
 
 
 def _fmt(v):
