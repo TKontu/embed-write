@@ -15,7 +15,9 @@ An output path (the stem or either written file, symlinks resolved) inside
 before anything runs or is written: that directory holds only the expert's actual results.
 The comparison uses the resolved ``RESULTS_DIR``; a symlink loop in the output path is also
 ``DraftError`` (exit 2), in any path component; other OS errors resolving or writing the output path are
-``DraftError`` naming the OS error. Not handled: TOCTOU races and hard links.
+``DraftError`` naming the OS error and failing path. The pair is written via same-directory
+temps and ``os.replace``: if either write fails, neither new file is left (prior files restored).
+Not handled: TOCTOU races and hard links.
 
 Public symbols: unwired by design until the real G-01.6 run (needs AN-03 labels and a G-01.4 local-model run).
 Memory: bounded by build_config's streaming (maps O(manifest sample size)).
@@ -27,11 +29,13 @@ CLI: ``python -m experiments.g01_draft --store S --genre G --manifest M --prelab
 from __future__ import annotations
 
 import argparse
+import contextlib
 import errno
 import json
 import os
 import stat
 import sys
+import tempfile
 from pathlib import Path
 
 from experiments import annotate, g01_inputs, runner
@@ -163,11 +167,64 @@ def draft(store, genre, manifest, prelabel_path, *, annotator=None, model_id=Non
     md = render(run, cfg)
     try:
         json_path.parent.mkdir(parents=True, exist_ok=True)
-        json_path.write_text(runner.serialize(run) + '\n', encoding='utf-8')
-        md_path.write_text(md, encoding='utf-8')
     except OSError as e:
-        raise DraftError(f'cannot write draft ({out_path}): {e.strerror or e}') from e
+        raise DraftError(f'cannot write draft ({e.filename or out_path}): '
+                         f'{e.strerror or e}') from e
+    _write_pair([(json_path, runner.serialize(run) + '\n'), (md_path, md)])
     return run
+
+
+def _write_pair(items):
+    # Write every file to a temp beside its target (same filesystem), then os.replace each.
+    # On any failure: remove the temps, put back targets already replaced (restoring a prior
+    # file from its backup, or removing the new one), and name the failing target path.
+    tmps, placed = {}, []  # placed: (target, backup or None)
+    target = items[0][0]
+    umask = os.umask(0)
+    os.umask(umask)
+    try:
+        for target, text in items:
+            fd, tmp = tempfile.mkstemp(dir=target.parent, prefix=f'.{target.name}.', suffix='.tmp')
+            os.close(fd)
+            tmps[target] = Path(tmp)
+            os.chmod(tmp, 0o666 & ~umask)  # mkstemp is 0600; keep write_text's umask mode
+            Path(tmp).write_text(text, encoding='utf-8')
+        for target, _ in items:
+            backup = None
+            if target is not items[-1][0] and os.path.isfile(target):
+                fd, bak = tempfile.mkstemp(dir=target.parent, prefix=f'.{target.name}.',
+                                           suffix='.bak')
+                os.close(fd)
+                try:
+                    os.replace(target, bak)
+                except OSError:
+                    with contextlib.suppress(OSError):
+                        os.unlink(bak)
+                    raise
+                backup = Path(bak)
+            try:
+                os.replace(tmps[target], target)
+            except OSError:
+                if backup is not None:
+                    os.replace(backup, target)
+                raise
+            del tmps[target]
+            placed.append((target, backup))
+    except OSError as e:
+        for t, backup in reversed(placed):
+            with contextlib.suppress(OSError):
+                if backup is not None:
+                    os.replace(backup, t)
+                else:
+                    os.unlink(t)
+        for tmp in tmps.values():
+            with contextlib.suppress(OSError):
+                os.unlink(tmp)
+        raise DraftError(f'cannot write draft ({target}): {e.strerror or e}') from e
+    for _, backup in placed:
+        if backup is not None:
+            with contextlib.suppress(OSError):
+                os.unlink(backup)
 
 
 def main(argv=None) -> int:
