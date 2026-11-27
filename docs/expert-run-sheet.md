@@ -107,18 +107,25 @@ intake run (intake defaults: 0 and 0.5).
 - Command:
   `python -m experiments.g02_notes --corpus <PRIVATE:OUT>/converted --genre <PRIVATE:GENRE.json> --split-seed 0 --test-fraction 0.5 --model-url <MODEL_URL> --model-name <MODEL_NAME> --out <PRIVATE:G02>/notes.jsonl --sections-out <PRIVATE:G02>/originals.jsonl`
 - Writes: `notes.jsonl`, `notes.jsonl.review.json`, `originals.jsonl` (corpus text, 0600).
-- Worked: prints `{"selected": 30, "written": ..., "records": 30, "flagged": ...}` and exits 0.
+- Worked: prints a `pool:` line (step 2.2), a `next:` line (step 2.3), then
+  `{"selected": 30, "written": ..., "records": 30, "flagged": ...}` and exits 0. An incomplete run
+  exits 1 and prints neither line.
 - Expert: read the sample in `notes.jsonl.review.json` and decide whether notes leak phrasing.
 
-### 2.2 Exemplar pool (agent, blocker, see Gaps)
+### 2.2 Exemplar pool (agent)
 
-- Produces: `<PRIVATE:G02>/pool.jsonl`, sections from training reports as
-  `{section_id, report_id, section_type, text}`. No tool writes it yet.
+- Produces: `<PRIVATE:G02>/g02_pool.jsonl`, sections of training-split reports only as
+  `{section_id, report_id, section_type, text}` (corpus text, 0600, never overwritten).
+- Command (the `pool:` line g02_notes prints; same split values as 2.1):
+  `python -m experiments.g02_pool --corpus <PRIVATE:OUT>/converted --genre <PRIVATE:GENRE.json> --split-seed 0 --test-fraction 0.5 --min-words 40 --out <PRIVATE:G02>/g02_pool.jsonl`
+  Optional `--max-per-type N` caps sections per type.
+- Worked: prints `{"written": ..., "reports": ..., "section_types": {...}}` and exits 0. Exit 2
+  means the output exists or a held-out report would have entered the pool; nothing is written.
 
 ### 2.3 Generate three arms (G-02.3, agent)
 
-- Command:
-  `python -m experiments.g02_generate --notes <PRIVATE:G02>/notes.jsonl --pool <PRIVATE:G02>/pool.jsonl --out <PRIVATE:G02>/generations.jsonl --model-url <MODEL_URL> --model-name <MODEL_NAME>`
+- Command (the `next:` line g02_notes prints):
+  `python -m experiments.g02_generate --notes <PRIVATE:G02>/notes.jsonl --pool <PRIVATE:G02>/g02_pool.jsonl --out <PRIVATE:G02>/generations.jsonl --originals <PRIVATE:G02>/originals.jsonl --model-url <MODEL_URL> --model-name <MODEL_NAME>`
 - Worked: prints a JSON summary with `complete: true` (30 sections × arms A, B, C, no
   same-report exemplars).
 
@@ -155,10 +162,9 @@ intake run (intake defaults: 0 and 0.5).
 ## Gaps: steps no tool prints
 
 - No tool writes the preregistration records (0.2); they are hand-written JSON.
-- Intake prints no G-02 line; `g02_notes` prints no `g02_generate` line; `g02_generate` prints
-  no `g02_session` line; `blind_ui` prints no `g02_draft` line.
-- No tool builds the exemplar pool `g02_generate --pool` needs (2.2).
-- `g02_notes` needs the intake split values repeated by hand; nothing checks they match.
-- `g01_draft` line from intake has `--seed 0` and `--annotator EXPERT` fixed; `g02_draft` has no
-  printed line, so `--seed` and `--text-model` are chosen by whoever runs it.
+- Intake prints no G-02 line: step 2.1 is typed by hand, and nothing checks its `--split-seed` and
+  `--test-fraction` match the intake run. From 2.1 on each tool prints the next line
+  (`pool:`/`next:`, `next:`, `serve:`, `after judging:`).
+- `g01_draft` line from intake has `--seed 0` and `--annotator EXPERT` fixed; the printed
+  `g02_draft` line has `--seed 0` and `--text-model` from the generation run.
 - The G-02 hint cannot read the confirmed threshold; the repeat-pass week gap is not enforced.
