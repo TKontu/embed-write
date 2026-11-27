@@ -9,7 +9,10 @@ duplicated logic):
 4. ``metadata``: CO-06 ``validate_file`` (only with --metadata; else skipped)
 5. ``sections``: CO-14 ``section_inference.infer_sections`` for documents with no ATX headings
    (D-015) -> OUT/sections.json (private; line numbers and methods, marked inferred). The report
-   holds documents by status and sections by method only.
+   holds documents by status, sections by method and the embedder model_id only. When
+   EMBED_WRITE_MODEL_DIR names a model dir (same rule as ``discovery``) the OnnxEmbedder drives
+   the ``topic_shift_embedding`` fallback; otherwise no embedder (lexical ``topic_shift``; never
+   the HashEmbedder, whose vectors are not semantic).
 6. ``annotation_sample``: AN-02 ``split_documents`` + ``build_manifest`` -> OUT/manifest.json.
    Inferred sections from OUT/sections.json become provisional ``inferred`` strata; if the
    sections step did not succeed, sampling proceeds without them and says so in ``reason``.
@@ -206,7 +209,11 @@ def _sections(converted: Path, out: Path) -> dict:
 
     Headings are used as written when ``corpus_stats._iter_sections`` finds a non-preamble one.
     Sections (line numbers, methods) go to private OUT/sections.json; counts only reach the report.
+    With EMBED_WRITE_MODEL_DIR set, the real OnnxEmbedder drives the semantic fallback and
+    ``counts.embedder`` records its model_id; otherwise it is None (lexical fallback).
     """
+    model_dir = os.environ.get(MODEL_DIR_ENV) or None
+    embedder = move_discovery.make_embedder("onnx", model_dir) if model_dir else None
     documents: dict[str, dict] = {}
     by_status: Counter = Counter()
     by_method: Counter = Counter()
@@ -215,7 +222,7 @@ def _sections(converted: Path, out: Path) -> dict:
         if any(h is not corpus_stats._PREAMBLE for h, _ in corpus_stats._iter_sections(doc.text)):
             status, secs = "has_headings", []
         else:
-            secs = section_inference.infer_sections(doc.text)
+            secs = section_inference.infer_sections(doc.text, embedder=embedder)
             status = "inferred" if secs else "none_found"
         by_status[status] += 1
         by_method.update(s["method"] for s in secs)
@@ -224,7 +231,8 @@ def _sections(converted: Path, out: Path) -> dict:
     path.write_text(json.dumps({"schema": 1, "documents": documents}, indent=2, sort_keys=True)
                     + "\n", encoding="utf-8")
     return _step("ok", None, str(path), {"documents": dict(sorted(by_status.items())),
-                                         "sections": dict(sorted(by_method.items()))})
+                                         "sections": dict(sorted(by_method.items())),
+                                         "embedder": embedder.model_id if embedder else None})
 
 
 def _editor_path(path: str) -> str:
