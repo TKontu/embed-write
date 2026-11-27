@@ -166,3 +166,11 @@ Append-only record of operator rulings and architecture decisions.
   would audit synthetic text.
 - **Why:** these are rare, high-leverage decisions; the strong-model review of #359 caught a
   defect that would have let the loop diagnose forever.
+
+## D-015 — Real reports have correct section headings (2026-11-27, operator)
+
+- **Fact from the operator:** the genre's real reports use correct section headings. The
+  architecture's section → block → sentence hierarchy and per-section move sequences stand.
+- **Consequence:** the two heading-less input texts from the first real-text run (2026-11-26) are
+  not representative. Treat a heading-less input as malformed: flag it at intake and do not
+  redesign around it. Heading inference is not needed for now.
