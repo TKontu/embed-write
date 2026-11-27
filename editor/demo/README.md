@@ -32,6 +32,13 @@ edits back to that same file through `atomicWrite`; every other name is refused.
 provisional (not "synthetic"); `legend.json` beside the report is used if present. `--labels`
 without `--report` is a usage error (one-line message, exit code 2).
 
+CO-14 (D-015): `--sections OUT/sections.json` (intake output; intake `next_steps` adds it for
+documents with inferred sections) shows each inferred section boundary as a provisional dashed
+divider badge "inferred · <method>" before the block at that line. The badge is a widget, not
+document text: nothing is rewritten or saved. The report's entry is the `documents` key its path
+ends with. Without `--sections` the page is unchanged; `--sections` without `--report` is a usage
+error. A line that does not start a block marks the next block (residual).
+
 The legend says "synthetic" only for the shipped `examples/demo` folder; any other `--dir`/`DEMO_DIR`
 folder is labelled "unreviewed placeholders".
 

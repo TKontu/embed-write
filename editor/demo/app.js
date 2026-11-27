@@ -10,6 +10,7 @@ import { blockEvidence, moveSequence, mountComparison, transitionStats } from '.
 import { Plugin, Selection } from '@milkdown/prose/state';
 import { inspectorPlugin, mountInspector, registerFlag, renderMethodTexts, supportEvidence } from '../src/inspector.js';
 import { addCorrection, applyCorrections } from '../src/corrections.js';
+import { sectionMarkerPlugin, sectionMarkers } from './sections.js';
 
 const byId = (id) => /** @type {HTMLElement} */ (document.getElementById(id));
 const ui = {
@@ -130,6 +131,10 @@ async function load(name) {
   let regFlags = [];
   const registerRes = await fetch(`/api/register/${encodeURIComponent(name)}`);
   if (registerRes.ok) regFlags = await registerRes.json();
+  // CO-14 (D-015): inferred sections (only with --report --sections); shown as provisional markers.
+  let inferred = null;
+  const sectionsRes = await fetch(`/api/sections/${encodeURIComponent(name)}`);
+  if (sectionsRes.ok) inferred = await sectionsRes.json();
   if (token !== loadToken) return;
 
   if (state.editor) await state.editor.destroy();
@@ -163,8 +168,10 @@ async function load(name) {
     // IN-05 (D-009 slice): the expert overrules a move label; stored, outranks the sidecar.
     (el, label) => { correctLabel(editor.view, el, label); });
   const current = inspector;
+  const markers = inferred ? sectionMarkers(markdown, inferred) : null;
   editor.view.updateState(editor.view.state.reconfigure({
-    plugins: [...editor.view.state.plugins, plugin, inspectorPlugin(Plugin, () => current)],
+    plugins: [...editor.view.state.plugins, plugin, inspectorPlugin(Plugin, () => current),
+      ...(markers ? [sectionMarkerPlugin(markers)] : [])],
   }));
   // idPlugin assigns block ids on this transaction; the overlay then has nodes to decorate.
   editor.view.dispatch(editor.view.state.tr.setMeta('demo:loaded', true));
@@ -178,7 +185,7 @@ async function load(name) {
   updateOverlayButton(ui.overlay, isMoveOverlayOn(editor.view.state));
   ui.granularity.value = selectedMoveGranularity(editor.view.state);
   ui.overlaySelect.value = selectedMoveOverlaySelection(editor.view.state);
-  setStatus(`Loaded ${name} — ${moves.length} provisional label${moves.length === 1 ? '' : 's'}; ${overlaySummary()}`);
+  setStatus(`Loaded ${name} — ${moves.length} provisional label${moves.length === 1 ? '' : 's'}; ${overlaySummary()}${markers ? `; ${markers.length} provisional inferred section${markers.length === 1 ? '' : 's'}` : ''}`);
 }
 
 /** @type {HTMLElement | null} */

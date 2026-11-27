@@ -241,3 +241,14 @@ body {
   margin: 0;
   font-style: italic;
 }
+
+/* CO-14 (D-015): an inferred section boundary, provisional; not part of the document text. */
+.provisional-section {
+  margin: 1.2em 0 0.3em;
+  padding: 0.1em 0.5em;
+  border-top: 2px dashed #8a8a8a;
+  color: #555;
+  font-size: 0.8em;
+  font-style: italic;
+  user-select: none;
+}
