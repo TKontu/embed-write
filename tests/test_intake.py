@@ -10,7 +10,7 @@ import unittest
 from unittest import mock
 from pathlib import Path
 
-from experiments import intake
+from experiments import annotation_sample, intake
 from service.segment import segment_sentences
 
 REPO = Path(__file__).resolve().parent.parent
@@ -39,6 +39,11 @@ class IntakeTest(unittest.TestCase):
         for p in sorted(DEMO.glob("*.md")):
             shutil.copy(p, self.src / p.name)
         self.out = self.tmp / "out"
+        # CO-14 (c): never the real edit-log/; a temp, empty section-corrections dir by default.
+        self.corrections = self.tmp / "section-corrections"
+        patcher = mock.patch.dict(os.environ, {intake.SECTION_CORRECTIONS_ENV: str(self.corrections)})
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def run_intake(self, *extra, model=None):
         argv = ["run", str(self.src), str(self.out), "--genre", GENRE, "--force", *extra]
@@ -357,6 +362,49 @@ class IntakeTest(unittest.TestCase):
         first = (self.out / intake.SECTIONS_NAME).read_bytes()
         self.run_intake()
         self.assertEqual((self.out / intake.SECTIONS_NAME).read_bytes(), first)
+
+    def test_expert_section_correction_replaces_inference(self):
+        """CO-14 (c): a demo-saved correction file replaces the inference; counts only reported."""
+        flat = "1. Invented title\n\nInvented body sentence here.\n\n**Second part**\n\nMore plain text.\n"
+        (self.src / "flat.md").write_text(flat, encoding="utf-8")
+        code, rep, _, _ = self.run_intake()
+        self.assertEqual(rep["steps"]["sections"]["counts"]["corrected"], 0)
+        without = (self.out / intake.SECTIONS_NAME).read_bytes()
+        expert = [{"start_line": 2, "level": 1, "method": "expert", "inferred": False}]
+        self.corrections.mkdir()
+        (self.corrections / "flat.md.json").write_text(json.dumps(
+            {"schema": 1, "document": "flat.md", "sections": expert}), encoding="utf-8")
+        code, rep, text, printed = self.run_intake()
+        self.assertEqual(code, 0)
+        counts = rep["steps"]["sections"]["counts"]
+        self.assertEqual(counts["corrected"], 1)
+        self.assertEqual(counts["sections"], {"expert": 1})
+        data = json.loads((self.out / intake.SECTIONS_NAME).read_text(encoding="utf-8"))
+        doc = data["documents"]["flat.md"]
+        self.assertEqual(doc, {"status": "inferred", "corrected": True, "sections": expert})
+        self.assertNotIn("Invented", text + printed)
+        # the sampling step receives the expert sections
+        self.assertEqual(annotation_sample.load_inferred(self.out / intake.SECTIONS_NAME)["flat.md"], expert)
+        # an empty correction (every boundary removed) leaves the document without sections
+        (self.corrections / "flat.md.json").write_text(json.dumps(
+            {"schema": 1, "document": "flat.md", "sections": []}), encoding="utf-8")
+        _, rep, _, _ = self.run_intake()
+        data = json.loads((self.out / intake.SECTIONS_NAME).read_text(encoding="utf-8"))
+        self.assertEqual(data["documents"]["flat.md"]["status"], "none_found")
+        self.assertEqual(rep["steps"]["sections"]["counts"]["corrected"], 1)
+        # without the file the inference is back, byte-identical
+        (self.corrections / "flat.md.json").unlink()
+        self.run_intake()
+        self.assertEqual((self.out / intake.SECTIONS_NAME).read_bytes(), without)
+
+    def test_invalid_section_correction_fails_step_by_type(self):
+        (self.src / "flat.md").write_text("1. Invented title\n\nBody text.\n", encoding="utf-8")
+        self.corrections.mkdir()
+        (self.corrections / "flat.md.json").write_text(json.dumps(
+            {"schema": 1, "document": "flat.md", "sections": [{"start_line": "x"}]}), encoding="utf-8")
+        _, rep, _, _ = self.run_intake()
+        self.assertEqual(rep["steps"]["sections"]["status"], "failed")
+        self.assertEqual(rep["steps"]["sections"]["reason"], "ValueError")
 
     def test_next_steps_add_sections_only_for_inferred_documents(self):
         """CO-14 demo half: --sections only on the demo line of a document with inferred sections."""

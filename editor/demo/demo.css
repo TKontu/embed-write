@@ -252,3 +252,14 @@ body {
   font-style: italic;
   user-select: none;
 }
+
+/* CO-14 (c): expert review of section boundaries. */
+.provisional-section button {
+  margin-left: 0.6em;
+  font-size: 0.9em;
+  font-style: normal;
+}
+.provisional-section.section-confirmed { border-top-style: solid; color: #2d5a2d; }
+.provisional-section.section-removed { opacity: 0.45; text-decoration: line-through; }
+.provisional-section.expert-section { border-top: 2px solid #2d5a2d; color: #2d5a2d; font-style: normal; }
+.section-controls input { width: 5em; }

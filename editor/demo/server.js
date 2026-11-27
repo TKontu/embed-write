@@ -15,6 +15,7 @@ import { basename, dirname, extname, join, relative, resolve, sep } from 'node:p
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { atomicWrite } from '../src/autosave.js';
 import { checkCorrections } from '../src/corrections.js';
+import { checkSectionCorrection, splitLines } from './sections.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const EDITOR_DIR = resolve(HERE, '..');
@@ -24,6 +25,36 @@ export const DEFAULT_DIR = join(REPO_DIR, 'examples', 'demo');
 const MAX_BODY = 5 * 1024 * 1024;
 /** IN-05: expert corrections (private, gitignored `edit-log/`), never under examples/. */
 export const DEFAULT_CORRECTIONS_DIR = join(REPO_DIR, 'edit-log', 'demo-corrections');
+/** CO-14 (c): expert section corrections (private, gitignored), read by experiments/intake.py. */
+export const DEFAULT_SECTION_CORRECTIONS_DIR = join(REPO_DIR, 'edit-log', 'section-corrections');
+
+/**
+ * The correction file of a sections.json document key (relative POSIX path under CONVERTED):
+ * DIR/<key>.json. Python's intake reads the same path.
+ * @param {string} dir @param {string} document
+ */
+export function sectionCorrectionFile(dir, document) {
+  const parts = document.split('/');
+  if (!document || document.startsWith('/') || parts.some((p) => p === '' || p === '.' || p === '..' || p.includes('\\'))) {
+    throw Object.assign(new Error(`bad document key: ${document}`), { status: 400 });
+  }
+  return join(dir, ...parts) + '.json';
+}
+
+/**
+ * The document's saved expert correction, or null when none is stored.
+ * @param {string} dir @param {string} document
+ * @returns {Promise<any[] | null>}
+ */
+export async function readSectionCorrection(dir, document) {
+  const file = sectionCorrectionFile(dir, document);
+  if (!existsSync(file)) return null;
+  const data = JSON.parse(await readFile(file, 'utf8'));
+  if (!data || data.schema !== 1 || data.document !== document || !Array.isArray(data.sections)) {
+    throw new Error(`not a section correction for ${document}: ${file}`);
+  }
+  return data.sections;
+}
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -442,7 +473,7 @@ export function refusalReason(req, port) {
 /**
  * @param {import('node:http').IncomingMessage} req
  * @param {import('node:http').ServerResponse} res
- * @param {{ dir: string, correctionsDir: string, genreFallback?: string | null, report: { file: string, name: string, labels: string | null } | null, sections?: { file: string, document: string | null, sections: any[] } | null, importMap: { imports: Record<string, string> } }} ctx
+ * @param {{ dir: string, correctionsDir: string, sectionCorrectionsDir: string, genreFallback?: string | null, report: { file: string, name: string, labels: string | null } | null, sections?: { file: string, document: string | null, sections: any[] } | null, importMap: { imports: Record<string, string> } }} ctx
  */
 /**
  * The genre file: the sample folder's own genre.json, else the fallback (the demo's by default;
@@ -494,7 +525,30 @@ async function handle(req, res, ctx) {
     const name = decodeURIComponent(pathname.slice('/api/sections/'.length));
     checkReportName(ctx.report, name);
     if (!ctx.sections) return sendError(res, 404, `no sections for ${name}`);
-    return send(res, 200, MIME['.json'], JSON.stringify(ctx.sections.sections));
+    // CO-14 (c): a saved expert correction replaces the inferred set.
+    const corrected = ctx.sections.document
+      ? await readSectionCorrection(ctx.sectionCorrectionsDir, ctx.sections.document) : null;
+    return send(res, 200, MIME['.json'], JSON.stringify(corrected ?? ctx.sections.sections));
+  }
+  if (ctx.report && pathname.startsWith('/api/section-corrections/')) {
+    const name = decodeURIComponent(pathname.slice('/api/section-corrections/'.length));
+    checkReportName(ctx.report, name);
+    if (!ctx.sections) return sendError(res, 404, `no sections for ${name}`);
+    if (!ctx.sections.document) return sendError(res, 409, `${name} is not in the sections file`);
+    if (req.method !== 'PUT') return sendError(res, 405, 'method not allowed');
+    let body;
+    try { body = JSON.parse(await readBody(req)); } catch { return sendError(res, 400, 'body must be JSON'); }
+    let sections;
+    try {
+      sections = checkSectionCorrection(body, splitLines(await readFile(ctx.report.file, 'utf8')).length);
+    } catch (err) {
+      return sendError(res, 400, /** @type {Error} */ (err).message);
+    }
+    const file = sectionCorrectionFile(ctx.sectionCorrectionsDir, ctx.sections.document);
+    const text = JSON.stringify({ schema: 1, document: ctx.sections.document, sections }, null, 2) + '\n';
+    await mkdir(dirname(file), { recursive: true });
+    await atomicWrite(file, text);
+    return send(res, 200, MIME['.json'], JSON.stringify({ saved: name, sections: sections.length }));
   }
   if (pathname === '/api/samples') {
     return send(res, 200, MIME['.json'], JSON.stringify({ dir: ctx.dir, samples: await listSamples(ctx.dir) }));
@@ -617,7 +671,7 @@ async function handle(req, res, ctx) {
 }
 
 /**
- * @param {{ dir?: string, report?: string, labels?: string, sections?: string, port?: number, host?: string, correctionsDir?: string, genreFallback?: string | null }} [opts]
+ * @param {{ dir?: string, report?: string, labels?: string, sections?: string, port?: number, host?: string, correctionsDir?: string, sectionCorrectionsDir?: string, genreFallback?: string | null }} [opts]
  * @returns {Promise<{ server: import('node:http').Server, url: string, port: number, dir: string, report: { file: string, name: string, labels: string | null } | null, sections: { file: string, document: string | null, sections: any[] } | null, importMap: { imports: Record<string, string> }, close: () => Promise<void> }>}
  */
 export async function startServer(opts = {}) {
@@ -630,6 +684,7 @@ export async function startServer(opts = {}) {
   const info = await stat(dir);
   if (!info.isDirectory()) throw new Error(`sample folder is not a directory: ${dir}`);
   const correctionsDir = resolve(opts.correctionsDir ?? process.env.DEMO_CORRECTIONS_DIR ?? DEFAULT_CORRECTIONS_DIR);
+  const sectionCorrectionsDir = resolve(opts.sectionCorrectionsDir ?? process.env.SECTION_CORRECTIONS_DIR ?? DEFAULT_SECTION_CORRECTIONS_DIR);
   const genreFallback = opts.genreFallback === undefined ? join(DEFAULT_DIR, 'genre.json') : opts.genreFallback;
   const port = opts.port ?? 0;
   const host = opts.host ?? '127.0.0.1';
@@ -643,7 +698,7 @@ export async function startServer(opts = {}) {
       req.resume();
       return;
     }
-    handle(req, res, { dir, correctionsDir, genreFallback, report, sections, importMap }).catch((err) => {
+    handle(req, res, { dir, correctionsDir, sectionCorrectionsDir, genreFallback, report, sections, importMap }).catch((err) => {
       if (!res.headersSent) sendError(res, /** @type {any} */ (err).status ?? 500, err instanceof Error ? err.message : String(err));
       else res.end();
     });

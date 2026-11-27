@@ -88,6 +88,9 @@ NO_DISCOVER = "not requested"
 DISCOVERY_NAME = "move_discovery.json"
 SECTIONS_NAME = "sections.json"
 MODEL_DIR_ENV = "EMBED_WRITE_MODEL_DIR"
+# CO-14 (c): expert section corrections saved by the demo (private, gitignored edit-log/).
+SECTION_CORRECTIONS_ENV = "SECTION_CORRECTIONS_DIR"
+DEFAULT_SECTION_CORRECTIONS = Path(__file__).resolve().parent.parent / "edit-log" / "section-corrections"
 # Files intake itself writes into OUT (besides CONVERTED); a run removes these first so a
 # --force rerun leaves no stale output. Never other files (annotations.jsonl is the expert's).
 OWNED = ("conversion_quality.json", "corpus_stats.json", "manifest.json", "prelabels.jsonl",
@@ -204,6 +207,30 @@ def _discover(converted: Path, out: Path, genre, k: int | None = None,
         "development_only_embedder": report["embedder"]["development_only"], **params})
 
 
+def _section_correction(corrections: Path, name: str) -> list[dict] | None:
+    """The expert's saved section boundaries for document ``name`` (DIR/<name>.json), or None.
+
+    Written by the demo (editor/demo/server.js); line numbers and levels only, method "expert".
+    A malformed file raises ValueError (the step fails by type name; no text is reported).
+    """
+    path = corrections.joinpath(*name.split("/")).with_name(name.split("/")[-1] + ".json")
+    if not path.is_file():
+        return None
+    data = json.loads(path.read_text(encoding="utf-8"))
+    secs = data.get("sections") if isinstance(data, dict) else None
+    if data.get("schema") != 1 or data.get("document") != name or not isinstance(secs, list):
+        raise ValueError("not a section correction")
+    out = []
+    for s in secs:
+        if (not isinstance(s, dict) or type(s.get("start_line")) is not int or s["start_line"] < 0
+                or type(s.get("level")) is not int or s.get("method") != "expert"
+                or s.get("inferred") is not False):
+            raise ValueError("bad section correction entry")
+        out.append({"start_line": s["start_line"], "level": s["level"], "method": "expert",
+                    "inferred": False})
+    return sorted(out, key=lambda s: s["start_line"])
+
+
 def _sections(converted: Path, out: Path) -> dict:
     """CO-14 (D-015): infer provisional sections for documents with no ATX headings.
 
@@ -211,7 +238,11 @@ def _sections(converted: Path, out: Path) -> dict:
     Sections (line numbers, methods) go to private OUT/sections.json; counts only reach the report.
     With EMBED_WRITE_MODEL_DIR set, the real OnnxEmbedder drives the semantic fallback and
     ``counts.embedder`` records its model_id; otherwise it is None (lexical fallback).
+    A heading-less document with an expert correction (SECTION_CORRECTIONS_DIR, default
+    edit-log/section-corrections) uses it instead of the inference; ``counts.corrected`` counts them.
     """
+    corrections = Path(os.environ.get(SECTION_CORRECTIONS_ENV) or DEFAULT_SECTION_CORRECTIONS)
+    corrected = 0
     model_dir = os.environ.get(MODEL_DIR_ENV) or None
     embedder = move_discovery.make_embedder("onnx", model_dir) if model_dir else None
     documents: dict[str, dict] = {}
@@ -219,19 +250,26 @@ def _sections(converted: Path, out: Path) -> dict:
     by_method: Counter = Counter()
     for doc in iter_documents(converted):  # one document at a time
         name = doc.path.relative_to(converted).as_posix()
+        expert = None
         if any(h is not corpus_stats._PREAMBLE for h, _ in corpus_stats._iter_sections(doc.text)):
             status, secs = "has_headings", []
         else:
-            secs = section_inference.infer_sections(doc.text, embedder=embedder)
+            expert = _section_correction(corrections, name)
+            secs = (expert if expert is not None
+                    else section_inference.infer_sections(doc.text, embedder=embedder))
             status = "inferred" if secs else "none_found"
         by_status[status] += 1
         by_method.update(s["method"] for s in secs)
         documents[name] = {"status": status, "sections": secs}
+        if status != "has_headings" and expert is not None:
+            documents[name]["corrected"] = True
+            corrected += 1
     path = out / SECTIONS_NAME
     path.write_text(json.dumps({"schema": 1, "documents": documents}, indent=2, sort_keys=True)
                     + "\n", encoding="utf-8")
     return _step("ok", None, str(path), {"documents": dict(sorted(by_status.items())),
                                          "sections": dict(sorted(by_method.items())),
+                                         "corrected": corrected,
                                          "embedder": embedder.model_id if embedder else None})
 
 

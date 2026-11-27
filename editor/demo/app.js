@@ -169,6 +169,7 @@ async function load(name) {
     (el, label) => { correctLabel(editor.view, el, label); });
   const current = inspector;
   const markers = inferred ? sectionMarkers(markdown, inferred) : null;
+  mountSectionControls(name, markers);
   editor.view.updateState(editor.view.state.reconfigure({
     plugins: [...editor.view.state.plugins, plugin, inspectorPlugin(Plugin, () => current),
       ...(markers ? [sectionMarkerPlugin(markers)] : [])],
@@ -187,6 +188,73 @@ async function load(name) {
   ui.overlaySelect.value = selectedMoveOverlaySelection(editor.view.state);
   setStatus(`Loaded ${name} — ${moves.length} provisional label${moves.length === 1 ? '' : 's'}; ${overlaySummary()}${markers ? `; ${markers.length} provisional inferred section${markers.length === 1 ? '' : 's'}` : ''}`);
 }
+
+/**
+ * CO-14 (c, D-015): the expert keeps or removes each shown boundary and adds one at a source line;
+ * "Save sections" stores the kept + added set (line numbers and levels only) as the document's
+ * expert correction, which then replaces the inference. Reload shows them as expert boundaries.
+ * @type {{ name: string, removed: Set<number>, added: Map<number, number>, markers: Array<{ line: number, level: number }> } | null}
+ */
+let sectionDraft = null;
+/** @type {HTMLElement | null} */
+let sectionControls = null;
+
+/** @param {string} name @param {Array<{ line: number, level: number }> | null} markers */
+function mountSectionControls(name, markers) {
+  sectionControls?.remove();
+  sectionControls = null;
+  sectionDraft = null;
+  if (!markers) return;
+  sectionDraft = { name, removed: new Set(), added: new Map(), markers };
+  const box = document.createElement('span');
+  box.className = 'section-controls';
+  const line = document.createElement('input');
+  line.type = 'number';
+  line.min = '0';
+  line.setAttribute('aria-label', 'Source line (0-based) for a new section boundary');
+  const add = document.createElement('button');
+  add.type = 'button';
+  add.textContent = 'Add boundary';
+  add.addEventListener('click', () => {
+    const n = Number(line.value);
+    if (!sectionDraft || !Number.isInteger(n) || n < 0) return setStatus('Enter a 0-based source line');
+    sectionDraft.added.set(n, 1);
+    sectionDraft.removed.delete(n);
+    setStatus(`Boundary at line ${n} added (unsaved)`);
+  });
+  const save = document.createElement('button');
+  save.type = 'button';
+  save.textContent = 'Save sections';
+  save.addEventListener('click', () => { void saveSections(); });
+  box.append(line, add, save);
+  ui.status.before(box);
+  sectionControls = box;
+}
+
+async function saveSections() {
+  if (!sectionDraft) return;
+  const { name, removed, added, markers } = sectionDraft;
+  const keep = new Map(markers.filter((m) => !removed.has(m.line)).map((m) => [m.line, m.level]));
+  for (const [l, level] of added) keep.set(l, level);
+  const sections = [...keep].map(([start_line, level]) => ({ start_line, level }));
+  const res = await fetch(`/api/section-corrections/${encodeURIComponent(name)}`, {
+    method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sections }) });
+  if (!res.ok) return setStatus(`Section correction refused: ${(await res.json().catch(() => ({}))).error ?? res.status}`);
+  await load(name);
+  setStatus(`Saved ${sections.length} expert section boundar${sections.length === 1 ? 'y' : 'ies'} for ${name}`);
+}
+
+ui.root.addEventListener('click', (event) => {
+  const button = /** @type {HTMLElement} */ (event.target).closest?.('.provisional-section button');
+  if (!button || !sectionDraft) return;
+  const badgeEl = /** @type {HTMLElement} */ (button.closest('.provisional-section'));
+  const lineNo = Number(badgeEl.dataset.line);
+  const remove = button.dataset.action === 'remove';
+  if (remove) sectionDraft.removed.add(lineNo); else sectionDraft.removed.delete(lineNo);
+  badgeEl.classList.toggle('section-removed', remove);
+  badgeEl.classList.toggle('section-confirmed', !remove);
+  setStatus(`Boundary at line ${lineNo} ${remove ? 'removed' : 'kept'} (unsaved)`);
+});
 
 /** @type {HTMLElement | null} */
 let issuesMount = null;
