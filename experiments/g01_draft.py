@@ -262,6 +262,11 @@ def _write_pair(items):
                 os.unlink(backup)
 
 
+# Public names for reuse by experiments.g02_draft (same objects; behaviour unchanged).
+output_paths = _paths
+write_pair = _write_pair
+
+
 def _refuse_nul(name: str, raw: str) -> None:
     if '\x00' in raw:
         flag = '--' + name.replace('_', '-')
