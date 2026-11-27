@@ -114,6 +114,54 @@ class ExpertRunSheetTest(unittest.TestCase):
         printed[printed.index('--expected-sections') + 1] = '30'
         self.assertEqual(sheet, printed)
 
+    def step(self, n):
+        return self.text.split(f'### 2.{n}', 1)[1].split(f'### 2.{n + 1}', 1)[0]
+
+    def test_step_2_4_is_the_next_line_g02_generate_prints(self):
+        import contextlib, io, json, os, tempfile
+        from experiments import g02_generate
+
+        def fake(prompt, temperature=None):  # LLM-built synthetic fixture, no model
+            return 'generated text'
+        fake.model_id = 'fake'
+        with tempfile.TemporaryDirectory() as d:
+            g02 = os.path.join(d, 'g')
+            os.makedirs(g02)
+            notes, pool = os.path.join(g02, 'notes.jsonl'), os.path.join(g02, 'g02_pool.jsonl')
+            with open(notes, 'w') as fh:
+                for i in range(2):
+                    fh.write(json.dumps({'section_id': f'r{i}-s', 'report_id': f'r{i}',
+                                         'section_type': 'intro', 'notes': f'fact {i}'}) + '\n')
+            with open(pool, 'w') as fh:
+                fh.write(json.dumps({'section_id': 'ex', 'report_id': 'rx',
+                                     'section_type': 'intro', 'text': 'fact words'}) + '\n')
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = g02_generate.main(
+                    ['--notes', notes, '--pool', pool,
+                     '--out', os.path.join(g02, 'g02_generations.jsonl'),
+                     '--originals', os.path.join(g02, 'originals.jsonl'),
+                     '--expected-sections', '2', '--n-candidates', '2'],
+                    model=fake, critic=lambda c, ctx: 0.0)
+            self.assertEqual(rc, 0, buf.getvalue())
+            nxt = [l for l in buf.getvalue().splitlines() if l.startswith('next: ')][0]
+            printed = [t.replace(g02, '<PRIVATE:G02>') for t in shlex.split(nxt[6:])]
+        (cmd,) = re.findall(r'`(python -m [^`]+)`', self.step(4))
+        self.assertEqual(shlex.split(cmd), printed)
+
+    def test_steps_2_5_and_2_6_use_the_session_and_choices_of_2_4(self):
+        (cmd,) = re.findall(r'`(python -m [^`]+)`', self.step(4))
+        t = shlex.split(cmd)
+        session, choices = t[t.index('--out') + 1], t[t.index('--choices') + 1]
+        (serve,) = re.findall(r'`(python -m [^`]+)`', self.step(5))
+        self.assertEqual(shlex.split(serve)[3:], [session, choices])
+        (draft,) = re.findall(r'`(python -m [^`]+)`', self.step(6))
+        d = shlex.split(draft)
+        self.assertEqual(d[d.index('--session') + 1], session)
+        self.assertEqual(d[d.index('--choices') + 1], choices)
+        for n in (4, 5, 6):  # prose too: no bare short names left
+            self.assertIsNone(re.search(r'(?<![\w/])(session\.json|choices\.jsonl)', self.step(n)), n)
+
 
 class ExtractorSelfTest(unittest.TestCase):
     def test_bogus_flag_is_rejected(self):
