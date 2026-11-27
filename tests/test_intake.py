@@ -72,6 +72,7 @@ class IntakeTest(unittest.TestCase):
         self.assertEqual(code, 0)
         st = {k: v["status"] for k, v in rep["steps"].items()}
         self.assertEqual(st, {"ingest": "ok", "conversion_quality": "ok", "corpus_stats": "ok",
+                              "boilerplate": "ok",
                               "metadata": "skipped", "annotation_sample": "ok",
                               "prelabel": "skipped", "discovery": "skipped",
                               "sections": "ok"})
@@ -542,6 +543,56 @@ class IntakeTest(unittest.TestCase):
 
     def test_sections_is_owned(self):
         self.assertIn(intake.SECTIONS_NAME, intake.OWNED)
+
+    def test_boilerplate_step_counts_only(self):
+        """CO-07 in intake; LLM-built synthetic sentinel repeated in >= 3 documents."""
+        sentinel = "Quillfrond sentinel marmalade disclaimer applies to every report"
+        for i in range(3):
+            (self.src / f"bp{i}.md").write_text(
+                f"# Part {i}\n\nUnique body number {i} about topic {i * 7}.\n\n{sentinel}.\n",
+                encoding="utf-8")
+        code, rep, text, printed = self.run_intake()
+        self.assertEqual(code, 0)
+        step = rep["steps"]["boilerplate"]
+        self.assertEqual(step["status"], "ok")
+        self.assertEqual(step["output"], str(self.out / intake.BOILERPLATE_NAME))
+        self.assertEqual(set(step["counts"]),
+                         {"documents", "flags", "by_kind", "passage_table_capped"})
+        self.assertGreaterEqual(step["counts"]["flags"], 1)
+        self.assertGreaterEqual(step["counts"]["by_kind"]["repeated"], 1)
+        self.assertIn("quillfrond sentinel marmalade",
+                      (self.out / intake.BOILERPLATE_NAME).read_text(encoding="utf-8"))
+        for blob in (text, printed):
+            self.assertNotIn("quillfrond", blob.lower())
+            self.assertNotIn("marmalade", blob.lower())
+        self.assertEqual(list(intake.STEPS).index("boilerplate"),
+                         list(intake.STEPS).index("corpus_stats") + 1)
+
+    def test_boilerplate_blocked_by_ingest(self):
+        for p in self.src.iterdir():
+            p.unlink()
+        (self.src / "broken.docx").write_text(SECRET, encoding="utf-8")
+        _, rep, _, _ = self.run_intake()
+        self.assertEqual(rep["steps"]["boilerplate"]["status"], "skipped")
+        self.assertEqual(rep["steps"]["boilerplate"]["reason"], "blocked by ingest")
+
+    def test_boilerplate_exception_type_only(self):
+        with mock.patch("experiments.boilerplate.build_report",
+                        side_effect=RuntimeError("Quillfrond leak")):
+            code, rep, text, printed = self.run_intake()
+        self.assertEqual(code, 1)
+        self.assertEqual(rep["steps"]["boilerplate"]["status"], "failed")
+        self.assertEqual(rep["steps"]["boilerplate"]["reason"], "RuntimeError")
+        for blob in (text, printed):
+            self.assertNotIn("Quillfrond", blob)
+
+    def test_boilerplate_force_rerun_removes_stale(self):
+        self.assertIn(intake.BOILERPLATE_NAME, intake.OWNED)
+        self.run_intake()
+        (self.out / intake.BOILERPLATE_NAME).write_text("stale\n", encoding="utf-8")
+        with mock.patch("experiments.boilerplate.build_report", side_effect=RuntimeError("x")):
+            self.run_intake()
+        self.assertFalse((self.out / intake.BOILERPLATE_NAME).exists())
 
     def test_usage_errors(self):
         self.out.mkdir()
