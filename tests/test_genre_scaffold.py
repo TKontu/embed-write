@@ -71,6 +71,32 @@ class ScaffoldTests(unittest.TestCase):
         self.assertIn('moves[0].id', out)
         self.assertIn('moves[2].definition', out)
 
+    def test_check_filled_values_containing_todo_pass(self):
+        obj = genre_scaffold.scaffold('g', 2)
+        for i, m in enumerate(obj['moves'], 1):
+            m['id'] = f'move{i}'
+            m['name'] = f'Move {i}'
+            m['definition'] = 'Writer checks the TODO list before reporting.'
+            m['positive_examples'] = ['MASTODON reports grew.', 'See the TODO list.']
+            m['near_miss'] = 'A todo-ish aside.'
+        obj['legend']['colors'] = {'move1': '#111111', 'move2': '#222222'}
+        with open(self.out, 'w', encoding='utf-8') as fh:
+            fh.write(genre_scaffold.dumps(validate_genre(obj)))
+        code, out, _ = run('check', self.out)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(genre_scaffold.placeholders(obj), [])
+
+    def test_check_fresh_scaffold_lists_every_marker(self):
+        run('new', self.out, '--name', 'g', '--moves', '2', '--section-types', 'a')
+        code, out, _ = run('check', self.out)
+        self.assertEqual(code, 1)
+        for f in ('moves[0].id', 'moves[0].name', 'moves[0].definition',
+                  'moves[0].positive_examples[1]', 'moves[1].near_miss',
+                  'legend.colors.TODO-move-1 (key)', 'legend.colors.TODO-move-2 (key)',
+                  'section_types[0].name', 'section_types[0].headings[0]'):
+            self.assertIn(f'  {f}\n', out)
+        self.assertIn('16 placeholder', out)
+
     def test_check_demo_passes(self):
         code, _, _ = run('check', DEMO)
         self.assertEqual(code, 0)
