@@ -21,6 +21,11 @@ are skipped.
 check: it flags every note sharing a word n-gram with its source section and draws a seeded
 expert sample. The verdict belongs to the expert (G-02.2 is [A→H]); this never decides it.
 
+``--sections-out PATH`` also writes the selected original sections as private JSONL
+``{section_id, report_id, section_type, text}`` (mode 0600; refused if PATH exists), the
+``--originals`` input of ``experiments.g02_session`` (G-02.4 C vs original). It holds corpus text:
+keep it in private storage.
+
 Production caller: the CLI ``python -m experiments.g02_notes`` for G-02.2, feeding G-02.3.
 ``prelabel.local_model`` posts only to a loopback endpoint (service.network_guard, I9).
 """
@@ -29,6 +34,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import random
 import re
 import sys
@@ -168,6 +174,14 @@ def leak_review(sections: Iterable[dict], records: Iterable[dict], *, n: int = 6
             'note': 'mechanical check only; the leaked-phrasing verdict is the expert\'s (G-02.2 [A->H])'}
 
 
+def _write_sections(path, sections) -> None:
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, 'w', encoding='utf-8') as fh:
+        for s in sections:
+            fh.write(json.dumps({k: s[k] for k in ('section_id', 'report_id', 'section_type',
+                                                   'text')}, sort_keys=True) + '\n')
+
+
 def main(argv=None, *, model=None, genre=None) -> int:
     ap = argparse.ArgumentParser(prog='python -m experiments.g02_notes')
     ap.add_argument('--corpus', required=True)
@@ -182,7 +196,11 @@ def main(argv=None, *, model=None, genre=None) -> int:
     ap.add_argument('--model-url', help='loopback OpenAI-compatible endpoint (I9)')
     ap.add_argument('--model-name', default='local')
     ap.add_argument('--out', required=True, help='notes JSONL; review goes to <out>.review.json')
+    ap.add_argument('--sections-out',
+                    help='also write the selected original sections JSONL (private, G-02.4)')
     a = ap.parse_args(argv)
+    if a.sections_out and os.path.exists(a.sections_out):
+        ap.error(f'--sections-out {a.sections_out} exists; refusing to overwrite')
     if model is None:
         if not a.model_url:
             ap.error('--model-url is required unless a model is injected')
@@ -202,6 +220,8 @@ def main(argv=None, *, model=None, genre=None) -> int:
                 yield rel, d.text
 
     sections = select_sections(documents, split, genre, n=a.n, seed=a.seed, min_words=a.min_words)
+    if a.sections_out:
+        _write_sections(a.sections_out, sections)
     written = extract_notes(sections, model, out_path=a.out)
     model_id = getattr(model, 'model_id', 'unknown')
     with open(a.out, encoding='utf-8') as fh:

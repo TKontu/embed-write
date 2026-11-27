@@ -129,5 +129,29 @@ class CliTest(unittest.TestCase):
             self.assertTrue(os.path.exists(out + '.review.json'))
 
 
+    def test_cli_sections_out_writes_originals(self):
+        with tempfile.TemporaryDirectory() as d:
+            for r in IDS[:10]:
+                with open(os.path.join(d, f'{r}.md'), 'w') as fh:
+                    fh.write(doc(r))
+            out = os.path.join(d, 'notes.jsonl')
+            sec = os.path.join(d, 'originals.jsonl')
+            argv = ['--corpus', d, '--split-seed', '0', '--test-fraction', '0.5', '--n', '3',
+                    '--out', out, '--genre', 'g', '--sections-out', sec]
+            self.assertEqual(notes.main(argv, model=FakeModel(), genre=GENRE), 0)
+            rows = read(sec)
+            self.assertEqual(len(rows), 3)
+            self.assertEqual({tuple(sorted(r)) for r in rows},
+                             {('report_id', 'section_id', 'section_type', 'text')})
+            self.assertEqual({r['section_id'] for r in rows}, {r['section_id'] for r in read(out)})
+            self.assertTrue(all(BODY in r['text'] for r in rows))
+            with open(sec, 'w') as fh:
+                fh.write('keep')
+            with self.assertRaises(SystemExit) as cm:
+                notes.main(argv, model=FakeModel(), genre=GENRE)
+            self.assertEqual(cm.exception.code, 2)
+            with open(sec) as fh:
+                self.assertEqual(fh.read(), 'keep')
+
 if __name__ == '__main__':
     unittest.main()
