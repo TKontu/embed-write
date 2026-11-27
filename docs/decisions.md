@@ -167,10 +167,15 @@ Append-only record of operator rulings and architecture decisions.
 - **Why:** these are rare, high-leverage decisions; the strong-model review of #359 caught a
   defect that would have let the loop diagnose forever.
 
-## D-015 — Real reports have correct section headings (2026-11-27, operator)
+## D-015 — Sections come from the best available headings (2026-11-27, operator)
 
-- **Fact from the operator:** the genre's real reports use correct section headings. The
-  architecture's section → block → sentence hierarchy and per-section move sequences stand.
-- **Consequence:** the two heading-less input texts from the first real-text run (2026-11-26) are
-  not representative. Treat a heading-less input as malformed: flag it at intake and do not
-  redesign around it. Heading inference is not needed for now.
+- **Ruling:** the section → block → sentence hierarchy and per-section move sequences use the best
+  available headings. Real reports normally carry correct section headings, and those are used as
+  written. When a document has missing or unusable headings, intake infers the best available
+  section structure (for example from formatting, numbering or a local model) instead of rejecting
+  the document or treating it as one section.
+- **Marking:** inferred sections are recorded as inferred, with their method, and shown as
+  provisional in the demo and overlays. The expert can correct them; a correction replaces the
+  inference.
+- **Why:** the first real-text run (2026-11-26) had two inputs without section headings, and the
+  design assumes sections.
