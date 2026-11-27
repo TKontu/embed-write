@@ -112,6 +112,25 @@ class DraftTest(DraftFixture):
         os.mkdir(d)
         self._stem_rule_refused(d)
 
+    def test_out_unstatable_parent_is_clean_error(self):
+        locked = os.path.join(self.tmp.name, 'locked')
+        os.mkdir(locked)
+        os.chmod(locked, 0)
+        try:
+            if os.access(locked, os.X_OK):
+                self.skipTest('running as root: permissions not enforced')
+            code, err = self.main(self.argv(out=os.path.join(locked, 'stem')))
+        finally:
+            os.chmod(locked, 0o700)
+        self.assertEqual(code, 2, err)
+        self.assertIn('Permission denied', err)
+        self.assertNotIn('Traceback', err)
+
+    def test_out_name_too_long_is_clean_error(self):
+        code, err = self.main(self.argv(out=os.path.join(self.tmp.name, 'a' * 300)))
+        self.assertEqual(code, 2, err)
+        self.assertNotIn('Traceback', err)
+
     def _leaf_symlink_refused(self, suffix):
         # Hermetic: a temp dir stands in for experiments/results; the real one is never touched.
         fake = Path(self.tmp.name, 'fake-results').resolve()
