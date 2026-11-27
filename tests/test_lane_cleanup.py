@@ -382,3 +382,71 @@ class InRepoWorktreeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OrphanDirTests(unittest.TestCase):
+    """Directories at lane paths that git does not know are reported, never touched (R220/R216)."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name) / "repo"
+        (self.root / "worktrees").mkdir(parents=True)
+
+    def _clean(self, trees, go):
+        fake = Fake({str(p): b for p, b in trees.items()}, {})
+        original = ROOT
+        globals()["ROOT"] = self.root  # Fake lists the main checkout at ROOT
+        self.addCleanup(globals().__setitem__, "ROOT", original)
+        report = lc.cleanup(
+            root=self.root, prefix="live-repo-", go=go, handoff="", run=fake.run,
+            busy=fake.busy, settle=0,
+        )
+        return report, fake
+
+    def _orphans(self, report):
+        return [line for line in report if line.startswith("orphan ")]
+
+    def test_unregistered_sibling_is_reported_in_dry_run_and_go_and_kept(self):
+        orphan = Path(f"{self.root}-r9-a1")
+        orphan.mkdir()
+        (orphan / "f.txt").write_text("x")
+        for go in (False, True):
+            report, fake = self._clean({}, go)
+            self.assertEqual(
+                self._orphans(report), [f"orphan {orphan}: unregistered directory, not removed"]
+            )
+            self.assertEqual(fake.done, [])
+            self.assertTrue((orphan / "f.txt").is_file())
+
+    def test_registered_worktree_and_its_container_are_not_orphans(self):
+        tree = Path(f"{self.root}-lanes") / "r9-a1"
+        tree.mkdir(parents=True)
+        sib = Path(f"{self.root}-r9-a2")
+        sib.mkdir()
+        for go in (False, True):
+            report, _ = self._clean({tree: "t1", sib: "t2"}, go)
+            self.assertEqual(self._orphans(report), [])
+
+    def test_plain_file_at_a_sibling_path_is_not_reported(self):
+        Path(f"{self.root}-x.log").write_text("log")
+        report, _ = self._clean({}, False)
+        self.assertEqual(self._orphans(report), [])
+
+    def test_unregistered_in_repo_worktrees_dir_is_reported(self):
+        orphan = self.root / "worktrees" / "r9-a1"
+        orphan.mkdir()
+        registered = self.root / "worktrees" / "r9-a2"
+        registered.mkdir()
+        for go in (False, True):
+            report, _ = self._clean({registered: "t2"}, go)
+            self.assertEqual(
+                self._orphans(report), [f"orphan {orphan}: unregistered directory, not removed"]
+            )
+            self.assertTrue(orphan.is_dir())
+
+    def test_unrelated_siblings_are_not_reported(self):
+        Path(f"{self.root}x").mkdir()
+        (self.root.parent / "other").mkdir()
+        report, _ = self._clean({}, False)
+        self.assertEqual(self._orphans(report), [])
