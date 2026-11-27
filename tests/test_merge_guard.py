@@ -51,6 +51,22 @@ class MergeGuardTests(unittest.TestCase):
         self.assertEqual(merge[merge.index("--match-head-commit") + 1], HEAD)
         self.assertEqual(gh.calls[-1][:3], ["gh", "pr", "view"])  # merge state re-read
 
+    def test_deletes_the_head_branch_with_the_merge(self):
+        gh = FakeGh()
+        self.assertEqual(mg.guard(7, HEAD, run=gh), 0)
+        [merge] = gh.merge_calls()
+        self.assertIn("--delete-branch", merge)
+
+    def test_a_branch_delete_failure_after_a_confirmed_merge_is_not_a_failed_merge(self):
+        gh = FakeGh()
+        real = gh.__call__
+
+        def run(cmd):  # gh merges, then cannot delete a branch a lane worktree has checked out
+            rc, out = real(cmd)
+            return (1, "failed to delete local branch") if cmd[:3] == ["gh", "pr", "merge"] else (rc, out)
+
+        self.assertEqual(mg.guard(7, HEAD, run=run), 0)
+
     def test_refuses_a_head_that_moved_after_review(self):
         gh = FakeGh(headRefOid="b" * 40)
         self.assertNotEqual(mg.guard(7, HEAD, run=gh), 0)

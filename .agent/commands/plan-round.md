@@ -15,7 +15,13 @@ python3 scripts/round.py init ROUND --base main
 ```
 
 Substitute the configured default branch. The CLI resolves the full commit and refuses a prior open
-round. It does not fetch, choose tasks, or detect all ownership/resource conflicts for you.
+round. It also runs `python3 scripts/lane_cleanup.py --preflight` and refuses while an earlier closed
+round still has a tab, worktree or branch the sweep would remove (or herdr/gh cannot answer); run
+`python3 scripts/lane_cleanup.py --go --sweep` and retry. `--allow-leftovers` is the operator's
+escape hatch, never the planner's.
+
+Start each lane's tab in its own worktree: `herdr tab create --cwd <lane worktree> --label
+<lane prefix>r<N>-a<M>`; a Claude lane passes its prompt after `--` (`claude -p <flags> -- "<task>"`). It does not fetch, choose tasks, or detect all ownership/resource conflicts for you.
 
 Write each spec using [the assignment template](../../templates/assignment.md), then:
 
