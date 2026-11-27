@@ -52,7 +52,7 @@ test('the editor shows one provisional badge per inferred section, text unchange
     editor.view.updateState(editor.view.state.reconfigure({
       plugins: [...editor.view.state.plugins, sectionMarkerPlugin(markers)] }));
     const badges = [...root.querySelectorAll('.provisional-section')];
-    assert.deepEqual(badges.map((b) => [b.textContent, b.dataset.line]), [
+    assert.deepEqual(badges.map((b) => [b.querySelector('.section-label')?.textContent ?? b.textContent, b.dataset.line]), [
       ['inferred · topic_shift_embedding', '0'], ['inferred · topic_shift_embedding', '4'],
       ['inferred · numbering', '8']]);
     const lines = source.split('\n');
