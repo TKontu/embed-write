@@ -277,7 +277,7 @@ def main(argv=None) -> int:
     ap.add_argument('--include-non-blind', action='store_true')
     ap.add_argument('--seed', type=int, required=True)
     ap.add_argument('--n-resamples', type=int)
-    ap.add_argument('--preregistration-root', default=DEFAULT_ROOT)
+    ap.add_argument('--preregistration-root', default=str(DEFAULT_ROOT))
     a = ap.parse_args(argv)
     try:
         for name in ('store', 'genre', 'manifest', 'prelabel', 'preregistration_root'):
@@ -292,6 +292,12 @@ def main(argv=None) -> int:
               preregistration_root=a.preregistration_root)
     except (DraftError, annotate.AnnotateError, g01_inputs.G01InputsError) as e:
         print(f'error: {e}', file=sys.stderr)
+        return 2
+    except ValueError as e:
+        if 'share no sentence ids' not in str(e):
+            raise
+        print(f'error: {e}\nhint: labels annotated with pre-labels shown are non-blind and are '
+              'excluded unless --include-non-blind is given', file=sys.stderr)
         return 2
     print(f'draft written: {a.out}.json, {a.out}.md (verdict owed to the expert)')
     return 0

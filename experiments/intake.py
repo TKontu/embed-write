@@ -32,7 +32,7 @@ duplicated logic):
 
 It writes OUT/intake_report.json: per step ``status`` (ok/failed/skipped), ``reason``, ``output``
 and counts only, then ``next_steps`` (exact expert command lines built from the actual paths:
-annotate first pass, annotate ``--pass repeat``, and with pre-labels the ``g01_draft`` line).
+annotate first pass (blind, no ``--prelabels``), annotate ``--pass repeat``, and with pre-labels the ``g01_draft`` line).
 A failed step makes its dependents ``skipped`` with reason ``blocked by <step>``.
 
 Privacy (acceptance-critical): the report and everything printed hold file names, codes and
@@ -314,7 +314,10 @@ def _next_steps(steps: dict, out: Path, converted: Path, genre_path: str,
                f"--store {store} --annotator EXPERT")
         prelabels = q(str(out / "prelabels.jsonl"))
         pre_ok = steps["prelabel"]["status"] == "ok"
-        lines.append(cmd + (f" --prelabels {prelabels}" if pre_ok else ""))
+        # Blind for both passes: G-01 compares expert and LLM labels and g01_inputs excludes
+        # labels made with a pre-label shown. Assisted annotation is a separate decision owed
+        # to the expert/operator, so it is not offered here.
+        lines.append(cmd)
         lines.append(cmd + " --pass repeat")  # AN-04, never shown a pre-label
         if pre_ok:  # G-01.6 agent half over the labels just written
             lines.append(f"python -m experiments.g01_draft --store {store} "

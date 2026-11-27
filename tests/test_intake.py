@@ -92,7 +92,7 @@ class IntakeTest(unittest.TestCase):
         n = rep["steps"]["annotation_sample"]["counts"]["n_drawn"]
         self.assertEqual(pre["counts"]["records"], n)
         self.assertEqual(sum(pre["counts"]["by_status"].values()), n)
-        self.assertIn("--prelabels", rep["next_steps"][0])
+        self.assertNotIn("--prelabels", rep["next_steps"][0])  # blind: g01_inputs excludes assisted
         self.assert_private(text, printed)
 
     def test_rerun_is_byte_identical(self):
@@ -174,7 +174,7 @@ class IntakeTest(unittest.TestCase):
         _, rep, _, _ = self.run_intake(model=FakeModel())
         cmds = rep["next_steps"]
         first, repeat, draft = (shlex.split(c) for c in cmds[:3])
-        self.assertIn("--prelabels", first)
+        self.assertNotIn("--prelabels", first)  # blind: pre-label labels are excluded by G-01
         self.assertNotIn("--prelabels", repeat)  # the repeat pass is shown no LLM suggestion
         self.assertEqual(repeat[-2:], ["--pass", "repeat"])
         self.assertEqual(draft[:3], ["python", "-m", "experiments.g01_draft"])
@@ -182,7 +182,7 @@ class IntakeTest(unittest.TestCase):
         self.assertEqual(opt["--manifest"], first[first.index("--manifest") + 1])
         self.assertEqual(opt["--genre"], first[first.index("--genre") + 1])
         self.assertEqual(opt["--store"], first[first.index("--store") + 1])
-        self.assertEqual(opt["--prelabel"], first[first.index("--prelabels") + 1])
+        self.assertEqual(opt["--prelabel"], str(self.out / "prelabels.jsonl"))
         self.assertEqual(opt["--annotator"], "EXPERT")
         self.assertEqual(opt["--model-id"], "fake")
         self.assertEqual(opt["--seed"], "0")

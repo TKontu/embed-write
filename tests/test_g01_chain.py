@@ -8,10 +8,9 @@ judged anything), the LLM pre-labels come from a loopback stub of the OpenAI-com
 fixture record under a temp root. Never gate evidence (D-011).
 
 Blind mode (R147 / D-009 item 3, as the code defines it): labels written while a pre-label was
-shown carry ``prelabel`` and ``g01_inputs.build_config`` excludes them by default. Intake's first
-annotate line passes ``--prelabels`` (pre-label mode), so the rehearsal annotates the first pass
-in the mode g01_inputs includes by default: the same line with ``--prelabels PATH`` removed
-(blind). The repeat line intake prints carries no ``--prelabels``. Both are asserted below.
+shown carry ``prelabel`` and ``g01_inputs.build_config`` excludes them by default. Intake's
+printed first-pass annotate line is blind (no ``--prelabels``), as is the repeat line, so the
+rehearsal runs the printed first-pass line exactly as printed. Both are asserted below.
 """
 import hashlib
 import http.server
@@ -106,6 +105,10 @@ class G01ChainRehearsalTest(unittest.TestCase):
         self.env = {**os.environ, "PYTHONPATH": str(ROOT),
                     "SECTION_CORRECTIONS_DIR": str(self.tmp / "section-corrections")}
         self.env.pop("EMBED_WRITE_MODEL_DIR", None)
+        for k in ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY",
+                  "all_proxy", "ALL_PROXY"):
+            self.env.pop(k, None)
+        self.env["NO_PROXY"] = self.env["no_proxy"] = "127.0.0.1,localhost"
 
     def cli(self, argv, stdin=""):
         assert argv[:2] == ["python", "-m"], argv
@@ -142,11 +145,10 @@ class G01ChainRehearsalTest(unittest.TestCase):
         self.assertEqual(first_line[:3], ["python", "-m", "experiments.annotate"])
         self.assertEqual(draft_line[:3], ["python", "-m", "experiments.g01_draft"])
 
-        # (c) intake's first line is pre-label mode; its labels would be excluded by default.
-        i = first_line.index("--prelabels")
-        blind_first = first_line[:i] + first_line[i + 2:]
+        # (c) intake's printed first line is blind, run exactly as printed.
+        self.assertNotIn("--prelabels", first_line)
         self.assertNotIn("--prelabels", repeat_line)
-        manifest, genre, first_items = self.annotate_cli(blind_first, expert_label)
+        manifest, genre, first_items = self.annotate_cli(first_line, expert_label)
         _, _, repeat_items = self.annotate_cli(repeat_line, repeat_label)
         n_first, n_repeat = len(manifest["entries"]), len(manifest["repeat"])
         self.assertEqual(len(first_items), n_first)
@@ -160,10 +162,9 @@ class G01ChainRehearsalTest(unittest.TestCase):
         prereg.mkdir()
         (prereg / "g01.json").write_text(json.dumps({**fixture_record(), "gate": "g01"}),
                                          encoding="utf-8")
-        stem = self.tmp / "draft" / "g01-draft"
-        o = draft_line.index("--out")
-        draft = draft_line[:o] + ["--out", str(stem)] + draft_line[o + 2:]
-        r = self.cli(draft + ["--n-resamples", "50", "--preregistration-root", str(prereg)])
+        stem = Path(dict(zip(draft_line[3::2], draft_line[4::2]))["--out"])
+        self.assertTrue(stem.is_relative_to(self.tmp), stem)
+        r = self.cli(draft_line + ["--n-resamples", "50", "--preregistration-root", str(prereg)])
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         run = json.loads(Path(str(stem) + ".json").read_text(encoding="utf-8"))
         res = run["result"]
