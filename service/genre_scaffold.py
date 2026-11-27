@@ -11,7 +11,7 @@ Legend colours are a fixed neutral palette the expert may change. Output is
 deterministic: same arguments give byte-identical files.
 
 ``check`` loads and validates a file, then exits 1 listing every field that
-still holds a "TODO" placeholder (exit 0 when none remain, 2 when invalid).
+still holds a scaffold marker ("TODO-move-" or "TODO-section-") (exit 0 when none remain, 2 when invalid).
 Comment keys ("_"-prefixed) are skipped.
 
 Production caller: the expert (MV-01) via this CLI. Pure stdlib.
@@ -20,17 +20,19 @@ Production caller: the expert (MV-01) via this CLI. Pure stdlib.
 import argparse
 import json
 import os
+import re
 import sys
 
 from service.genre import MAX_MOVES, GenreFileError, load_genre, validate_genre
 
 MARK = 'TODO'
+_MARKER = re.compile(rf'{MARK}-(move|section)-')
 _PALETTE = ('#4f7cac', '#c0504d', '#4f9d69', '#d08b2c', '#8064a2',
             '#4bacc6', '#9b6a3c', '#c9539b', '#6b8e23', '#5a6b7c')
 _OTHER = '#9a9a9a'
 _COMMENT = (
     'Scaffold written by service.genre_scaffold; it holds no move content. '
-    'Replace every value containing "TODO" with your own: each move needs an id '
+    'Replace every "TODO-move-" / "TODO-section-" placeholder with your own: each move needs an id '
     '(short, unique, not "other"), a name, a one-sentence definition, at least two '
     'positive_examples and one near_miss. Rename legend.colors keys to match the '
     'move ids. Add or remove moves (1-10). Run "python -m service.genre_scaffold '
@@ -70,20 +72,20 @@ def scaffold(name, moves=3, section_types=()):
 
 
 def placeholders(value, path=''):
-    """Paths of non-comment fields (keys or values) still holding the marker."""
+    """Paths of non-comment fields (keys or values) still holding a scaffold marker."""
     found = []
     if isinstance(value, dict):
         for k, v in value.items():
             if k.startswith('_'):
                 continue
             sub = f'{path}.{k}' if path else k
-            if MARK in k:
+            if _MARKER.search(k):
                 found.append(f'{sub} (key)')
             found.extend(placeholders(v, sub))
     elif isinstance(value, list):
         for i, v in enumerate(value):
             found.extend(placeholders(v, f'{path}[{i}]'))
-    elif isinstance(value, str) and MARK in value:
+    elif isinstance(value, str) and _MARKER.search(value):
         found.append(path)
     return found
 
