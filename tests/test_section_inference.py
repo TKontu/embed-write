@@ -119,5 +119,81 @@ class TopicShiftTest(unittest.TestCase):
             self.assertFalse(lines[s["start_line"]].startswith(("```", "    ")))
 
 
+TOPIC_WORDS = (("pump", "impeller", "casing", "seal"), ("bird", "geese", "flock", "feather"),
+               ("bread", "dough", "flour", "oven", "baker", "yeast"))
+
+
+class FakeEmbedder:
+    """Deterministic fake: one dimension per topic keyword family, plus a constant offset.
+
+    Stands in for a semantic model in tests (fixtures are LLM-built synthetic prose).
+    """
+    model_id = "fake-semantic"
+    model_version = "1"
+    dims = 4
+
+    def __init__(self):
+        self.batches = []
+
+    def embed(self, texts, level):
+        from service.vectors import LevelVector
+        self.batches.append(len(texts))
+        out = []
+        for t in texts:
+            low = t.lower()
+            vals = [float(sum(low.count(w) for w in ws)) for ws in TOPIC_WORDS] + [0.3]
+            out.append(LevelVector(level, tuple(vals)))
+        return out
+
+
+class TopicShiftEmbeddingTest(unittest.TestCase):
+    assertNear = TopicShiftTest.assertNear
+
+    def test_three_topics_split_at_changes(self):
+        md, para = doc(PUMPS, BIRDS, BREAD)
+        emb = FakeEmbedder()
+        secs = infer_sections(md, embedder=emb)
+        for s in secs:
+            self.assertEqual((s["method"], s["level"], s["title_line"], s["inferred"]),
+                             ("topic_shift_embedding", 1, None, True))
+        self.assertNear([s["start_line"] for s in secs], [0, para[4], para[8]])
+        self.assertEqual(emb.batches, [12])  # one document, one batch <= 64
+
+    def test_two_topics(self):
+        md, para = doc(PUMPS, BREAD)
+        self.assertNear([s["start_line"] for s in infer_sections(md, embedder=FakeEmbedder())],
+                        [0, para[4]])
+
+    def test_single_topic_gives_none(self):
+        md, _ = doc(PUMPS, PUMPS[::-1])
+        self.assertEqual(infer_sections(md, embedder=FakeEmbedder()), [])
+
+    def test_short_text_gives_none(self):
+        md, _ = doc(PUMPS[:2], BREAD[:2])
+        self.assertEqual(infer_sections(md, embedder=FakeEmbedder()), [])
+
+    def test_batches_of_64(self):
+        md, _ = doc(PUMPS * 20, BREAD * 20)
+        emb = FakeEmbedder()
+        infer_sections(md, embedder=emb)
+        self.assertEqual(emb.batches, [64, 64, 32])
+
+    def test_structured_documents_do_not_embed(self):
+        md = "1. Pumps\n\n" + "\n\n".join(PUMPS) + "\n\n2. Bread\n\n" + "\n\n".join(BREAD)
+        emb = FakeEmbedder()
+        self.assertEqual({s["method"] for s in infer_sections(md, embedder=emb)}, {"numbering"})
+        self.assertEqual(emb.batches, [])
+
+    def test_deterministic(self):
+        md, _ = doc(PUMPS, BIRDS, BREAD)
+        self.assertEqual(infer_sections(md, embedder=FakeEmbedder()),
+                         infer_sections(md, embedder=FakeEmbedder()))
+
+    def test_no_embedder_is_lexical(self):
+        md, _ = doc(PUMPS, BREAD)
+        self.assertEqual(infer_sections(md), infer_sections(md, embedder=None))
+        self.assertEqual({s["method"] for s in infer_sections(md)}, {"topic_shift"})
+
+
 if __name__ == "__main__":
     unittest.main()

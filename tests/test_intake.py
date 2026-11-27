@@ -413,6 +413,38 @@ class IntakeTest(unittest.TestCase):
         self.assertEqual({s["method"] for s in data["documents"]["prose.md"]["sections"]},
                          {"topic_shift"})
 
+    def test_sections_embedding_when_model_dir(self):
+        """LLM-built synthetic prose; fake embedder injected via make_embedder; canary private."""
+        from tests.test_section_inference import BREAD, PUMPS, FakeEmbedder
+        canary = "Zorblax canary kumquat"
+        (self.src / "prose.md").write_text(
+            "\n\n".join([canary + " " + PUMPS[0]] + PUMPS[1:] + BREAD) + "\n", encoding="utf-8")
+        calls = []
+
+        def fake_make(name, model_dir=None, *a, **k):
+            calls.append((name, model_dir))
+            return FakeEmbedder()
+        with mock.patch.dict(os.environ, {intake.MODEL_DIR_ENV: str(self.tmp / "model")}), \
+                mock.patch.object(intake.move_discovery, "make_embedder", side_effect=fake_make):
+            code, rep, text, printed = self.run_intake()
+        self.assertEqual(code, 0)
+        self.assertEqual(calls, [("onnx", str(self.tmp / "model"))])
+        counts = rep["steps"]["sections"]["counts"]
+        self.assertEqual(counts["embedder"], "fake-semantic")
+        self.assertEqual(counts["sections"], {"topic_shift_embedding": 2})
+        self.assertNotIn("Zorblax", text)
+        self.assertNotIn("Zorblax", printed)
+        self.assert_private(text, printed)
+
+    def test_sections_no_model_dir_no_embedder(self):
+        env = {k: v for k, v in os.environ.items() if k != intake.MODEL_DIR_ENV}
+        with mock.patch.dict(os.environ, env, clear=True), \
+                mock.patch.object(intake.move_discovery, "make_embedder") as make:
+            code, rep, _, _ = self.run_intake()
+        self.assertEqual(code, 0)
+        make.assert_not_called()  # never the HashEmbedder for sections
+        self.assertIsNone(rep["steps"]["sections"]["counts"]["embedder"])
+
     def test_sections_is_owned(self):
         self.assertIn(intake.SECTIONS_NAME, intake.OWNED)
 
