@@ -209,6 +209,84 @@ class DraftTest(DraftFixture):
         self.assertNotIn('Traceback', err)
         self.assertFalse(os.path.exists(self.out + '.md'))
 
+    def _lstat_raising(self, err):
+        orig = os.lstat
+        target = os.path.join(self.tmp.name, 'out')
+        def fake(path, *a, **k):
+            if os.fspath(path) == target:
+                raise err
+            return orig(path, *a, **k)
+        patcher = unittest.mock.patch.object(os, 'lstat', fake)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_lstat_oserror_names_strerror_not_loop(self):
+        import errno
+        self._lstat_raising(OSError(errno.EACCES, 'Permission denied'))
+        with self.assertRaises(g01_draft.DraftError) as cm:
+            g01_draft._resolve(self.out)
+        self.assertIn('Permission denied', str(cm.exception))
+        self.assertNotIn('symlink loop', str(cm.exception))
+
+    def test_lstat_eloop_still_symlink_loop(self):
+        import errno
+        self._lstat_raising(OSError(errno.ELOOP, 'Too many levels of symbolic links'))
+        with self.assertRaises(g01_draft.DraftError) as cm:
+            g01_draft._resolve(self.out)
+        self.assertIn('symlink loop', str(cm.exception))
+
+    def _write_failure_exit_2(self, target, err):
+        with unittest.mock.patch.object(Path, target, side_effect=err):
+            code, out = self.main(self.argv())
+        self.assertEqual(code, 2, out)
+        self.assertNotIn('Traceback', out)
+        self.assertIn('error:', out)
+        return out
+
+    def test_mkdir_oserror_exit_2(self):
+        import errno
+        out = self._write_failure_exit_2(
+            'mkdir', OSError(errno.ENAMETOOLONG, 'File name too long'))
+        self.assertIn('File name too long', out)
+
+    def test_write_text_oserror_exit_2(self):
+        import errno
+        out = self._write_failure_exit_2(
+            'write_text', OSError(errno.EACCES, 'Permission denied'))
+        self.assertIn('Permission denied', out)
+
+    def test_draft_oserror_is_drafterror(self):
+        import errno
+        with unittest.mock.patch.object(
+                Path, 'write_text', side_effect=OSError(errno.ENOSPC, 'No space left')):
+            with self.assertRaises(g01_draft.DraftError):
+                self.main_draft()
+
+    def main_draft(self):
+        from service.genre import load_genre
+        with open(self.manifest_path, encoding='utf-8') as fh:
+            manifest = json.load(fh)
+        return g01_draft.draft(self.store, load_genre(GENRE_PATH), manifest, self.pre_path,
+                               annotator='ann', model_id='m1', seed=7, out_path=self.out,
+                               n_resamples=20, preregistration_root=self.prereg)
+
+    @unittest.skipIf(hasattr(os, 'geteuid') and os.geteuid() == 0, 'root ignores chmod')
+    def test_unwritable_out_dir_exit_2(self):
+        ro = os.path.join(self.tmp.name, 'ro')
+        os.mkdir(ro)
+        os.chmod(ro, 0o500)
+        try:
+            code, out = self.main(self.argv(out=os.path.join(ro, 'sub', 'g01-draft')))
+        finally:
+            os.chmod(ro, 0o700)
+        self.assertEqual(code, 2, out)
+        self.assertNotIn('Traceback', out)
+        self.assertIn('Permission denied', out)
+
+    def test_comment_no_stale_eloop_claim(self):
+        import inspect
+        self.assertNotIn('ELOOP from lstat is a loop too', inspect.getsource(g01_draft._resolve))
+
     def test_docstring_unwired(self):
         self.assertIn('unwired by design until the real G-01.6 run (needs AN-03 labels and a '
                       'G-01.4 local-model run)', ' '.join(g01_draft.__doc__.split()))
