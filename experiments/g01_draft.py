@@ -14,7 +14,8 @@ An output path (the stem or either written file, symlinks resolved) inside
 ``experiments/results/`` is refused (``DraftError``; CLI exit 2)
 before anything runs or is written: that directory holds only the expert's actual results.
 The comparison uses the resolved ``RESULTS_DIR``; a symlink loop in the output path is also
-``DraftError`` (exit 2), in any path component. Not handled: TOCTOU races and hard links.
+``DraftError`` (exit 2), in any path component; other OS errors resolving or writing the output path are
+``DraftError`` naming the OS error. Not handled: TOCTOU races and hard links.
 
 Public symbols: unwired by design until the real G-01.6 run (needs AN-03 labels and a G-01.4 local-model run).
 Memory: bounded by build_config's streaming (maps O(manifest sample size)).
@@ -26,7 +27,10 @@ CLI: ``python -m experiments.g01_draft --store S --genre G --manifest M --prelab
 from __future__ import annotations
 
 import argparse
+import errno
 import json
+import os
+import stat
 import sys
 from pathlib import Path
 
@@ -52,11 +56,16 @@ def _resolve(p):
         raise DraftError(f'refusing output path: symlink loop or unresolvable ({p}): {e}') from e
     # A symlink in ANY component (not just the leaf) of the resolved path means resolve() left
     # a loop in place. Walk from the root: each prefix's parents are then real directories,
-    # so lstat reaches the component itself; ELOOP from lstat is a loop too.
+    # so lstat reaches the component itself. A missing component is fine (created later);
+    # ELOOP is a loop; any other OSError (EACCES, ENAMETOOLONG, ...) is reported as itself.
     for q in (*reversed(r.parents), r):
         try:
-            looped = q.is_symlink()
-        except OSError:
+            looped = stat.S_ISLNK(os.lstat(q).st_mode)
+        except FileNotFoundError:
+            looped = False
+        except OSError as e:
+            if e.errno != errno.ELOOP:
+                raise DraftError(f'refusing output path ({p}): {e.strerror or e}') from e
             looped = True
         if looped:
             raise DraftError(f'refusing output path: symlink loop ({p})')
@@ -152,9 +161,12 @@ def draft(store, genre, manifest, prelabel_path, *, annotator=None, model_id=Non
     except PreregistrationError as e:
         raise DraftError(f'g01 preregistration not confirmed: {e}') from e
     md = render(run, cfg)
-    json_path.parent.mkdir(parents=True, exist_ok=True)
-    json_path.write_text(runner.serialize(run) + '\n', encoding='utf-8')
-    md_path.write_text(md, encoding='utf-8')
+    try:
+        json_path.parent.mkdir(parents=True, exist_ok=True)
+        json_path.write_text(runner.serialize(run) + '\n', encoding='utf-8')
+        md_path.write_text(md, encoding='utf-8')
+    except OSError as e:
+        raise DraftError(f'cannot write draft ({out_path}): {e.strerror or e}') from e
     return run
 
 
