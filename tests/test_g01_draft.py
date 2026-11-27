@@ -131,6 +131,21 @@ class DraftTest(DraftFixture):
         self.assertEqual(code, 2, err)
         self.assertNotIn('Traceback', err)
 
+    def test_paths_nul_byte_is_draft_error(self):
+        # R224/A1: a NUL byte in --out raised an uncaught ValueError from is_dir().
+        with self.assertRaisesRegex(g01_draft.DraftError, 'NUL byte'):
+            g01_draft._paths('a\x00b')
+
+    def test_out_nul_byte_exit_2(self):
+        code, err = self.main(self.argv(out=os.path.join(self.tmp.name, 'a\x00b')))
+        self.assertEqual(code, 2, err)
+        self.assertIn('NUL byte', err)
+        self.assertNotIn('Traceback', err)
+        written = [q for q in Path(self.tmp.name).rglob('*')
+                   if q.suffix in ('.json', '.md') and q.parent != Path(self.prereg)
+                   and q not in (Path(self.manifest_path), Path(self.pre_path))]
+        self.assertEqual(written, [])
+
     def _leaf_symlink_refused(self, suffix):
         # Hermetic: a temp dir stands in for experiments/results; the real one is never touched.
         fake = Path(self.tmp.name, 'fake-results').resolve()
