@@ -318,5 +318,75 @@ class DraftTest(DraftFixture):
                       'G-01.4 local-model run)', ' '.join(g01_draft.__doc__.split()))
 
 
+class WritePairResidualTest(unittest.TestCase):
+    # R220/A1: _write_pair residuals from R219/A1.
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.d = Path(self.tmp.name)
+        self.json, self.md = self.d / 'x.json', self.d / 'x.md'
+
+    def write(self):
+        g01_draft._write_pair([(self.json, 'new json\n'), (self.md, 'new md\n')])
+
+    def no_temps(self, allow=()):
+        stray = [n for n in os.listdir(self.d)
+                 if (n.endswith('.tmp') or n.endswith('.bak')) and n not in allow]
+        self.assertEqual(stray, [])
+
+    def test_redraft_keeps_prior_mode(self):
+        self.json.write_text('old')
+        os.chmod(self.json, 0o600)
+        old = os.umask(0o022)
+        try:
+            self.write()
+        finally:
+            os.umask(old)
+        self.assertEqual(self.json.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(self.md.stat().st_mode & 0o777, 0o644)
+        self.no_temps()
+
+    def test_double_fault_names_backup(self):
+        self.json.write_text('old json')
+        os.makedirs(self.md)
+        real = os.replace
+
+        def replace(src, dst):
+            if str(src).endswith('.bak'):
+                raise OSError(5, 'Input/output error')
+            return real(src, dst)
+        with unittest.mock.patch.object(g01_draft.os, 'replace', side_effect=replace):
+            with self.assertRaises(g01_draft.DraftError) as cm:
+                self.write()
+        baks = [n for n in os.listdir(self.d) if n.endswith('.bak')]
+        self.assertEqual(len(baks), 1)
+        self.assertIn(str(self.d / baks[0]), str(cm.exception))
+        self.assertEqual((self.d / baks[0]).read_text(), 'old json')
+        self.no_temps(allow=baks)
+
+    def test_prior_dangling_symlink_json_restored(self):
+        os.symlink(self.d / 'nowhere', self.json)
+        os.makedirs(self.md)
+        with self.assertRaises(g01_draft.DraftError):
+            self.write()
+        self.assertTrue(os.path.islink(self.json))
+        self.assertEqual(os.readlink(self.json), str(self.d / 'nowhere'))
+        self.no_temps()
+
+    def test_non_oserror_leaves_no_temps(self):
+        real = Path.write_text
+        calls = []
+
+        def wt(path, text, *a, **k):
+            calls.append(path)
+            if len(calls) == 2:
+                raise UnicodeEncodeError('utf-8', 'x', 0, 1, 'boom')
+            return real(path, text, *a, **k)
+        with unittest.mock.patch.object(Path, 'write_text', wt):
+            with self.assertRaises((UnicodeEncodeError, g01_draft.DraftError)):
+                self.write()
+        self.assertEqual(os.listdir(self.d), [])
+
+
 if __name__ == '__main__':
     unittest.main()

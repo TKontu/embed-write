@@ -176,51 +176,75 @@ def draft(store, genre, manifest, prelabel_path, *, annotator=None, model_id=Non
 
 def _write_pair(items):
     # Write every file to a temp beside its target (same filesystem), then os.replace each.
-    # On any failure: remove the temps, put back targets already replaced (restoring a prior
-    # file from its backup, or removing the new one), and name the failing target path.
-    tmps, placed = {}, []  # placed: (target, backup or None)
+    # On any failure (any exception): remove the temps, put back targets already replaced
+    # (restoring a prior file from its backup, or removing the new one), and name the failing
+    # target path plus any backup that could not be restored. A new file keeps a prior regular
+    # file's permission bits, otherwise the umask mode. Any prior entry (incl. a dangling symlink
+    # or FIFO) of a non-last target is backed up.
+    tmps, placed, stranded = {}, [], []  # placed: (target, backup or None)
     target = items[0][0]
     umask = os.umask(0)
     os.umask(umask)
+
+    def restore(backup, t):
+        try:
+            os.replace(backup, t)
+        except OSError:
+            stranded.append(backup)
+
+    def rollback():
+        for t, backup in reversed(placed):
+            if backup is not None:
+                restore(backup, t)
+            else:
+                with contextlib.suppress(OSError):
+                    os.unlink(t)
+        for tmp in tmps.values():
+            with contextlib.suppress(OSError):
+                os.unlink(tmp)
+
     try:
         for target, text in items:
             fd, tmp = tempfile.mkstemp(dir=target.parent, prefix=f'.{target.name}.', suffix='.tmp')
             os.close(fd)
             tmps[target] = Path(tmp)
-            os.chmod(tmp, 0o666 & ~umask)  # mkstemp is 0600; keep write_text's umask mode
+            mode = 0o666 & ~umask  # mkstemp is 0600; keep write_text's umask mode
+            with contextlib.suppress(OSError):
+                st = os.lstat(target)
+                if stat.S_ISREG(st.st_mode):
+                    mode = stat.S_IMODE(st.st_mode)
+            os.chmod(tmp, mode)
             Path(tmp).write_text(text, encoding='utf-8')
         for target, _ in items:
             backup = None
-            if target is not items[-1][0] and os.path.isfile(target):
+            if target is not items[-1][0] and os.path.lexists(target):
                 fd, bak = tempfile.mkstemp(dir=target.parent, prefix=f'.{target.name}.',
                                            suffix='.bak')
                 os.close(fd)
                 try:
                     os.replace(target, bak)
-                except OSError:
+                except BaseException:
                     with contextlib.suppress(OSError):
                         os.unlink(bak)
                     raise
                 backup = Path(bak)
             try:
                 os.replace(tmps[target], target)
-            except OSError:
+            except BaseException:
                 if backup is not None:
-                    os.replace(backup, target)
+                    restore(backup, target)
                 raise
             del tmps[target]
             placed.append((target, backup))
     except OSError as e:
-        for t, backup in reversed(placed):
-            with contextlib.suppress(OSError):
-                if backup is not None:
-                    os.replace(backup, t)
-                else:
-                    os.unlink(t)
-        for tmp in tmps.values():
-            with contextlib.suppress(OSError):
-                os.unlink(tmp)
-        raise DraftError(f'cannot write draft ({target}): {e.strerror or e}') from e
+        rollback()
+        msg = f'cannot write draft ({target}): {e.strerror or e}'
+        if stranded:
+            msg += '; prior content left in ' + ', '.join(map(str, stranded))
+        raise DraftError(msg) from e
+    except BaseException:
+        rollback()
+        raise
     for _, backup in placed:
         if backup is not None:
             with contextlib.suppress(OSError):
