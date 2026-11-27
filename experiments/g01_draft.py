@@ -14,7 +14,7 @@ An output path (the stem or either written file, symlinks resolved) inside
 ``experiments/results/`` is refused (``DraftError``; CLI exit 2)
 before anything runs or is written: that directory holds only the expert's actual results.
 The comparison uses the resolved ``RESULTS_DIR``; a symlink loop in the output path is also
-``DraftError`` (exit 2). Not handled: TOCTOU races and hard links.
+``DraftError`` (exit 2), in any path component. Not handled: TOCTOU races and hard links.
 
 Public symbols: unwired by design until the real G-01.6 run (needs AN-03 labels and a G-01.4 local-model run).
 Memory: bounded by build_config's streaming (maps O(manifest sample size)).
@@ -50,8 +50,16 @@ def _resolve(p):
         r = Path(p).resolve()
     except (RuntimeError, OSError) as e:
         raise DraftError(f'refusing output path: symlink loop or unresolvable ({p}): {e}') from e
-    if r.is_symlink():
-        raise DraftError(f'refusing output path: symlink loop ({p})')
+    # A symlink in ANY component (not just the leaf) of the resolved path means resolve() left
+    # a loop in place. Walk from the root: each prefix's parents are then real directories,
+    # so lstat reaches the component itself; ELOOP from lstat is a loop too.
+    for q in (*reversed(r.parents), r):
+        try:
+            looped = q.is_symlink()
+        except OSError:
+            looped = True
+        if looped:
+            raise DraftError(f'refusing output path: symlink loop ({p})')
     return r
 
 
