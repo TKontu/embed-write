@@ -493,6 +493,47 @@ class GenerateTests(unittest.TestCase):
         self.assertEqual(len(read(self.out)), 6)
         self.assertEqual(len(gen.summarize(read(self.out), expected_sections=2)['missing']), 0)
 
+    def _cli_next(self, *extra, n=2):
+        import contextlib, io, shlex
+        notes_path = os.path.join(os.path.dirname(self.out), 'notes.jsonl')
+        pool_path = os.path.join(os.path.dirname(self.out), 'pool.jsonl')
+        with open(notes_path, 'w', encoding='utf-8') as fh:
+            for r in notes(2):
+                fh.write(json.dumps(r) + '\n')
+        with open(pool_path, 'w', encoding='utf-8') as fh:
+            for r in pool():
+                fh.write(json.dumps(r) + '\n')
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = gen.main(['--notes', notes_path, '--pool', pool_path, '--out', self.out,
+                           '--n-candidates', '2', '--expected-sections', str(n), *extra],
+                          model=FakeModel(), critic=FakeCritic({}))
+        lines = buf.getvalue().splitlines()
+        json.loads(lines[-1])  # summary stays the last line
+        nxt = [shlex.split(l[len('next: '):]) for l in lines if l.startswith('next: ')]
+        return rc, nxt
+
+    def test_cli_prints_session_line_when_complete(self):
+        rc, nxt = self._cli_next('--originals', '/priv/orig.jsonl')
+        self.assertEqual(rc, 0)
+        self.assertEqual(len(nxt), 1)
+        argv = nxt[0]
+        self.assertEqual(argv[:3], ['python', '-m', 'experiments.g02_session'])
+        d = os.path.dirname(self.out)
+        self.assertEqual(dict(zip(argv[3::2], argv[4::2])),
+                         {'--generations': self.out, '--originals': '/priv/orig.jsonl',
+                          '--out': os.path.join(d, 'g02_session.json'),
+                          '--choices': os.path.join(d, 'g02_choices.jsonl')})
+
+    def test_cli_session_line_placeholder_and_absent_when_incomplete(self):
+        rc, nxt = self._cli_next()
+        self.assertEqual(rc, 0)
+        self.assertIn('ORIGINALS_JSONL', nxt[0])
+        os.unlink(self.out)
+        rc, nxt = self._cli_next(n=3)
+        self.assertEqual(rc, 1)
+        self.assertEqual(nxt, [])
+
 
 if __name__ == '__main__':
     unittest.main()

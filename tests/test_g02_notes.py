@@ -153,5 +153,34 @@ class CliTest(unittest.TestCase):
             with open(sec) as fh:
                 self.assertEqual(fh.read(), 'keep')
 
+    def test_cli_prints_generate_line_with_actual_paths(self):
+        import contextlib, io, shlex
+        with tempfile.TemporaryDirectory() as d:
+            for r in IDS[:10]:
+                with open(os.path.join(d, f'{r}.md'), 'w') as fh:
+                    fh.write(doc(r))
+            out = os.path.join(d, 'n o', 'notes.jsonl')
+            os.makedirs(os.path.dirname(out))
+            sec = os.path.join(d, 'originals.jsonl')
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = notes.main(['--corpus', d, '--split-seed', '0', '--test-fraction', '0.5',
+                                 '--n', '3', '--out', out, '--genre', 'g', '--sections-out', sec,
+                                 '--model-url', 'http://127.0.0.1:9/v1', '--model-name', 'm x'],
+                                model=FakeModel(), genre=GENRE)
+            self.assertEqual(rc, 0)
+            lines = buf.getvalue().splitlines()
+            json.loads(lines[-1])  # summary stays the last line
+            nxt = [l for l in lines if l.startswith('next: ')]
+            self.assertEqual(len(nxt), 1)
+            argv = shlex.split(nxt[0][len('next: '):])
+            self.assertEqual(argv[:3], ['python', '-m', 'experiments.g02_generate'])
+            o = dict(zip(argv[3::2], argv[4::2]))
+            self.assertEqual(o, {'--notes': out, '--pool': 'POOL_JSONL',
+                                 '--out': os.path.join(d, 'n o', 'g02_generations.jsonl'),
+                                 '--originals': sec, '--expected-sections': '3',
+                                 '--model-url': 'http://127.0.0.1:9/v1', '--model-name': 'm x'})
+
+
 if __name__ == '__main__':
     unittest.main()

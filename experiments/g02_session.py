@@ -26,7 +26,8 @@ to a temporary name, mode 0600, and renamed into place.
 
 PRIVATE: the session file holds corpus section text and generated text, plus arm mappings and
 keys. Keep it, the originals file and CHOICES in private storage; never commit or quote them.
-Stdout carries counts, paths and the ``blind_ui`` command only, never text.
+Stdout carries counts, paths, the ``blind_ui`` command and the ``g02_draft`` command to run after
+judging (seed = ``--seed`` or 0, ``--text-model`` = the selected run's model), never text.
 
 Production caller: this CLI, run by the expert/operator for G-02.4 (``python -m
 experiments.g02_session``). Consumers: ``experiments.blind_ui`` and the G-02 preference draft.
@@ -211,6 +212,10 @@ def main(argv=None) -> int:
     print('per comparison: ' + ', '.join(f'{n}={k}' for n, k in info['per_comparison'].items()))
     print(f'session (private): {a.out}')
     print(f'serve: python -m experiments.blind_ui {shlex.quote(a.out)} {shlex.quote(a.choices)}')
+    print('after judging: ' + shlex.join([
+        'python', '-m', 'experiments.g02_draft', '--session', a.out, '--choices', a.choices,
+        '--seed', str(0 if a.seed is None else a.seed), '--text-model', str(info['model']),
+        '--out', os.path.join(os.path.dirname(a.out), 'g02_draft')]))
     return 0
 
 
