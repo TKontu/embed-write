@@ -11,6 +11,7 @@ import { Plugin, Selection } from '@milkdown/prose/state';
 import { inspectorPlugin, mountInspector, registerFlag, renderMethodTexts, supportEvidence } from '../src/inspector.js';
 import { addCorrection, applyCorrections } from '../src/corrections.js';
 import { sectionMarkerPlugin, sectionMarkers } from './sections.js';
+import { addBoundary, createSectionDraft, keepBoundary, removeBoundary, sectionPayload } from './section-draft.js';
 
 const byId = (id) => /** @type {HTMLElement} */ (document.getElementById(id));
 const ui = {
@@ -193,7 +194,7 @@ async function load(name) {
  * CO-14 (c, D-015): the expert keeps or removes each shown boundary and adds one at a source line;
  * "Save sections" stores the kept + added set (line numbers and levels only) as the document's
  * expert correction, which then replaces the inference. Reload shows them as expert boundaries.
- * @type {{ name: string, removed: Set<number>, added: Map<number, number>, markers: Array<{ line: number, level: number }> } | null}
+ * @type {import('./section-draft.js').SectionDraft | null}
  */
 let sectionDraft = null;
 /** @type {HTMLElement | null} */
@@ -205,7 +206,7 @@ function mountSectionControls(name, markers) {
   sectionControls = null;
   sectionDraft = null;
   if (!markers) return;
-  sectionDraft = { name, removed: new Set(), added: new Map(), markers };
+  sectionDraft = createSectionDraft(name, markers);
   const box = document.createElement('span');
   box.className = 'section-controls';
   const line = document.createElement('input');
@@ -217,9 +218,7 @@ function mountSectionControls(name, markers) {
   add.textContent = 'Add boundary';
   add.addEventListener('click', () => {
     const n = Number(line.value);
-    if (!sectionDraft || !Number.isInteger(n) || n < 0) return setStatus('Enter a 0-based source line');
-    sectionDraft.added.set(n, 1);
-    sectionDraft.removed.delete(n);
+    if (!sectionDraft || !addBoundary(sectionDraft, n)) return setStatus('Enter a 0-based source line');
     setStatus(`Boundary at line ${n} added (unsaved)`);
   });
   const save = document.createElement('button');
@@ -233,10 +232,8 @@ function mountSectionControls(name, markers) {
 
 async function saveSections() {
   if (!sectionDraft) return;
-  const { name, removed, added, markers } = sectionDraft;
-  const keep = new Map(markers.filter((m) => !removed.has(m.line)).map((m) => [m.line, m.level]));
-  for (const [l, level] of added) keep.set(l, level);
-  const sections = [...keep].map(([start_line, level]) => ({ start_line, level }));
+  const { name } = sectionDraft;
+  const { sections } = sectionPayload(sectionDraft);
   const res = await fetch(`/api/section-corrections/${encodeURIComponent(name)}`, {
     method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sections }) });
   if (!res.ok) return setStatus(`Section correction refused: ${(await res.json().catch(() => ({}))).error ?? res.status}`);
@@ -250,7 +247,7 @@ ui.root.addEventListener('click', (event) => {
   const badgeEl = /** @type {HTMLElement} */ (button.closest('.provisional-section'));
   const lineNo = Number(badgeEl.dataset.line);
   const remove = button.dataset.action === 'remove';
-  if (remove) sectionDraft.removed.add(lineNo); else sectionDraft.removed.delete(lineNo);
+  if (remove) removeBoundary(sectionDraft, lineNo); else keepBoundary(sectionDraft, lineNo);
   badgeEl.classList.toggle('section-removed', remove);
   badgeEl.classList.toggle('section-confirmed', !remove);
   setStatus(`Boundary at line ${lineNo} ${remove ? 'removed' : 'kept'} (unsaved)`);
