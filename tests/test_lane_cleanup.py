@@ -25,10 +25,11 @@ class Fake:
         self.trees, self.prs = trees, prs  # {path: branch}, {branch: [states newest first]}
         self.tabs, self.panes = list(tabs), list(panes)
         self.dirty, self.unpushed, self.busy_paths = set(dirty), set(unpushed), list(busy)
-        self.done = []
+        self.done, self.timeouts, self.remove_out = [], {}, None
 
-    def run(self, cmd):
+    def run(self, cmd, timeout=None):
         cmd = list(cmd)
+        self.timeouts[tuple(cmd[:3])] = timeout
         if cmd[:4] == ["git", "worktree", "list", "--porcelain"]:
             blocks = [f"worktree {ROOT}\nHEAD {'0' * 40}\nbranch refs/heads/main"]
             blocks += [
@@ -48,6 +49,8 @@ class Fake:
             return 0, json.dumps({"result": {"panes": self.panes}})
         if cmd[:3] in (["git", "worktree", "remove"], ["herdr", "tab", "close"]):
             self.done.append(cmd)
+            if self.remove_out and cmd[:3] == ["git", "worktree", "remove"]:
+                return self.remove_out
             return 0, ""
         if cmd[:3] == ["git", "worktree", "prune"]:
             return 0, ""
@@ -101,6 +104,18 @@ class WorktreeTests(unittest.TestCase):
         fake = Fake({f"{LANES}/r1-a1": "task/a"}, {"task/a": ["MERGED"]})
         clean(fake)
         self.assertEqual(fake.done, [["git", "worktree", "remove", f"{LANES}/r1-a1"]])
+
+    def test_remove_gets_the_long_timeout(self):
+        fake = Fake({f"{LANES}/r1-a1": "task/a"}, {"task/a": ["MERGED"]})
+        clean(fake)
+        self.assertEqual(fake.timeouts[("git", "worktree", "remove")], 600)
+
+    def test_a_remove_timeout_is_reported_plainly(self):
+        fake = Fake({f"{LANES}/r1-a1": "task/a"}, {"task/a": ["MERGED"]})
+        fake.remove_out = lc._run(["sleep", "5"], timeout=0.01)
+        report = clean(fake)
+        self.assertIn(f"hold {LANES}/r1-a1 (task/a): remove timed out after 0.01s", report)
+        self.assertNotIn(f"removed {LANES}/r1-a1 (task/a)", report)
 
     def test_closed_pr_counts_as_finished_but_any_open_pr_keeps_the_tree(self):
         fake = Fake(
@@ -163,10 +178,10 @@ class TabTests(unittest.TestCase):
         )
         real_run = fake.run
 
-        def run(cmd):  # closing the tab ends its shell
+        def run(cmd, timeout=None):  # closing the tab ends its shell
             if list(cmd)[:3] == ["herdr", "tab", "close"]:
                 fake.busy_paths = []
-            return real_run(cmd)
+            return real_run(cmd, timeout=timeout)
 
         fake.run = run
         clean(fake)
@@ -248,7 +263,7 @@ class NodeModulesLinkTests(unittest.TestCase):
             check=True,
         )
 
-    def run_git(self, cmd):
+    def run_git(self, cmd, timeout=None):
         cmd = list(cmd)
         if cmd[:3] == ["gh", "pr", "list"]:
             return 0, json.dumps([{"state": "MERGED"}])
