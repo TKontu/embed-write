@@ -4,7 +4,8 @@
 Usage: python3 scripts/lane_cleanup.py [--go]     (a dry run unless --go)
 
 Worktrees: a registered worktree outside the main checkout, at a sibling path
-(<repo>-lanes/..., <repo>-wt-..., <repo>-r9-a1), is removed with `git worktree remove` (never
+(<repo>-lanes/..., <repo>-wt-..., <repo>-r9-a1), or exactly one level inside the main checkout's
+top-level worktrees/ directory (<repo>/worktrees/r9-a1), is removed with `git worktree remove` (never
 --force) once the newest PR on its branch is MERGED or CLOSED and no PR on it is OPEN. Anything
 uncertain is held and reported, never forced: `no-pr`, `open-pr`, `dirty`, `unpushed`
 (commits on no remote), `busy` (a process has its cwd inside), `carried` (HANDOFF.md names it).
@@ -16,7 +17,7 @@ tracked change still holds the tree as `dirty`; a dry run unlinks nothing.
 Tabs: a tab labelled <lane prefix><lane> is closed with `herdr tab close <id>` only when its
 worktree is gone (or was removed in this run), every pane is idle, done or unknown, it is not carried, and
 its label does not mark a planner, loop, supervisor, manager or review server. A tab whose pane is
-in the main checkout or outside the lane paths is held as `foreign`.
+in the main checkout or outside the lane paths (e.g. <repo>/.claude/worktrees/...) is held as `foreign`.
 
 /merge-round runs this after its merges, /reconcile before handoff.
 """
@@ -108,7 +109,11 @@ def worktrees(run: Run) -> dict[str, str]:
 
 
 def _is_lane_path(path: str, root: Path) -> bool:
-    return path != str(root) and path.startswith(str(root) + "-")
+    """A sibling path (<root>-...) or exactly <root>/worktrees/<name>; never root or other inside paths."""
+    if path.startswith(str(root) + "-"):
+        return True
+    rel = path.removeprefix(str(root) + "/worktrees/")
+    return rel != path and rel not in ("", ".", "..") and "/" not in rel
 
 
 def _inside(path: str, cwds: Iterable[str]) -> bool:
