@@ -85,6 +85,8 @@ def _inside_results(p):
 def _paths(out_path):
     raw = os.fspath(out_path)
     seps = (os.sep,) + ((os.altsep,) if os.altsep else ())
+    if '\x00' in (raw if isinstance(raw, str) else raw.decode('latin-1')):
+        raise DraftError(f'refusing --out {raw!r}: contains a NUL byte')
     try:
         is_dir = Path(raw).expanduser().is_dir()
     except OSError as e:  # is_dir re-raises EACCES/ENAMETOOLONG on Python < 3.14
