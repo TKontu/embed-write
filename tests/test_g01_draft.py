@@ -4,14 +4,13 @@ import json
 import os
 import tempfile
 import unittest
+import uuid
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 from experiments import g01_draft
 from tests.test_g01_inputs import GENRE_PATH, Fixture
 from tests.test_preregistration import fixture_record
-
-ROOT = Path(__file__).resolve().parents[1]
 
 
 class DraftFixture(Fixture):
@@ -65,19 +64,34 @@ class DraftTest(DraftFixture):
         self.assertIn('result', run)
         self.assertTrue(Path(self.out + '.md').exists())
 
+    def _refused_stem(self, *via):
+        # Target the directory the module under test actually guards (g01_draft.RESULTS_DIR),
+        # not this test file's checkout: when tests from one checkout import experiments from
+        # another (cwd), a ROOT-derived path is not refused and gets written into the repo.
+        # A unique stem per run means stale files from elsewhere cannot affect the assertions;
+        # addCleanup removes anything a regression would write.
+        name = f'g01-draft-test-{os.getpid()}-{uuid.uuid4().hex}'
+        results = g01_draft.RESULTS_DIR
+        for suffix in ('.json', '.md'):
+            self.addCleanup(lambda p=results / (name + suffix): p.unlink(missing_ok=True))
+        target = results.parent.joinpath(*via, results.name, name) if via else results / name
+        return target, [results / (name + '.json'), results / (name + '.md')]
+
     def test_results_dir_refused_nothing_written(self):
-        target = ROOT / 'experiments' / 'results' / 'g01-draft-test-should-not-exist'
+        target, written = self._refused_stem()
         code, err = self.main(self.argv(out=str(target)))
         self.assertEqual(code, 2)
         self.assertIn('experiments/results', err)
-        self.assertFalse(Path(str(target) + '.json').exists())
-        self.assertFalse(Path(str(target) + '.md').exists())
+        for p in written:
+            self.assertFalse(p.exists(), p)
 
     def test_results_dir_refused_via_dotdot(self):
-        target = ROOT / 'experiments' / 'x' / '..' / 'results' / 'g01-dd'
+        target, written = self._refused_stem('x', '..')
+        self.assertIn('..', target.parts)
         code, _ = self.main(self.argv(out=str(target)))
         self.assertEqual(code, 2)
-        self.assertFalse(Path(ROOT, 'experiments', 'results', 'g01-dd.md').exists())
+        for p in written:
+            self.assertFalse(p.exists(), p)
 
     def test_missing_preregistration_exit_2(self):
         empty = os.path.join(self.tmp.name, 'empty')
