@@ -124,6 +124,9 @@ def _is_lane_path(path: str, root: Path) -> bool:
     return rel != path and rel not in ("", ".", "..") and "/" not in rel
 
 
+LANE_NAME = re.compile(r"r\d+-[a-z]+\d*")  # round lane names such as r221-a1; never -lanes, -results
+
+
 def orphan_dirs(root: Path, trees: Iterable[str]) -> list[str]:
     """Directories at lane paths that are not registered worktrees and hold none (report only).
 
@@ -141,6 +144,8 @@ def orphan_dirs(root: Path, trees: Iterable[str]) -> list[str]:
             path = str(entry)
             if not _is_lane_path(path, root) or entry.is_symlink() or not entry.is_dir():
                 continue
+            if base == root.parent and not LANE_NAME.fullmatch(path.removeprefix(str(root) + "-")):
+                continue  # containers and other siblings are not lanes
             if path in registered or any(t.startswith(path + "/") for t in registered):
                 continue
             found.append(path)

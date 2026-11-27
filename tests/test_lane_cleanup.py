@@ -380,10 +380,6 @@ class InRepoWorktreeTests(unittest.TestCase):
         self.assertFalse(lc._is_lane_path("/work/repository", ROOT))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class OrphanDirTests(unittest.TestCase):
     """Directories at lane paths that git does not know are reported, never touched (R220/R216)."""
 
@@ -428,6 +424,12 @@ class OrphanDirTests(unittest.TestCase):
             report, _ = self._clean({tree: "t1", sib: "t2"}, go)
             self.assertEqual(self._orphans(report), [])
 
+    def test_container_without_worktrees_is_not_reported(self):
+        for name in ("results", "lanes", "worktrees"):
+            Path(f"{self.root}-{name}").mkdir()
+        report, _ = self._clean({}, False)
+        self.assertEqual(self._orphans(report), [])
+
     def test_plain_file_at_a_sibling_path_is_not_reported(self):
         Path(f"{self.root}-x.log").write_text("log")
         report, _ = self._clean({}, False)
@@ -450,3 +452,7 @@ class OrphanDirTests(unittest.TestCase):
         (self.root.parent / "other").mkdir()
         report, _ = self._clean({}, False)
         self.assertEqual(self._orphans(report), [])
+
+
+if __name__ == "__main__":
+    unittest.main()
