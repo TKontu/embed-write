@@ -179,3 +179,36 @@ Append-only record of operator rulings and architecture decisions.
   inference.
 - **Why:** the first real-text run (2026-11-26) had two inputs without section headings, and the
   design assumes sections.
+
+## D-016 — PDF intake through MinerU, wired as in the iknosreview loop (2026-11-27, operator)
+
+- **Ruling:** PDFs are parsed with MinerU, not `pypdf`. `pypdf` stays as a per-file fallback
+  when MinerU fails or is unreachable, and the intake report records which parser each file used.
+- **Wiring (copied from iknosreview, read-only reference):**
+  - MinerU **3.1.0** runs as the existing hosted service at `PARSER_BASE_URL`
+    (`http://192.168.0.94:8008`) and is called on its native multipart `POST /file_parse` API
+    (`PARSER_KIND=mineru-native`).
+  - Request fields: `backend=pipeline` (the only backend that fits the shared GPU; no VLM
+    weights), `lang_list=en`, `return_content_list=true`, `return_images=true`.
+  - `PARSER_TIMEOUT_S=300`. A timeout fails that attempt and the file is retried once, never
+    re-sent in place.
+  - Settings go in `.agent/config.toml` or the environment; an empty `PARSER_BASE_URL` means
+    "no service", and intake uses `pypdf`.
+- **Mapping:** build an in-process adapter modelled on iknosreview's
+  `src/iknos/core/mineru_native.py`. It maps `content_list` (reading-order typed blocks) to the
+  document model:
+  - `text_level` becomes a heading, and those headings feed D-015 directly;
+  - `text` and `list` become paragraphs;
+  - `equation` becomes a formula, with its LaTeX kept;
+  - `table` becomes a table with its caption, and `image`/`chart` a figure with its caption,
+    which feeds the CK-06 policy;
+  - page numbers, footers and running headers are dropped, and each drop is counted in the
+    intake report.
+  - Figure crops are kept only if a local blob path is configured.
+- **Privacy (I9):** the service runs on the operator's own network (192.168.0.94), not a third
+  party. Documents go only there. Counts, not text, appear in reports and PRs.
+- **Licence:** MinerU 3.1.0 is under the MinerU Open Source License (Apache-2.0-based, with an
+  attribution condition). Add the attribution line to README.md, as iknosreview does.
+- **Check:** on the 19 publications, compare MinerU with `pypdf` by counts only: headings found,
+  tables, formulas, words recovered, and files parsed versus failed. The scanned PDF must yield
+  text through MinerU's OCR.
