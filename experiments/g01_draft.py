@@ -262,6 +262,12 @@ def _write_pair(items):
                 os.unlink(backup)
 
 
+def _refuse_nul(name: str, raw: str) -> None:
+    if '\x00' in raw:
+        flag = '--' + name.replace('_', '-')
+        raise DraftError(f'refusing {flag} {raw!r}: contains a NUL byte')
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     for k in ('--store', '--genre', '--manifest', '--prelabel', '--out'):
@@ -274,6 +280,8 @@ def main(argv=None) -> int:
     ap.add_argument('--preregistration-root', default=DEFAULT_ROOT)
     a = ap.parse_args(argv)
     try:
+        for name in ('store', 'genre', 'manifest', 'prelabel', 'preregistration_root'):
+            _refuse_nul(name, getattr(a, name))
         _paths(a.out)
         genre = load_genre(a.genre)
         with open(a.manifest, encoding='utf-8') as fh:

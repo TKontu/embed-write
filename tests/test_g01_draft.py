@@ -146,6 +146,24 @@ class DraftTest(DraftFixture):
                    and q not in (Path(self.manifest_path), Path(self.pre_path))]
         self.assertEqual(written, [])
 
+    def test_input_nul_byte_exit_2(self):
+        # R225/A1: a NUL byte in an input path raised an uncaught ValueError.
+        for name in ('store', 'genre', 'manifest', 'prelabel', 'preregistration-root'):
+            with self.subTest(arg=name):
+                argv = self.argv()
+                i = argv.index('--' + name)
+                argv[i + 1] = os.path.join(self.tmp.name, 'a\x00b')
+                with unittest.mock.patch.object(g01_draft, 'load_genre',
+                                                wraps=g01_draft.load_genre) as lg:
+                    code, err = self.main(argv)
+                self.assertEqual(code, 2, err)
+                self.assertIn(f'--{name}', err)
+                self.assertIn('NUL byte', err)
+                self.assertNotIn('Traceback', err)
+                lg.assert_not_called()
+                self.assertFalse(os.path.exists(self.out + '.json'))
+                self.assertFalse(os.path.exists(self.out + '.md'))
+
     def _leaf_symlink_refused(self, suffix):
         # Hermetic: a temp dir stands in for experiments/results; the real one is never touched.
         fake = Path(self.tmp.name, 'fake-results').resolve()
