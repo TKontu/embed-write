@@ -86,3 +86,7 @@ Every correction of machine text is stored locally as a before-and-after pair. T
 1. **Fatal gates first, without an editor.** G-01: can the genre's moves be recovered reliably from the corpus? G-02: do exemplars plus a critic move LLM output toward the genre, judged blind by the expert?
 2. **In parallel:** the engineering with no research risk (document model, editor, embedding service).
 3. **Then:** pattern model, overlays, two-layer analysis, proposals, automatic drafting, fine-tuning.
+
+## Third-party components
+
+Third-party components: document parsing uses MinerU ([github.com/opendatalab/MinerU](https://github.com/opendatalab/MinerU)) under the MinerU Open Source License; this notice satisfies that licence's attribution condition.
