@@ -7,18 +7,20 @@ duplicated logic):
 2. ``conversion_quality``: CO-05 ``build_report``/``write_report`` -> OUT/conversion_quality.json
 3. ``corpus_stats``: CO-09 ``build_report``/``write_report`` over OUT/converted -> OUT/corpus_stats.json
 4. ``metadata``: CO-06 ``validate_file`` (only with --metadata; else skipped)
-5. ``annotation_sample``: AN-02 ``split_documents`` + ``build_manifest`` -> OUT/manifest.json
-6. ``prelabel``: G-01.4 ``iter_prelabel`` over the manifest items (only with --model-url; else
+5. ``sections``: CO-14 ``section_inference.infer_sections`` for documents with no ATX headings
+   (D-015) -> OUT/sections.json (private; line numbers and methods, marked inferred). The report
+   holds documents by status and sections by method only.
+6. ``annotation_sample``: AN-02 ``split_documents`` + ``build_manifest`` -> OUT/manifest.json.
+   Inferred sections from OUT/sections.json become provisional ``inferred`` strata; if the
+   sections step did not succeed, sampling proceeds without them and says so in ``reason``.
+7. ``prelabel``: G-01.4 ``iter_prelabel`` over the manifest items (only with --model-url; else
    skipped) -> OUT/prelabels.jsonl
-7. ``discovery``: MV-02 ``move_discovery.make_embedder`` + ``build_report``/``write_report`` over
+8. ``discovery``: MV-02 ``move_discovery.make_embedder`` + ``build_report``/``write_report`` over
    OUT/converted (only with --discover; else skipped) -> OUT/move_discovery.json. The embedder is
    the development HashEmbedder unless EMBED_WRITE_MODEL_DIR names a local ONNX model directory,
    then the real BGE-M3 OnnxEmbedder. The discovery report holds corpus sentences and stays under
    OUT (private); intake_report.json records only its path, status and counts (clusters per
    section type, sentences sampled/seen, whether the embedder is development-only).
-8. ``sections``: CO-14 ``section_inference.infer_sections`` for documents with no ATX headings
-   (D-015) -> OUT/sections.json (private; line numbers and methods, marked inferred). The report
-   holds documents by status and sections by method only.
 
 It writes OUT/intake_report.json: per step ``status`` (ok/failed/skipped), ``reason``, ``output``
 and counts only, then ``next_steps`` (exact expert command lines built from the actual paths).
@@ -72,8 +74,8 @@ from service.genre import load_genre
 
 REPORT_NAME = "intake_report.json"
 CONVERTED = "converted"
-STEPS = ("ingest", "conversion_quality", "corpus_stats", "metadata", "annotation_sample",
-         "prelabel", "discovery", "sections")
+STEPS = ("ingest", "conversion_quality", "corpus_stats", "metadata", "sections",
+         "annotation_sample", "prelabel", "discovery")
 DEPENDS = {"conversion_quality": "ingest", "corpus_stats": "ingest",
            "annotation_sample": "ingest", "prelabel": "annotation_sample",
            "discovery": "corpus_stats", "sections": "corpus_stats"}
@@ -142,21 +144,26 @@ def _metadata(meta: str) -> dict:
     return _step("ok", None, meta, counts)
 
 
-def _sample(converted: Path, out: Path, genre, args) -> dict:
+def _sample(converted: Path, out: Path, genre, args, sections_ok: bool = False) -> dict:
     ids = sorted(q.relative_to(converted).as_posix() for q in converted.rglob("*.md")
                  if q.is_file())
     split = split_documents(ids, args.test_fraction, args.split_seed)
     docs = ((d.path.relative_to(converted).as_posix(), d.text)
             for d in iter_documents(converted))
+    sections = out / SECTIONS_NAME
+    inferred = (annotation_sample.load_inferred(sections)
+                if sections_ok and sections.exists() else None)  # O(documents x sections)
     manifest = annotation_sample.build_manifest(
         ((d, t) for d, t in docs if d in split.test_ids), split, genre, n=args.n,
-        seed=args.seed)
+        seed=args.seed, inferred=inferred)
     path = out / "manifest.json"
     annotation_sample.write_manifest(path, manifest)
-    return _step("ok", None, str(path), {
+    reason = None if inferred is not None else "sampled without inferred sections"
+    return _step("ok", reason, str(path), {
         "test_documents": len(split.test_ids), "strata": len(manifest["candidates_per_stratum"]),
         "n_requested": manifest["n_requested"], "n_drawn": manifest["n_drawn"],
-        "repeat": len(manifest["repeat"]), "unknown_sentences": manifest["unknown_sentences"]})
+        "repeat": len(manifest["repeat"]), "unknown_sentences": manifest["unknown_sentences"],
+        "inferred_sentences": manifest.get("inferred_sentences", 0)})
 
 
 def _prelabel(converted: Path, out: Path, genre, model) -> dict:
@@ -281,7 +288,9 @@ def run(args, model=None) -> tuple[int, dict]:
         attempt("metadata", _metadata, args.metadata)
     else:
         steps["metadata"] = _step("skipped", NO_METADATA)
-    attempt("annotation_sample", _sample, converted, out, genre, args)
+    attempt("sections", _sections, converted, out)
+    attempt("annotation_sample", _sample, converted, out, genre, args,
+            steps["sections"]["status"] == "ok")
     if model is not None or args.model_url:
         def do_prelabel():
             m = model or prelabel.local_model(args.model_url, model=args.model_name)
@@ -296,7 +305,6 @@ def run(args, model=None) -> tuple[int, dict]:
                 args.discover_sample)
     else:
         steps["discovery"] = _step("skipped", NO_DISCOVER)
-    attempt("sections", _sections, converted, out)
     report = {"schema_version": 1, "source": args.src, "out": args.out,
               "steps": {name: steps[name] for name in STEPS},
               "next_steps": _next_steps(steps, out, converted, args.genre, outputs)}
