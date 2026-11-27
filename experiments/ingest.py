@@ -18,6 +18,10 @@ extractable text (scans; no OCR) are ``failed``. Without pypdf, ``.pdf`` is
 Not handled: images, footnotes, tracked changes, nested tables, merged cells,
 hyperlinks (text kept), letter/roman numbering rendered as decimal, PDF layout, tables and images.
 Files under OUT_DIR are never scanned as input, even when OUT_DIR is inside SRC_DIR.
+D-016: with PARSER_BASE_URL set, PDFs go first to MinerU (experiments.mineru_native; one retry
+on a timeout or connection error, then pypdf for that file). PDF report entries carry
+``parser`` ("mineru" | "pypdf"), ``dropped`` chrome counts after MinerU and ``mineru_error``
+(exception type name) after a fallback. Unset/empty PARSER_BASE_URL: pypdf only, unchanged.
 
 Files are processed one at a time. After conversion each output is checked by
 docmodel/scripts/check-roundtrip.js (batches of at most 50 paths) when ``node``
@@ -36,10 +40,13 @@ import re
 import shutil
 import subprocess
 import sys
+import urllib.error
 import zipfile
 from html.parser import HTMLParser
 from pathlib import Path
 from xml.etree import ElementTree as ET
+
+from experiments import mineru_native
 
 try:
     from pypdf import PdfReader
@@ -516,7 +523,45 @@ def pdf_text_to_markdown(pages) -> str:
     return _join_blocks(blocks)
 
 
-def convert_pdf(path: Path) -> str:
+def _transient(e: BaseException) -> bool:
+    """Timeout or connection error (retried once); HTTP status errors are not."""
+    if isinstance(e, urllib.error.HTTPError):
+        return False
+    return isinstance(e, (TimeoutError, ConnectionError, urllib.error.URLError))
+
+
+def _convert_pdf_mineru(path: Path, base_url: str, timeout: float) -> tuple[str, dict]:
+    data = path.read_bytes()
+    for attempt in (1, 2):
+        try:
+            return mineru_native.parse_pdf(data, path.name, base_url, timeout,
+                                           escape=_md_escape, table=_table)
+        except Exception as e:  # noqa: BLE001 - classified below
+            if attempt == 1 and _transient(e):
+                continue
+            raise
+    raise AssertionError("unreachable")  # pragma: no cover
+
+
+def convert_pdf(path: Path, info: dict | None = None) -> str:
+    """PDF -> Markdown. With PARSER_BASE_URL set, MinerU first (one retry on a timeout or
+    connection error), then pypdf for this file on any MinerU failure. ``info`` receives
+    ``parser`` ("mineru" | "pypdf"), ``dropped`` chrome counts (MinerU) and, after a fallback,
+    ``mineru_error`` (exception type name only; no document text)."""
+    info = {} if info is None else info
+    base_url, timeout = mineru_native.settings()
+    if base_url:
+        try:
+            md, dropped = _convert_pdf_mineru(path, base_url, timeout)
+            if not md.strip():
+                raise ValueError("mineru: no text")
+            info.update(parser="mineru", dropped=dropped)
+            return md
+        except Exception as e:  # noqa: BLE001 - per-file fallback is the contract
+            info["mineru_error"] = type(e).__name__
+    info["parser"] = "pypdf"
+    if not HAVE_PYPDF:
+        raise ValueError(PDF_REASON)
     reader = PdfReader(str(path))
     if reader.is_encrypted:
         raise ValueError("pdf: encrypted")
@@ -568,12 +613,12 @@ def check_roundtrip(paths: list[str]) -> dict[str, dict | str]:
     return results
 
 
-def convert_one(src: Path) -> str:
+def convert_one(src: Path, info: dict | None = None) -> str:
     fmt = FORMATS[src.suffix.lower()]
     if fmt == "docx":
         return convert_docx(src)
     if fmt == "pdf":
-        return convert_pdf(src)
+        return convert_pdf(src, info)
     text = src.read_text(encoding="utf-8", errors="replace")
     if fmt == "html":
         return convert_html(text)
@@ -592,7 +637,7 @@ def convert_dir(src_dir: Path, out_dir: Path, check: bool = True) -> dict:
         ext = src.suffix.lower()
         entry = {"source": str(src), "output": None, "format": ext.lstrip(".") or None,
                  "status": "unsupported", "headings": None, "roundtrip": None}
-        if ext == ".pdf" and not HAVE_PYPDF:
+        if ext == ".pdf" and not HAVE_PYPDF and not mineru_native.settings()[0]:
             entry["reason"] = PDF_REASON
         elif ext not in FORMATS:
             entry["reason"] = f"unsupported extension: {ext or '(none)'}"
@@ -602,7 +647,12 @@ def convert_dir(src_dir: Path, out_dir: Path, check: bool = True) -> dict:
             try:
                 if out.name in written:
                     raise ValueError(f"output name collision: {out.name}")
-                md = convert_one(src)
+                info: dict = {}
+                try:
+                    md = convert_one(src, info)
+                finally:
+                    if ext == ".pdf":
+                        entry.update(info)
                 out.write_text(md, encoding="utf-8")
                 written.add(out.name)
                 entry.update(status="ok", output=str(out), headings=count_headings(md))

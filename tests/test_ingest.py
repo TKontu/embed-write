@@ -3,6 +3,10 @@ from __future__ import annotations
 
 import io
 import json
+import os
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from unittest import mock
 import shutil
 import tempfile
 import unittest
@@ -122,6 +126,14 @@ def make_pdf(pages: list[list[str]]) -> bytes:
 
 
 PDF_SKIP = "pypdf not installed"
+SECRET = "Confidential synthetic sentence."
+
+
+def setUpModule():
+    # Existing tests exercise the pypdf path; never reach a real service from the gate.
+    p = mock.patch.dict(os.environ, {"PARSER_BASE_URL": ""})
+    p.start()
+    unittest.addModuleCleanup(p.stop)
 
 
 class IngestTest(unittest.TestCase):
@@ -441,6 +453,92 @@ class IngestTest(unittest.TestCase):
         res = ingest.check_roundtrip([f"/x/{i}.md" for i in range(120)])
         self.assertEqual(calls, [50, 50, 20])
         self.assertEqual(len(res), 120)
+
+class _Stub(BaseHTTPRequestHandler):
+    mode = "ok"
+    calls: list = []
+
+    def log_message(self, *a):
+        pass
+
+    def do_POST(self):
+        body = self.rfile.read(int(self.headers["Content-Length"]))
+        type(self).calls.append((self.path, body))
+        if type(self).mode == "slow":
+            import time
+            time.sleep(0.5)
+            return
+        blocks = [{"type": "text", "text": "Results", "text_level": 1},
+                  {"type": "text", "text": SECRET},
+                  {"type": "page_number", "text": "1"}, {"type": "footer", "text": "f"}]
+        data = json.dumps({"results": {"r": {"content_list": json.dumps(blocks)}}}).encode()
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+
+class MinerUIngestTest(unittest.TestCase):
+    run_cli = IngestTest.run_cli
+    report = IngestTest.report
+
+    def setUp(self):
+        IngestTest.setUp(self)
+        _Stub.calls = []
+        self.srv = ThreadingHTTPServer(("127.0.0.1", 0), _Stub)
+        threading.Thread(target=self.srv.serve_forever, daemon=True).start()
+        self.addCleanup(self.srv.server_close)
+        self.addCleanup(self.srv.shutdown)
+        env = mock.patch.dict(os.environ, {"PARSER_BASE_URL": f"http://127.0.0.1:{self.srv.server_port}",
+                                           "PARSER_TIMEOUT_S": "0.2"})
+        env.start()
+        self.addCleanup(env.stop)
+        (self.src / "r.pdf").write_bytes(make_pdf([["2. Pypdf Head", "", "Pypdf body text."]]))
+
+    def test_success_uses_mineru(self):
+        _Stub.mode = "ok"
+        self.assertEqual(self.run_cli()[0], 0)
+        e = self.report()["r.pdf"]
+        self.assertEqual((e["status"], e["parser"], e["headings"]), ("ok", "mineru", 1))
+        self.assertEqual(e["dropped"], {"footer": 1, "page_number": 1})
+        md = (self.out / "r.md").read_text()
+        self.assertEqual(md, f"# Results\n\n{SECRET}\n")
+        self.assertEqual(len(_Stub.calls), 1)
+        path, body = _Stub.calls[0]
+        self.assertEqual(path, "/file_parse")
+        self.assertIn(b'name="backend"\r\n\r\npipeline', body)
+        # (e) the report holds counts and labels, never document text
+        self.assertNotIn(SECRET, (self.out / "ingest_report.json").read_text())
+
+    @unittest.skipUnless(ingest.HAVE_PYPDF, PDF_SKIP)
+    def test_timeout_retries_once_then_pypdf(self):
+        _Stub.mode = "slow"
+        self.assertEqual(self.run_cli()[0], 0)
+        e = self.report()["r.pdf"]
+        self.assertEqual((e["status"], e["parser"]), ("ok", "pypdf"))
+        self.assertEqual(len(_Stub.calls), 2)
+        self.assertIn(e["mineru_error"], ("TimeoutError", "URLError"))
+        self.assertIn("## 2. Pypdf Head", (self.out / "r.md").read_text())
+
+    @unittest.skipUnless(ingest.HAVE_PYPDF, PDF_SKIP)
+    def test_connection_refused_falls_back(self):
+        self.srv.shutdown()
+        self.srv.server_close()
+        self.run_cli()
+        e = self.report()["r.pdf"]
+        self.assertEqual((e["status"], e["parser"]), ("ok", "pypdf"))
+
+    @unittest.skipUnless(ingest.HAVE_PYPDF, PDF_SKIP)
+    def test_unset_url_byte_identical_to_pypdf(self):
+        expected = ingest.pdf_text_to_markdown(
+            p.extract_text() for p in ingest.PdfReader(str(self.src / "r.pdf")).pages)
+        with mock.patch.dict(os.environ, {"PARSER_BASE_URL": ""}):
+            self.run_cli()
+        self.assertEqual((self.out / "r.md").read_bytes(), expected.encode())
+        self.assertEqual(self.report()["r.pdf"]["parser"], "pypdf")
+        self.assertNotIn("dropped", self.report()["r.pdf"])
+        self.assertEqual(_Stub.calls, [])
+
 
 class MarkdownEscapeTest(unittest.TestCase):
     """R155/A1: source text never becomes Markdown syntax it was not."""
