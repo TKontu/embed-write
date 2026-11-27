@@ -249,3 +249,28 @@ class ReviewTest(Base):
             self.assertIn(str(path), err)
             self.assertNotIn("Traceback", err)
             self.assertEqual(len(err.strip().splitlines()), 1)
+
+    def test_boolean_count_or_similarity_rejected(self):
+        rep = {"kind": "repeated", "documents": ["a"], "count": 3, "text": "t"}
+        near = {"kind": "near_duplicate_docs", "documents": ["a", "b"], "count": 2,
+                "similarity": 0.9}
+        cases = [dict(rep, count=True), dict(near, count=False),
+                 dict(near, similarity=True), dict(near, similarity=False)]
+        for i, flag in enumerate(cases):
+            path = self.report_file({"flags": [flag], "totals": {}}, f"b{i}.json")
+            with self.assertRaises(bp.ReportError, msg=flag):
+                bp.load_report(path)
+            code, _, err = self.review(path)
+            self.assertEqual(code, 2, flag)
+            self.assertNotIn("Traceback", err)
+
+    def test_deeply_nested_json_report_error(self):
+        path = self.root / "deep.json"
+        path.write_text("[" * 100000 + "]" * 100000, encoding="utf-8")
+        with self.assertRaises(bp.ReportError):
+            bp.load_report(path)
+        code, out, err = self.review(path)
+        self.assertEqual(code, 2)
+        self.assertIn(str(path), err)
+        self.assertNotIn("Traceback", err)
+        self.assertEqual(len(err.strip().splitlines()), 1)
