@@ -31,8 +31,8 @@ file, and append refuses to write after a torn tail.
 Repair (torn tail only): ``AnnotationStore.repair_tail()`` or
 ``python -m service.annotation_store repair PATH`` moves the bytes after the
 last newline to a new sidecar ``<path>.torn-<UTC timestamp>[-N]`` (fsynced
-first), then truncates the store to its last complete line so appends can
-resume. Corrupt complete lines are not repaired.
+first, then its directory), then truncates the store to its last complete
+line so appends can resume. Corrupt complete lines are not repaired.
 
 Memory: reads stream line by line; the supersede index holds one record per
 (sentence_id, version key) seen.
@@ -59,6 +59,18 @@ class AnnotationStoreError(ValueError):
 
 class TruncatedRecordError(AnnotationStoreError):
     """The store ends in a partial (torn) line."""
+
+
+def _fsync_dir(path):
+    """fsync directory ``path``; no-op where os.O_DIRECTORY is missing."""
+    flag = getattr(os, 'O_DIRECTORY', None)
+    if flag is None:
+        return
+    fd = os.open(path, os.O_RDONLY | flag)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
 
 
 class AnnotationStore:
@@ -95,7 +107,11 @@ class AnnotationStore:
     def repair_tail(self):
         """Move a torn last line to a sidecar and truncate; return its path or None.
 
-        Sidecar is written and fsynced before the store is touched. Scans
+        Sidecar is written and fsynced, then the parent directory is fsynced
+        (so the sidecar's entry survives power loss), before the store is
+        touched; if the directory open/fsync fails the store is left intact,
+        the sidecar is kept and the OSError propagates. On platforms without
+        ``os.O_DIRECTORY`` the directory fsync is skipped. Scans
         backwards from the end in TAIL_CHUNK pieces (O(chunk) memory to find
         the cut; the torn bytes are copied in chunks).
         """
@@ -128,8 +144,9 @@ class AnnotationStore:
                 except OSError:
                     pass
                 raise
-            fh.truncate(cut)
+            _fsync_dir(os.path.dirname(os.path.abspath(self.path)))
             fh.flush()
+            os.ftruncate(fh.fileno(), cut)
             os.fsync(fh.fileno())
         return side
 
