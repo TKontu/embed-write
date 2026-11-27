@@ -13,6 +13,16 @@ Methods (deterministic, offline, stdlib only):
   (<= 80 chars) with no terminal punctuation, followed by a prose paragraph (a
   line that is not itself title-like). Level 1.
 
+* ``topic_shift`` (fallback, only when the two above find nothing): TextTiling-style lexical
+  cohesion. Paragraphs are blank-line blocks of non-code lines. Each gap between paragraphs is
+  scored by bag-of-words cosine between the ``WINDOW`` paragraphs before and after it
+  (lowercased ``\w+`` tokens of >= 3 chars, minus a small stopword list); its depth is the
+  climb to the nearest similarity peak on each side. Gaps with depth >= ``MIN_DEPTH`` and >=
+  mean - sd/2 of all depths become boundaries, deepest first, keeping every section >=
+  ``MIN_SECTION`` paragraphs. Documents with < ``MIN_PARAGRAPHS`` paragraphs yield none. When
+  any boundary is found the first paragraph also starts a section. ``title_line`` None, level 1.
+  Limits: lexical only (synonyms/paraphrase invisible); constants untuned on real text.
+
 Lines in fenced code (annotation_sample fence helpers) or top-level indented code never qualify,
 nor do list items, table rows, block quotes or ATX lines. Memory O(lines) per document.
 
@@ -58,6 +68,87 @@ def _code_lines(lines: list[str]) -> set[int]:
     return code
 
 
+MIN_PARAGRAPHS = 6  # fewer paragraphs: too little text to compare windows
+MIN_SECTION = 2  # paragraphs per topic_shift section
+WINDOW = 2  # paragraphs on each side of a gap
+MIN_DEPTH = 0.5  # absolute depth floor (sum of both climbs); synthetic single-topic text
+# peaks at ~0.4, synthetic topic changes at >= 0.6. Untuned on real text.
+_WORD = re.compile(r"[^\W\d_]{3,}")
+_STOP = frozenset("""the and for are but not you all any can had her was one our out has his how
+its may new now see two who did get him let say she too use this that with from have they will
+what when where which while into than then them there these those their been being were would
+could should about after before also each other over such only very more most some same own
+just because between through during under again further here both few nor off once""".split())
+
+
+def _paragraphs(lines: list[str], code: set[int]) -> list[tuple[int, dict[str, int]]]:
+    paras: list[tuple[int, dict[str, int]]] = []
+    cur = None
+    for i, line in enumerate(lines):
+        if not line.strip() or i in code:
+            cur = None
+            continue
+        if cur is None:
+            cur = {}
+            paras.append((i, cur))
+        for w in _WORD.findall(line.lower()):
+            if w not in _STOP:
+                cur[w] = cur.get(w, 0) + 1
+    return paras
+
+
+def _cosine(a: dict[str, int], b: dict[str, int]) -> float:
+    dot = sum(v * b.get(k, 0) for k, v in a.items())
+    na = sum(v * v for v in a.values()) ** 0.5
+    nb = sum(v * v for v in b.values()) ** 0.5
+    return dot / (na * nb) if na and nb else 0.0
+
+
+def _merge(bags: list[dict[str, int]]) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for bag in bags:
+        for k, v in bag.items():
+            out[k] = out.get(k, 0) + v
+    return out
+
+
+def _topic_shift(lines: list[str], code: set[int]) -> list[dict]:
+    paras = _paragraphs(lines, code)
+    n = len(paras)
+    if n < MIN_PARAGRAPHS:
+        return []
+    bags = [b for _, b in paras]
+    sims = [_cosine(_merge(bags[max(0, g - WINDOW):g]), _merge(bags[g:g + WINDOW]))
+            for g in range(1, n)]  # sims[k] = gap before paragraph k + 1
+    depths = []
+    for k, s in enumerate(sims):
+        left = s
+        for j in range(k - 1, -1, -1):
+            if sims[j] < left:
+                break
+            left = sims[j]
+        right = s
+        for j in range(k + 1, len(sims)):
+            if sims[j] < right:
+                break
+            right = sims[j]
+        depths.append((left - s) + (right - s))
+    mean = sum(depths) / len(depths)
+    sd = (sum((d - mean) ** 2 for d in depths) / len(depths)) ** 0.5
+    cut = max(MIN_DEPTH, mean - sd / 2)
+    chosen: list[int] = []  # paragraph indices that start a new section
+    for d, k in sorted(((d, k) for k, d in enumerate(depths)), key=lambda t: (-t[0], t[1])):
+        p = k + 1
+        if d < cut or p < MIN_SECTION or n - p < MIN_SECTION:
+            continue
+        if all(abs(p - q) >= MIN_SECTION for q in chosen):
+            chosen.append(p)
+    if not chosen:
+        return []
+    return [{"start_line": paras[p][0], "level": 1, "title_line": None, "inferred": True,
+             "method": "topic_shift"} for p in [0] + sorted(chosen)]
+
+
 def _level(m: re.Match) -> int:
     return m.group(1).count(".") + 1 if m.group(1) else 1
 
@@ -101,4 +192,4 @@ def infer_sections(markdown: str) -> list[dict]:
             continue
         out.append({"start_line": i, "level": level, "title_line": i, "inferred": True,
                     "method": method})
-    return out
+    return out or _topic_shift(lines, code)
