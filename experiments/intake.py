@@ -207,25 +207,31 @@ def _discover(converted: Path, out: Path, genre, k: int | None = None,
         "development_only_embedder": report["embedder"]["development_only"], **params})
 
 
-def _section_correction(corrections: Path, name: str) -> list[dict] | None:
+def _section_correction(corrections: Path, name: str, line_count: int) -> list[dict] | None:
     """The expert's saved section boundaries for document ``name`` (DIR/<name>.json), or None.
 
     Written by the demo (editor/demo/server.js); line numbers and levels only, method "expert".
-    A malformed file raises ValueError (the step fails by type name; no text is reported).
+    A malformed file raises ValueError (the step fails by type name; no text is reported),
+    including non-object JSON and a start_line outside ``range(line_count)`` or repeated.
     """
     path = corrections.joinpath(*name.split("/")).with_name(name.split("/")[-1] + ".json")
     if not path.is_file():
         return None
     data = json.loads(path.read_text(encoding="utf-8"))
-    secs = data.get("sections") if isinstance(data, dict) else None
+    if not isinstance(data, dict):
+        raise ValueError("not a section correction")
+    secs = data.get("sections")
     if data.get("schema") != 1 or data.get("document") != name or not isinstance(secs, list):
         raise ValueError("not a section correction")
     out = []
     for s in secs:
-        if (not isinstance(s, dict) or type(s.get("start_line")) is not int or s["start_line"] < 0
+        if (not isinstance(s, dict) or type(s.get("start_line")) is not int
+                or not 0 <= s["start_line"] < line_count
                 or type(s.get("level")) is not int or s.get("method") != "expert"
                 or s.get("inferred") is not False):
             raise ValueError("bad section correction entry")
+        if any(o["start_line"] == s["start_line"] for o in out):
+            raise ValueError("duplicate section correction entry")
         out.append({"start_line": s["start_line"], "level": s["level"], "method": "expert",
                     "inferred": False})
     return sorted(out, key=lambda s: s["start_line"])
@@ -254,7 +260,7 @@ def _sections(converted: Path, out: Path) -> dict:
         if any(h is not corpus_stats._PREAMBLE for h, _ in corpus_stats._iter_sections(doc.text)):
             status, secs = "has_headings", []
         else:
-            expert = _section_correction(corrections, name)
+            expert = _section_correction(corrections, name, len(doc.text.splitlines()))
             secs = (expert if expert is not None
                     else section_inference.infer_sections(doc.text, embedder=embedder))
             status = "inferred" if secs else "none_found"

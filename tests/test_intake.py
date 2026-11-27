@@ -406,6 +406,32 @@ class IntakeTest(unittest.TestCase):
         self.assertEqual(rep["steps"]["sections"]["status"], "failed")
         self.assertEqual(rep["steps"]["sections"]["reason"], "ValueError")
 
+    def test_malformed_section_corrections_fail_step_with_value_error(self):
+        """R215: non-dict JSON, out-of-range or duplicate start_line -> ValueError, no text."""
+        (self.src / "flat.md").write_text("1. Invented title\n\nBody text.\n", encoding="utf-8")
+        self.corrections.mkdir()
+        entry = {"level": 1, "method": "expert", "inferred": False}
+        cases = {
+            "list": [], "string": "x", "number": 3,
+            "start_line_at_count": {"schema": 1, "document": "flat.md",
+                                    "sections": [dict(entry, start_line=3)]},
+            "duplicate": {"schema": 1, "document": "flat.md",
+                          "sections": [dict(entry, start_line=1), dict(entry, start_line=1)]},
+        }
+        for label, data in cases.items():
+            with self.subTest(label):
+                (self.corrections / "flat.md.json").write_text(json.dumps(data), encoding="utf-8")
+                _, rep, text, printed = self.run_intake()
+                self.assertEqual(rep["steps"]["sections"]["status"], "failed")
+                self.assertEqual(rep["steps"]["sections"]["reason"], "ValueError")
+                self.assertNotIn("Invented", text + printed)
+        # the last line (count - 1) is accepted
+        (self.corrections / "flat.md.json").write_text(json.dumps(
+            {"schema": 1, "document": "flat.md", "sections": [dict(entry, start_line=2)]}),
+            encoding="utf-8")
+        _, rep, _, _ = self.run_intake()
+        self.assertEqual(rep["steps"]["sections"]["status"], "ok")
+
     def test_next_steps_add_sections_only_for_inferred_documents(self):
         """CO-14 demo half: --sections only on the demo line of a document with inferred sections."""
         (self.src / "flat.md").write_text(
