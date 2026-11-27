@@ -7,7 +7,8 @@ document at a time, with the same section ids (``<doc_id>#s<index>``), section r
 Unmapped/``unknown`` sections and sections under ``min_words`` words are skipped;
 ``max_per_type`` keeps the first N per section type in corpus order. Every document must be in
 ``split.train_ids``: a test or unassigned id raises ``SplitLeakError`` (CLI exit 2, the partial
-output is removed), so held-out reports never reach the pool.
+output is removed), so held-out reports never reach the pool. An empty pool also
+exits 2 and leaves no file.
 
 Memory bound: one document's text plus a per-type counter; records are written as they are
 produced, so the process never holds the corpus (memory O(one document); the output grows on
@@ -101,6 +102,11 @@ def main(argv=None, *, genre=None) -> int:
     except BaseException:
         os.unlink(a.out)
         raise
+    if not written:
+        os.unlink(a.out)
+        print('error: empty pool, nothing written: no training-split section is mapped and has '
+              f'>= {a.min_words} words (check --genre, --min-words, --max-per-type)', file=sys.stderr)
+        return 2
     print(json.dumps({'written': written, 'reports': len(reports),
                       'section_types': dict(sorted(types.items()))}))
     return 0

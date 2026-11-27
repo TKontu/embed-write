@@ -511,12 +511,15 @@ class GenerateTests(unittest.TestCase):
         lines = buf.getvalue().splitlines()
         json.loads(lines[-1])  # summary stays the last line
         nxt = [shlex.split(l[len('next: '):]) for l in lines if l.startswith('next: ')]
+        self.notes = [l for l in lines if l.startswith('note: ')]
+        self.lines = lines
         return rc, nxt
 
     def test_cli_prints_session_line_when_complete(self):
         rc, nxt = self._cli_next('--originals', '/priv/orig.jsonl')
         self.assertEqual(rc, 0)
         self.assertEqual(len(nxt), 1)
+        self.assertEqual(self.notes, [])
         argv = nxt[0]
         self.assertEqual(argv[:3], ['python', '-m', 'experiments.g02_session'])
         d = os.path.dirname(self.out)
@@ -529,6 +532,11 @@ class GenerateTests(unittest.TestCase):
         rc, nxt = self._cli_next()
         self.assertEqual(rc, 0)
         self.assertIn('ORIGINALS_JSONL', nxt[0])
+        self.assertEqual(len(self.notes), 1)
+        self.assertIn('ORIGINALS_JSONL', self.notes[0])
+        self.assertIn('--sections-out', self.notes[0])
+        nl = [i for i, l in enumerate(self.lines) if l.startswith('next: ')][0]
+        self.assertEqual(self.lines[nl - 1], self.notes[0])  # note directly precedes next
         os.unlink(self.out)
         rc, nxt = self._cli_next(n=3)
         self.assertEqual(rc, 1)

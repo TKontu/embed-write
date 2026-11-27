@@ -120,19 +120,20 @@ intake run (intake defaults: 0 and 0.5).
   `python -m experiments.g02_pool --corpus <PRIVATE:OUT>/converted --genre <PRIVATE:GENRE.json> --split-seed 0 --test-fraction 0.5 --min-words 40 --out <PRIVATE:G02>/g02_pool.jsonl`
   Optional `--max-per-type N` caps sections per type.
 - Worked: prints `{"written": ..., "reports": ..., "section_types": {...}}` and exits 0. Exit 2
-  means the output exists or a held-out report would have entered the pool; nothing is written.
+  means the output exists, a held-out report would have entered the pool, or the pool would be
+  empty; nothing is written.
 
 ### 2.3 Generate three arms (G-02.3, agent)
 
 - Command (the `next:` line g02_notes prints):
-  `python -m experiments.g02_generate --notes <PRIVATE:G02>/notes.jsonl --pool <PRIVATE:G02>/g02_pool.jsonl --out <PRIVATE:G02>/generations.jsonl --originals <PRIVATE:G02>/originals.jsonl --model-url <MODEL_URL> --model-name <MODEL_NAME>`
+  `python -m experiments.g02_generate --notes <PRIVATE:G02>/notes.jsonl --pool <PRIVATE:G02>/g02_pool.jsonl --out <PRIVATE:G02>/g02_generations.jsonl --originals <PRIVATE:G02>/originals.jsonl --expected-sections 30 --model-url <MODEL_URL> --model-name <MODEL_NAME>`
 - Worked: prints a JSON summary with `complete: true` (30 sections × arms A, B, C, no
   same-report exemplars).
 
 ### 2.4 Build the blind session (G-02.4 enabler, agent)
 
 - Command:
-  `python -m experiments.g02_session --generations <PRIVATE:G02>/generations.jsonl --originals <PRIVATE:G02>/originals.jsonl --out <PRIVATE:G02>/session.json --choices <PRIVATE:G02>/choices.jsonl`
+  `python -m experiments.g02_session --generations <PRIVATE:G02>/g02_generations.jsonl --originals <PRIVATE:G02>/originals.jsonl --out <PRIVATE:G02>/session.json --choices <PRIVATE:G02>/choices.jsonl`
 - Worked: prints model, sections, pairs, per-comparison counts and a `serve:` line. Exit 2 says
   what is incomplete and writes nothing.
 
