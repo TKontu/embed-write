@@ -391,3 +391,66 @@ class AtxClosingSequenceTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class InferredSectionTests(unittest.TestCase):
+    """CO-14(b): inferred section boundaries. LLM-built synthetic fixtures."""
+    FLAT = ('---\ntitle: x\n---\nOpening invented line.\n\n**Part one**\n\n'
+            'Invented alpha sentence. Invented beta sentence.\n\n'
+            '**Part two**\n\nInvented gamma sentence.\n')
+    # full-line indices: 5 = '**Part one**', 9 = '**Part two**' (front matter counted)
+    SECS = [{'start_line': 5, 'level': 1, 'title_line': 5, 'inferred': True,
+             'method': 'formatting'},
+            {'start_line': 9, 'level': 1, 'title_line': 9, 'inferred': True,
+             'method': 'formatting'}]
+
+    def test_boundaries_advance_index_and_type(self):
+        rows = a.document_sentences('f.md', self.FLAT, {}, inferred=self.SECS)
+        got = [(r['section_type'], r['section_index'], r['heading']) for r in rows]
+        self.assertEqual(got, [('unknown', 0, None), ('inferred', 1, None),
+                               ('inferred', 1, None), ('inferred', 1, None),
+                               ('inferred', 2, None), ('inferred', 2, None)])
+        self.assertNotEqual(a.INFERRED, a.UNKNOWN)
+
+    def test_backward_compatible_signature(self):
+        self.assertEqual(a.document_sentences('f.md', self.FLAT, {}),
+                         a.document_sentences('f.md', self.FLAT, {}, inferred=None))
+        self.assertEqual({r['section_type'] for r in a.document_sentences('f.md', self.FLAT, {})},
+                         {'unknown'})
+
+    def test_manifest_strata_and_counts(self):
+        split = DocumentSplit(['train.md'], ['f.md'])
+        m = a.build_manifest(iter([('f.md', self.FLAT)]), split, GENRE, n=100,
+                             inferred={'f.md': self.SECS})
+        self.assertEqual(m['inferred_documents'], 1)
+        self.assertEqual(m['inferred_sentences'], 5)
+        self.assertEqual(m['candidates_per_stratum'], {'f.md|inferred': 5, 'f.md|unknown': 1})
+        self.assertNotIn('Part', json.dumps(m))
+
+    def test_no_inferred_is_byte_identical(self):
+        base = json.dumps(a.build_manifest(iter(DOCS), SPLIT, GENRE, n=10), sort_keys=True)
+        for inf in (None, {}, {'r0.md': []}):
+            got = a.build_manifest(iter(DOCS), SPLIT, GENRE, n=10, inferred=inf)
+            self.assertEqual(json.dumps(got, sort_keys=True), base)
+
+    def test_heading_documents_ignore_inferred(self):
+        bogus = {d: [{'start_line': 2, 'level': 1, 'title_line': 2, 'inferred': True,
+                      'method': 'formatting'}] for d, _ in DOCS}
+        base = a.build_manifest(iter(DOCS), SPLIT, GENRE, n=10)
+        self.assertEqual(a.build_manifest(iter(DOCS), SPLIT, GENRE, n=10, inferred=bogus), base)
+
+    def test_cli_sections_flag(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = os.path.join(tmp, 'c')
+            os.mkdir(corpus)
+            with open(os.path.join(corpus, 'f.md'), 'w', encoding='utf-8') as fh:
+                fh.write(self.FLAT)
+            secs = os.path.join(tmp, 'sections.json')
+            with open(secs, 'w', encoding='utf-8') as fh:
+                json.dump({'schema': 1, 'documents': {
+                    'f.md': {'status': 'inferred', 'sections': self.SECS}}}, fh)
+            out = os.path.join(tmp, 'm.json')
+            a.main(['--corpus', corpus, '--genre', GENRE_PATH, '--split-seed', '0',
+                    '--test-fraction', '0.5', '--out', out, '--sections', secs])
+            with open(out, encoding='utf-8') as fh:
+                self.assertEqual(json.load(fh)['inferred_documents'], 1)

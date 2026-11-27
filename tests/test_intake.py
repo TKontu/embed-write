@@ -358,6 +358,41 @@ class IntakeTest(unittest.TestCase):
         self.run_intake()
         self.assertEqual((self.out / intake.SECTIONS_NAME).read_bytes(), first)
 
+    def test_inferred_sections_become_strata(self):
+        """LLM-built synthetic fixture: bold-line titles, no ATX headings; canary stays private."""
+        for p in self.src.iterdir():
+            p.unlink()
+        canary = "Quillfeather canary persimmon"
+        (self.src / "flat.md").write_text(
+            f"Opening invented line.\n\n**{canary} title**\n\n{canary} body sentence one. "
+            "Another invented sentence.\n\n**Second part**\n\nMore invented text here.\n",
+            encoding="utf-8")
+        code, rep, text, printed = self.run_intake()
+        self.assertEqual(code, 0)
+        self.assertEqual(intake.STEPS.index("sections") < intake.STEPS.index("annotation_sample"),
+                         True)
+        manifest = json.loads((self.out / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["inferred_documents"], 1)
+        self.assertIn("flat.md|inferred", manifest["candidates_per_stratum"])
+        step = rep["steps"]["annotation_sample"]
+        self.assertEqual(step["counts"]["inferred_sentences"], manifest["inferred_sentences"])
+        self.assertGreater(manifest["inferred_sentences"], 0)
+        for blob in (text, printed, json.dumps(manifest)):
+            self.assertNotIn("Quillfeather", blob)
+            self.assertNotIn("Second part", blob)
+        self.assert_private(text, printed)
+
+    def test_failed_sections_does_not_block_sampling(self):
+        from unittest import mock
+        with mock.patch.object(intake, "_sections", side_effect=RuntimeError("boom")):
+            code, rep, _, _ = self.run_intake()
+        self.assertEqual(code, 1)
+        self.assertEqual(rep["steps"]["sections"]["status"], "failed")
+        step = rep["steps"]["annotation_sample"]
+        self.assertEqual(step["status"], "ok")
+        self.assertEqual(step["reason"], "sampled without inferred sections")
+        self.assertEqual(step["counts"]["inferred_sentences"], 0)
+
     def test_sections_is_owned(self):
         self.assertIn(intake.SECTIONS_NAME, intake.OWNED)
 
