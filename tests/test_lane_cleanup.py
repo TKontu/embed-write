@@ -303,5 +303,67 @@ class NodeModulesLinkTests(unittest.TestCase):
                 os.unlink(Path(self.lane) / "node_modules")
 
 
+INREPO = f"{ROOT}/worktrees"
+
+
+class InRepoWorktreeTests(unittest.TestCase):
+    """A lane at <root>/worktrees/<name> follows the sibling-path rules; nothing else inside does."""
+
+    def test_dry_run_would_remove_and_go_removes_a_merged_clean_tree(self):
+        fake = Fake({f"{INREPO}/x": "task/x"}, {"task/x": ["MERGED"]})
+        report = clean(fake, go=False)
+        self.assertEqual(fake.done, [])
+        self.assertIn(f"would remove {INREPO}/x (task/x)", report)
+        clean(fake)
+        self.assertEqual(fake.done, [["git", "worktree", "remove", f"{INREPO}/x"]])
+
+    def test_its_idle_tab_is_closed_not_foreign(self):
+        meta, pane = tab("t1", "live-repo-r1-a1", f"{INREPO}/x")
+        fake = Fake({f"{INREPO}/x": "task/x"}, {"task/x": ["MERGED"]}, tabs=[meta], panes=[pane])
+        report = clean(fake)
+        self.assertIn(["herdr", "tab", "close", "t1"], fake.done)
+        self.assertFalse(any("foreign" in line for line in report), report)
+
+    def test_its_deleted_tree_tab_is_closed(self):
+        meta, pane = tab("t1", "live-repo-r1-a1", f"{INREPO}/x (deleted)")
+        fake = Fake({}, {}, tabs=[meta], panes=[pane])
+        clean(fake)
+        self.assertEqual(fake.done, [["herdr", "tab", "close", "t1"]])
+
+    def test_dirty_pr_less_and_carried_trees_are_held(self):
+        trees = {f"{INREPO}/{n}": f"task/{n}" for n in ("dirty", "nopr", "r9-a1")}
+        prs = {"task/dirty": ["MERGED"], "task/r9-a1": ["MERGED"]}
+        fake = Fake(trees, prs, dirty=[f"{INREPO}/dirty"])
+        handoff = f"## Carried lanes\n- live-repo-r9-a1 at {INREPO}/r9-a1 carries over\n"
+        report = clean(fake, handoff=handoff)
+        self.assertEqual(fake.done, [])
+        for reason in ("dirty", "no-pr", "carried"):
+            self.assertTrue(any(reason in line for line in report), (reason, report))
+
+    def test_other_paths_inside_the_main_checkout_are_not_lanes(self):
+        others = [f"{ROOT}/.claude/worktrees/agent-x", INREPO, f"{INREPO}/a/b", f"{ROOT}/other/x"]
+        for path in others:
+            self.assertFalse(lc._is_lane_path(path, ROOT), path)
+        self.assertFalse(lc._is_lane_path(str(ROOT), ROOT))
+        self.assertTrue(lc._is_lane_path(f"{INREPO}/x", ROOT))
+        tabs = [tab(f"t{i}", f"live-repo-r{i}-a1", p) for i, p in enumerate(others)]
+        fake = Fake(
+            {p: f"task/{i}" for i, p in enumerate(others)},
+            {f"task/{i}": ["MERGED"] for i in range(len(others))},
+            tabs=[t for t, _ in tabs],
+            panes=[p for _, p in tabs],
+        )
+        report = clean(fake)
+        self.assertEqual(fake.done, [])
+        for i, path in enumerate(others):
+            self.assertTrue(any(f"tab t{i} " in l and "foreign" in l for l in report), report)
+            self.assertFalse(any(f"{path} (" in l for l in report), report)
+
+    def test_sibling_paths_are_still_lanes(self):
+        self.assertTrue(lc._is_lane_path(f"{LANES}/r1-a1", ROOT))
+        self.assertTrue(lc._is_lane_path("/work/repo-r9-a1", ROOT))
+        self.assertFalse(lc._is_lane_path("/work/repository", ROOT))
+
+
 if __name__ == "__main__":
     unittest.main()
