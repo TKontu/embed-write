@@ -92,6 +92,35 @@ class G02Test(unittest.TestCase):
                 run(s, [json.dumps(bad) + '\n'] + lines[1:])
             self.assertEqual(cm.exception.completeness['contradicting'], 1)
 
+    def test_choice_winner_mismatch_is_contradiction(self):
+        s, lines = fixture()
+        for side, winner in (('right', 'A'), ('left', 'tie'), ('bogus', 'tie')):
+            bad = json.loads(lines[0])
+            bad.update(choice=side, winner=winner)
+            with self.assertRaises(g02.G02ContradictionError) as cm:
+                run(s, [json.dumps(bad) + '\n'] + lines[1:])
+            self.assertEqual(cm.exception.completeness['contradicting'], 1)
+
+    def test_wrong_repeat_of_and_pair_id_are_contradictions(self):
+        s, lines = fixture()
+        for key, value in (('repeat_of', 'i3'), ('pair_id', 'zzz')):
+            bad = json.loads(lines[0])
+            bad[key] = value
+            with self.assertRaises(g02.G02ContradictionError):
+                run(s, [json.dumps(bad) + '\n'] + lines[1:])
+
+    def test_session_contract_validated(self):
+        s, lines = fixture()
+        wrong_arms = [dict(s[0], left_arm='baseline', right_arm='steered')] + s[1:]
+        unknown = [dict(s[0], comparison='B_vs_C')] + s[1:]
+        dup = s + [dict(s[0])]
+        for sess in (wrong_arms, unknown, dup):
+            with self.assertRaises(g02.G02SessionError) as cm:
+                run(sess, lines)
+            self.assertIn('i1', str(cm.exception))
+            self.assertNotIn('synthetic', str(cm.exception))
+        self.assertTrue(issubclass(g02.G02SessionError, ValueError))
+
     def test_verdict_hint(self):
         s, lines = fixture()
         ac = run(s, lines)['comparisons']['A_vs_C']

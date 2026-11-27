@@ -92,6 +92,16 @@ class G02DraftTest(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn('contradict', err)
         self.assertFalse(Path(self.out + '.md').exists())
+        self.assertFalse(Path(self.out + '.json').exists())
+
+    def test_session_not_list_of_objects_exit_2(self):
+        for body in ('{"a": 1}', '[1, 2]', '"x"'):
+            Path(self.session).write_text(body, encoding='utf-8')
+            code, _, err = self.main()
+            self.assertEqual(code, 2)
+            self.assertTrue(err.startswith('error:'))
+            self.assertNotIn('Traceback', err)
+        self.assertFalse(Path(self.out + '.json').exists())
 
     def test_missing_preregistration_exit_2(self):
         os.remove(os.path.join(self.prereg, 'g02.json'))

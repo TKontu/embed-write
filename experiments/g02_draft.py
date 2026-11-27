@@ -1,6 +1,6 @@
 """G-02.5 agent half: run g02 on a blind session's choices and write a DRAFT result document.
 
-``draft(session_path, choices_path, *, seed, out_path, n_resamples=None, thresholds=<proposed>,
+``draft(session_path, choices_path, *, seed, out_path, n_resamples=None,
 text_model=None, judge_is_expert=False, preregistration_root=DEFAULT_ROOT)`` runs
 ``experiments.gates.g02.run`` only through ``experiments.runner.run_gate`` (confirmed ``g02``
 preregistration required) and writes ``<out>.json`` (``runner.serialize``) and a DRAFT
@@ -82,6 +82,8 @@ def draft(session_path, choices_path, *, seed, out_path, n_resamples=None, text_
     json_path, md_path = output_paths(out_path)
     with open(session_path, encoding='utf-8') as fh:
         session = json.load(fh)
+    if not isinstance(session, list) or not all(isinstance(d, dict) for d in session):
+        raise DraftError('session file must be a JSON list of objects')
     with open(choices_path, encoding='utf-8') as choices:
         cfg = {'session': session, 'choices': choices}
         if n_resamples is not None:

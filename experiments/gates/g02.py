@@ -18,8 +18,9 @@ self-consistency figure (experiments.consistency). n 0 gives win_rate/interval N
 Completeness counts: unanswered session items, choices for unknown item ids, duplicate
 choices for an already answered item (blind_ui treats an item with any recorded choice as done,
 so the first recorded choice counts and later ones are ignored and counted), malformed lines,
-a torn final line, and contradicting choices (comparison, repeat_of, pair_id or winner not
-matching the session item). Any contradiction raises G02ContradictionError (no numbers).
+a torn final line, and contradicting choices (comparison, repeat_of, pair_id, choice or winner not
+matching the session item). A session breaking the shared contract (unknown comparison, wrong
+arm pair, duplicate item id) raises G02SessionError. Any contradiction raises G02ContradictionError (no numbers).
 
 Only ``A_vs_C`` carries a ``verdict_hint`` (meets / misses / n/a); no gate status is emitted.
 Reason texts and section texts never enter the output (count of non-empty reasons only).
@@ -42,6 +43,8 @@ gate_id = "g02"
 
 REPORTED_ARM = {"A_vs_C": "C", "A_vs_B": "B", "C_vs_original": "C"}
 PROPOSED_THRESHOLDS = {"c_over_a": 0.7}
+EXPECTED_ARMS = {"A_vs_C": {"A", "C"}, "A_vs_B": {"A", "B"},
+                 "C_vs_original": {"C", "original"}}
 _KEYS = ("item_id", "comparison", "winner", "pair_id")
 
 
@@ -51,6 +54,26 @@ class G02ContradictionError(ValueError):
     def __init__(self, message: str, completeness: dict):
         super().__init__(message)
         self.completeness = completeness
+
+
+class G02SessionError(ValueError):
+    """The session violates the shared contract; message carries ids/counts only."""
+
+
+def _session_index(items) -> dict:
+    index = {}
+    for d in items:
+        iid = d["item_id"]
+        if iid in index:
+            raise G02SessionError(f"duplicate session item id {iid!r}")
+        want = EXPECTED_ARMS.get(d.get("comparison"))
+        if want is None:
+            raise G02SessionError(f"session item {iid!r} has an unknown comparison")
+        if {d.get("left_arm"), d.get("right_arm")} != want or d["left_arm"] == d["right_arm"]:
+            raise G02SessionError(
+                f"session item {iid!r} arms do not match its comparison {d['comparison']}")
+        index[iid] = d
+    return index
 
 
 def _r(v):
@@ -67,7 +90,7 @@ def _parse(line):
 
 
 def run(rng: random.Random, config: Mapping[str, Any]) -> dict:
-    session = {d["item_id"]: d for d in config["session"]}
+    session = _session_index(config["session"])
     n_resamples = int(config.get("n_resamples", 10000))
     if "thresholds" in config and config["thresholds"] is None:
         thresholds, source = None, "none"
@@ -97,9 +120,12 @@ def run(rng: random.Random, config: Mapping[str, Any]) -> dict:
         if it is None:
             counts["unknown_item"] += 1
             continue
+        side = record.get("choice")
+        expected = ("tie" if side == "tie" else it["left_arm"] if side == "left"
+                    else it["right_arm"] if side == "right" else None)
         if (record["comparison"] != it["comparison"] or record.get("repeat_of") != it["repeat_of"]
-                or record["pair_id"] != it["pair_id"]
-                or record["winner"] not in ("tie", it["left_arm"], it["right_arm"])):
+                or record["pair_id"] != it["pair_id"] or expected is None
+                or record["winner"] != expected):
             counts["contradicting"] += 1
             continue
         if record["item_id"] in answered:
