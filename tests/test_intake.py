@@ -392,6 +392,26 @@ class IntakeTest(unittest.TestCase):
         self.assertEqual(step["status"], "ok")
         self.assertEqual(step["reason"], "sampled without inferred sections")
         self.assertEqual(step["counts"]["inferred_sentences"], 0)
+    def test_sections_topic_shift_counted_inferred(self):
+        """LLM-built synthetic heading-less prose on two topics; canary in the body."""
+        a = ["Zorblax canary kumquat pump impeller water casing shaft seals rotate outlet flow.",
+             "The pump impeller moves water through the casing while the shaft seals hold.",
+             "Worn pump seals leak water from the casing and the impeller shaft vibrates.",
+             "Engineers replace the impeller and seals when the pump casing leaks water."]
+        b = ["Bakers mix flour yeast salt and warm water into dough for bread loaves.",
+             "The dough rises as yeast ferments the flour while the bakers wait.",
+             "Bakers knead the dough, shape loaves and bake the bread in an oven.",
+             "A hot oven gives bread loaves a crisp crust and a soft flour crumb."]
+        (self.src / "prose.md").write_text("\n\n".join(a + b) + "\n", encoding="utf-8")
+        code, rep, text, printed = self.run_intake()
+        self.assertEqual(code, 0)
+        counts = rep["steps"]["sections"]["counts"]
+        self.assertEqual(counts["documents"], {"has_headings": 3, "inferred": 1})
+        self.assertEqual(set(counts["sections"]), {"topic_shift"})
+        self.assert_private(text, printed)
+        data = json.loads((self.out / intake.SECTIONS_NAME).read_text(encoding="utf-8"))
+        self.assertEqual({s["method"] for s in data["documents"]["prose.md"]["sections"]},
+                         {"topic_shift"})
 
     def test_sections_is_owned(self):
         self.assertIn(intake.SECTIONS_NAME, intake.OWNED)
