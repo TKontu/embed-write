@@ -9,10 +9,9 @@ scripted deterministic function of the pair_id recorded through blind_ui's own H
 judged anything), and the g02 preregistration is a synthetic fixture record under a temp root.
 Never gate evidence (D-011).
 
-One step is a guess the chain cannot answer: no stage writes the exemplar pool that
-``g02_generate --pool`` needs, so g02_notes prints the placeholder ``POOL_JSONL``. The rehearsal
-substitutes the originals file g02_notes wrote (the only pool-shaped artifact in the chain); which
-pool the real run uses is the planner's/expert's call, not this test's.
+The exemplar pool comes from ``experiments.g02_pool`` (R233/A1), run through the ``pool:`` line
+g02_notes prints; its output is the ``--pool`` of the printed g02_generate line, and the test checks
+it holds training-split reports only.
 """
 import hashlib
 import http.client
@@ -179,11 +178,19 @@ class G02ChainRehearsalTest(unittest.TestCase):
         self.assertEqual(o["--originals"], str(originals))
         self.assertEqual(o["--expected-sections"], str(n_sections))
         self.assertEqual(o["--model-url"], self.url)
-        # Friction (reported): no stage writes the exemplar pool; substitute the originals.
-        self.assertEqual(o["--pool"], "POOL_JSONL")
-        gen_line[gen_line.index("POOL_JSONL")] = str(originals)
+        # Stage 1b: g02_pool exactly as printed; its output is the generate line's --pool.
+        pool_line = printed(r.stdout, "pool:")
+        self.assertEqual(pool_line[:3], ["python", "-m", "experiments.g02_pool"])
+        self.assertEqual(opts(pool_line)["--out"], o["--pool"])
+        self.cli(pool_line)
+        pool_reports = {json.loads(l)["report_id"]
+                        for l in Path(o["--pool"]).read_text(encoding="utf-8").splitlines()}
+        note_reports = {json.loads(l)["report_id"]
+                        for l in notes.read_text(encoding="utf-8").splitlines()}
+        self.assertTrue(pool_reports)
+        self.assertFalse(pool_reports & note_reports)
 
-        # Stage 2: g02_generate exactly as printed (pool substituted).
+        # Stage 2: g02_generate exactly as printed.
         r = self.cli(gen_line)
         summary = json.loads(r.stdout.strip().splitlines()[-1])
         self.assertTrue(summary["complete"], summary)

@@ -176,10 +176,40 @@ class CliTest(unittest.TestCase):
             argv = shlex.split(nxt[0][len('next: '):])
             self.assertEqual(argv[:3], ['python', '-m', 'experiments.g02_generate'])
             o = dict(zip(argv[3::2], argv[4::2]))
-            self.assertEqual(o, {'--notes': out, '--pool': 'POOL_JSONL',
+            pool_out = os.path.join(d, 'n o', 'g02_pool.jsonl')
+            pl = [l for l in lines if l.startswith('pool: ')]
+            self.assertEqual(len(pl), 1)
+            self.assertLess(lines.index(pl[0]), lines.index(nxt[0]))
+            self.assertNotIn('POOL_JSONL', buf.getvalue())
+            pargv = shlex.split(pl[0][len('pool: '):])
+            self.assertEqual(pargv[:3], ['python', '-m', 'experiments.g02_pool'])
+            self.assertEqual(dict(zip(pargv[3::2], pargv[4::2])),
+                             {'--corpus': d, '--genre': 'g', '--split-seed': '0',
+                              '--test-fraction': '0.5', '--min-words': '40', '--out': pool_out})
+            self.assertEqual(o, {'--notes': out, '--pool': pool_out,
                                  '--out': os.path.join(d, 'n o', 'g02_generations.jsonl'),
                                  '--originals': sec, '--expected-sections': '3',
                                  '--model-url': 'http://127.0.0.1:9/v1', '--model-name': 'm x'})
+
+    def test_incomplete_run_prints_no_next(self):
+        import contextlib, io
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as d:
+            for r in IDS[:10]:
+                with open(os.path.join(d, f'{r}.md'), 'w') as fh:
+                    fh.write(doc(r))
+            out = os.path.join(d, 'notes.jsonl')
+            open(out, 'w').close()
+            buf = io.StringIO()
+            with mock.patch.object(notes, 'extract_notes', lambda *a, **k: []), \
+                    contextlib.redirect_stdout(buf):
+                rc = notes.main(['--corpus', d, '--split-seed', '0', '--test-fraction', '0.5',
+                                 '--n', '3', '--out', out, '--genre', 'g'],
+                                model=FakeModel(), genre=GENRE)
+            self.assertEqual(rc, 1)
+            self.assertNotIn('next:', buf.getvalue())
+            self.assertNotIn('pool:', buf.getvalue())
+            json.loads(buf.getvalue().splitlines()[-1])
 
 
 if __name__ == '__main__':
