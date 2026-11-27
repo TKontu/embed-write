@@ -83,6 +83,11 @@ def _inside_results(p):
 
 
 def _paths(out_path):
+    raw = os.fspath(out_path)
+    seps = (os.sep,) + ((os.altsep,) if os.altsep else ())
+    if raw.endswith(seps) or Path(raw).expanduser().is_dir():
+        raise DraftError(f'refusing --out {raw!r}: --out is a path stem, not a directory '
+                         '(files are written as STEM.json and STEM.md)')
     base = _resolve(Path(out_path).expanduser())
     json_path, md_path = base.with_name(base.name + '.json'), base.with_name(base.name + '.md')
     # Check the resolved base and each resolved final path: a leaf symlink (even dangling)

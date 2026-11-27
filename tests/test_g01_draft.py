@@ -94,6 +94,24 @@ class DraftTest(DraftFixture):
         for p in written:
             self.assertFalse(p.exists(), p)
 
+    def _stem_rule_refused(self, out):
+        code, err = self.main(self.argv(out=out))
+        self.assertEqual(code, 2, err)
+        self.assertIn('path stem', err)
+        self.assertNotIn('Traceback', err)
+        written = [q for q in Path(self.tmp.name).rglob('*')
+                   if q.suffix in ('.json', '.md') and q.parent != Path(self.prereg)
+                   and q not in (Path(self.manifest_path), Path(self.pre_path))]
+        self.assertEqual(written, [])
+
+    def test_out_trailing_separator_refused(self):
+        self._stem_rule_refused(os.path.join(self.tmp.name, 'x') + os.sep)
+
+    def test_out_existing_directory_refused(self):
+        d = os.path.join(self.tmp.name, 'outdir')
+        os.mkdir(d)
+        self._stem_rule_refused(d)
+
     def _leaf_symlink_refused(self, suffix):
         # Hermetic: a temp dir stands in for experiments/results; the real one is never touched.
         fake = Path(self.tmp.name, 'fake-results').resolve()
