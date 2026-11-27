@@ -92,6 +92,14 @@ Thresholds are proposals until confirmed; see `todo-01-experiments.md`.
 
 Later-phase rows (proposals, generation, fine-tuning, distillation, extra signals) wait unless they are a direct dependency of 1-3. The tracks below remain the long-run shape.
 
+**Strategic re-rank (R231, 2026-11-27, D-014 strategic round):**
+
+- **Observed on main (566c84a):** no gate has run; `experiments/results/` holds no G-file; Phase 0 is open. `input/` is unchanged since 2026-11-26 (one folder, 2 documents, 179 sentences by the R201 count). The operator notes `input-causeries` and `local-llm` and the expert's three actions (boilerplate flags, the 7 inferred boundaries, the genre file) are all still open.
+- **Drift corrected:** R217 to R230 (14 rounds) hardened single tools against rare inputs (NUL bytes, symlink loops, directory fsync). None of it brings feedback earlier. From now on a residual is planned only if a real run or a chain rehearsal exposed it, or it can lose or corrupt the expert's work.
+- **Biggest reducible risk:** the two fatal-gate paths had never run as chains, so the expert's first session would have been the integration test. R231 confirmed it: G-02 had no way to put generated text in front of the expert or to turn choices into a result, and the G-01 steps intake printed ended with no usable labels and a crash. Both chains now run end to end on synthetic data (todo-01 G-01.6, G-02.4, G-02.5).
+- **Order within D-009 item 1 from here:** (a) a G-02 chain rehearsal in the style of tests/test_g01_chain.py (g02_notes -> g02_generate -> g02_session -> blind_ui -> g02_draft on a stub model), fixing what it finds; (b) one expert-facing run sheet listing every owed step for G-01 and G-02 in order with the exact command, built from the tools' own next_steps; (c) residuals those rehearsals expose (first: g02_session `--expected-sections`, intake `--repeat-fraction`, the g02 hint reading the confirmed threshold). Item 2 (thin demo) and item 3 follow when (a) to (c) have no ready row.
+- **Only the operator or expert can move the critical path:** corpus ruling and size (`input-causeries`, `corpus-size`), a local LLM (`local-llm`), MV-01 seed list, G-01.1/G-02.1 thresholds. If these stay open, more loop rounds add readiness, not feedback.
+
 **Strategic re-rank (R195, 2026-11-26, D-014 strategic round):**
 
 - **Observed:** two real texts appeared under `input/` (locally excluded from git) on 2026-11-26. No genre, corpus or confidentiality decision is recorded for them (CO-01 to CO-03 are `[H]`). Until the operator rules, agents run local tools over `input/` and read counts and statuses only; no agent, lane or PR reads or quotes the text (I9: agent models are remote).
