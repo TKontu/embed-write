@@ -264,3 +264,127 @@ class RetractionTests(StoreCase):
                     {'sentence_id': 's1', 'annotator': 'a', 'timestamp': 't'}):
             with self.subTest(bad=bad), self.assertRaises(st.AnnotationStoreError):
                 self.store.append(genre_v1(), bad)
+
+
+class RepairTailTests(StoreCase):
+    def _torn(self, tail=b'{"sentence_id": "s9", "lab'):
+        self.store.append(genre_v1(), rec('s1'))
+        self.store.append(genre_v1(), rec('s2'))
+        with open(self.path, 'ab') as fh:
+            fh.write(tail)
+        return tail
+
+    def test_nothing_to_repair_missing_empty_clean(self):
+        self.assertIsNone(self.store.repair_tail())  # missing
+        self.assertFalse(os.path.exists(self.path))
+        open(self.path, 'wb').close()
+        self.assertIsNone(self.store.repair_tail())  # empty
+        self.store.append(genre_v1(), rec('s1'))
+        with open(self.path, 'rb') as fh:
+            before = fh.read()
+        self.assertIsNone(self.store.repair_tail())
+        with open(self.path, 'rb') as fh:
+            self.assertEqual(fh.read(), before)
+        self.assertEqual(sorted(os.listdir(self.tmp.name)), ['labels.jsonl'])
+
+    def test_torn_tail_moved_to_sidecar_and_append_resumes(self):
+        tail = self._torn()
+        with open(self.path, 'rb') as fh:
+            complete = fh.read()[:-len(tail)]
+        before = [json.loads(l) for l in complete.splitlines()]
+        self.assertEqual(len(before), 2)
+        side = self.store.repair_tail()
+        self.assertTrue(os.path.basename(side).startswith('labels.jsonl.torn-'))
+        with open(side, 'rb') as fh:
+            self.assertEqual(fh.read(), tail)
+        with open(self.path, 'rb') as fh:
+            self.assertTrue(fh.read().endswith(b'\n'))
+        self.assertEqual([r for _, r in self.store.iter_records()], before)
+        self.store.append(genre_v1(), rec('s3'))
+        self.assertEqual(len(list(self.store.iter_records())), 3)
+
+    def test_no_newline_truncates_to_zero(self):
+        with open(self.path, 'wb') as fh:
+            fh.write(b'{"partial')
+        side = self.store.repair_tail()
+        self.assertEqual(os.path.getsize(self.path), 0)
+        with open(side, 'rb') as fh:
+            self.assertEqual(fh.read(), b'{"partial')
+
+    def test_long_tail_spans_chunks(self):
+        tail = b'x' * (3 * st.TAIL_CHUNK + 7)
+        self._torn(tail)
+        side = self.store.repair_tail()
+        with open(side, 'rb') as fh:
+            self.assertEqual(fh.read(), tail)
+        self.assertEqual(len(list(self.store.iter_records())), 2)
+
+    def test_sidecar_never_overwritten(self):
+        self._torn(b'first')
+        with mock.patch.object(st, '_utc_stamp', return_value='20260101T000000Z'):
+            a = self.store.repair_tail()
+            with open(self.path, 'ab') as fh:
+                fh.write(b'second')
+            b = self.store.repair_tail()
+        self.assertNotEqual(a, b)
+        with open(a, 'rb') as fh:
+            self.assertEqual(fh.read(), b'first')
+        with open(b, 'rb') as fh:
+            self.assertEqual(fh.read(), b'second')
+
+    def test_sidecar_failure_leaves_store_untouched(self):
+        self._torn()
+        with open(self.path, 'rb') as fh:
+            before = fh.read()
+        with mock.patch.object(st.os, 'fsync', side_effect=OSError('disk')):
+            with self.assertRaises(OSError):
+                self.store.repair_tail()
+        with open(self.path, 'rb') as fh:
+            self.assertEqual(fh.read(), before)
+
+    def test_check_tail_message_names_cli(self):
+        self._torn()
+        with self.assertRaises(st.TruncatedRecordError) as cm:
+            self.store.append(genre_v1(), rec('s3'))
+        self.assertIn('python -m service.annotation_store repair', str(cm.exception))
+
+    def test_docstring_names_repair(self):
+        self.assertIn('repair_tail', st.__doc__)
+
+
+class RepairCliTests(StoreCase):
+    def _run(self, *argv):
+        import io
+        from contextlib import redirect_stderr, redirect_stdout
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            code = st.main(list(argv))
+        return code, out.getvalue(), err.getvalue()
+
+    def test_repair_reports_bytes_and_never_prints_tail(self):
+        self.store.append(genre_v1(), rec('s1'))
+        with open(self.path, 'ab') as fh:
+            fh.write(b'SECRETPARTIAL')
+        code, out, err = self._run('repair', self.path)
+        self.assertEqual(code, 0)
+        self.assertRegex(out, r'^repaired: moved 13 bytes to .*\.torn-')
+        self.assertNotIn('SECRET', out + err)
+
+    def test_nothing_to_repair(self):
+        self.store.append(genre_v1(), rec('s1'))
+        code, out, _ = self._run('repair', self.path)
+        self.assertEqual((code, out.strip()), (0, 'nothing to repair'))
+
+    def test_missing_path_exit_2(self):
+        code, out, err = self._run('repair', self.path)
+        self.assertEqual(code, 2)
+        self.assertEqual(len(err.strip().splitlines()), 1)
+
+    def test_os_error_exit_2(self):
+        with open(self.path, 'ab') as fh:
+            fh.write(b'SECRETPARTIAL')
+        with mock.patch.object(st.os, 'fsync', side_effect=OSError('disk')):
+            code, out, err = self._run('repair', self.path)
+        self.assertEqual(code, 2)
+        self.assertEqual(len(err.strip().splitlines()), 1)
+        self.assertNotIn('SECRET', out + err)

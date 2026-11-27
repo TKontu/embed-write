@@ -28,6 +28,12 @@ write) or an unparsable line raises ``TruncatedRecordError`` /
 ``AnnotationStoreError`` naming the line; opening the store never reads the
 file, and append refuses to write after a torn tail.
 
+Repair (torn tail only): ``AnnotationStore.repair_tail()`` or
+``python -m service.annotation_store repair PATH`` moves the bytes after the
+last newline to a new sidecar ``<path>.torn-<UTC timestamp>[-N]`` (fsynced
+first), then truncates the store to its last complete line so appends can
+resume. Corrupt complete lines are not repaired.
+
 Memory: reads stream line by line; the supersede index holds one record per
 (sentence_id, version key) seen.
 
@@ -36,12 +42,15 @@ Unwired by design: AN-01 (annotation tool) appends; G-01.4 reads.
 
 import json
 import os
+import sys
+import time
 
 from service.genre import labels_valid_for, version_key
 
 REQUIRED = ('sentence_id', 'label', 'annotator', 'timestamp')
 RESERVED = ('genre', 'genre_version', 'genre_hash', 'stale')
 OTHER = 'other'
+TAIL_CHUNK = 64 * 1024
 
 
 class AnnotationStoreError(ValueError):
@@ -81,7 +90,48 @@ class AnnotationStore:
         if last != b'\n':
             raise TruncatedRecordError(
                 f'{self.path}: last line is incomplete (torn write); '
-                'repair the store before appending')
+                'repair it with: python -m service.annotation_store repair PATH')
+
+    def repair_tail(self):
+        """Move a torn last line to a sidecar and truncate; return its path or None.
+
+        Sidecar is written and fsynced before the store is touched. Scans
+        backwards from the end in TAIL_CHUNK pieces (O(chunk) memory to find
+        the cut; the torn bytes are copied in chunks).
+        """
+        try:
+            fh = open(self.path, 'r+b')
+        except FileNotFoundError:
+            return None
+        with fh:
+            size = fh.seek(0, os.SEEK_END)
+            if size == 0:
+                return None
+            fh.seek(-1, os.SEEK_END)
+            if fh.read(1) == b'\n':
+                return None
+            cut = _last_newline_end(fh, size)
+            side = _new_sidecar(self.path)
+            try:
+                with open(side, 'xb') as out:
+                    fh.seek(cut)
+                    while True:
+                        buf = fh.read(TAIL_CHUNK)
+                        if not buf:
+                            break
+                        out.write(buf)
+                    out.flush()
+                    os.fsync(out.fileno())
+            except BaseException:
+                try:
+                    os.unlink(side)
+                except OSError:
+                    pass
+                raise
+            fh.truncate(cut)
+            fh.flush()
+            os.fsync(fh.fileno())
+        return side
 
     # -- reading -------------------------------------------------------
     def iter_records(self):
@@ -168,3 +218,60 @@ def _validated(genre_obj, record):
     out['genre'] = genre_obj['genre']
     out.update(version_key(genre_obj))
     return out
+
+
+def _last_newline_end(fh, size):
+    """Offset just past the last b'\\n' in the file (0 if none)."""
+    pos = size
+    while pos > 0:
+        start = max(0, pos - TAIL_CHUNK)
+        fh.seek(start)
+        buf = fh.read(pos - start)
+        i = buf.rfind(b'\n')
+        if i >= 0:
+            return start + i + 1
+        pos = start
+    return 0
+
+
+def _utc_stamp():
+    return time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())
+
+
+def _new_sidecar(path):
+    base = f'{path}.torn-{_utc_stamp()}'
+    cand, n = base, 1
+    while os.path.lexists(cand):
+        cand = f'{base}-{n}'
+        n += 1
+    return cand  # opened with 'x' so a race still never overwrites
+
+
+def main(argv=None):
+    """CLI: ``repair PATH``. Production caller of ``repair_tail``."""
+    argv = sys.argv[1:] if argv is None else argv
+    if len(argv) != 2 or argv[0] != 'repair':
+        print('usage: python -m service.annotation_store repair PATH',
+              file=sys.stderr)
+        return 2
+    path = argv[1]
+    if not os.path.isfile(path):
+        print(f'error: no such store file: {path}', file=sys.stderr)
+        return 2
+    try:
+        size = os.path.getsize(path)
+        side = AnnotationStore(path).repair_tail()
+    except OSError as exc:
+        print(f'error: {type(exc).__name__}: {exc.strerror or exc}',
+              file=sys.stderr)
+        return 2
+    if side is None:
+        print('nothing to repair')
+    else:
+        moved = size - os.path.getsize(path)
+        print(f'repaired: moved {moved} bytes to {side}')
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())
