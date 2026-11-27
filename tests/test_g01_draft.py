@@ -4,6 +4,7 @@ import json
 import os
 import tempfile
 import unittest
+import unittest.mock
 import uuid
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
@@ -144,6 +145,37 @@ class DraftTest(DraftFixture):
 
     def test_symlink_loop_leaf_md_exit_2_nothing_written(self):
         self._loop_refused(self.out + '.md')
+
+    def _nonleaf_loop_refused(self, simulate_313):
+        fake = self._fake_results()
+        loop = os.path.join(self.tmp.name, 'loop')
+        os.symlink(loop, loop)  # self-referential loop as a NON-LEAF component of --out
+        out = os.path.join(loop, 'sub', 'g01-draft')
+        if simulate_313:
+            # 3.13+ non-strict resolve() does not raise on loops: it returns the path with the
+            # looping component left in place (here: not the leaf).
+            orig = Path.resolve
+            def fake_resolve(self, strict=False):
+                try:
+                    return orig(self, strict)
+                except RuntimeError:
+                    return Path(os.path.abspath(self))
+            patcher = unittest.mock.patch.object(Path, 'resolve', fake_resolve)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        code, err = self.main(self.argv(out=out))
+        self.assertEqual(code, 2, err)
+        self.assertNotIn('Traceback', err)
+        self.assertIn('symlink loop', err)
+        self.assertEqual(list(fake.iterdir()), [])
+        self.assertEqual(sorted(os.listdir(self.tmp.name)).count('loop'), 1)
+        self.assertTrue(os.path.islink(loop))
+
+    def test_symlink_loop_nonleaf_exit_2_nothing_written(self):
+        self._nonleaf_loop_refused(simulate_313=False)
+
+    def test_symlink_loop_nonleaf_simulated_313_resolve_exit_2(self):
+        self._nonleaf_loop_refused(simulate_313=True)
 
     def test_symlinked_results_dir_refused(self):
         # RESULTS_DIR itself is a symlink to a temp dir; an output resolving into the target
