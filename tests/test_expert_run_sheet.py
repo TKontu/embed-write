@@ -77,6 +77,43 @@ class ExpertRunSheetTest(unittest.TestCase):
         self.assertIn('<PRIVATE:', self.text)
         self.assertNotIn('input/', self.text)  # no real corpus path
 
+    def test_step_2_3_is_the_next_line_g02_notes_prints(self):
+        import contextlib, io, json, os, tempfile
+        from experiments import g02_notes
+        genre = {'section_types': [{'id': 'intro', 'headings': ['Introduction']}]}
+        body = ' '.join(f'w{i}' for i in range(50))
+
+        class Fake:  # LLM-built synthetic fixture, no model
+            model_id = 'fake'
+
+            def __call__(self, prompt):
+                return '- a fact'
+        with tempfile.TemporaryDirectory() as d:
+            corpus, g02 = os.path.join(d, 'c'), os.path.join(d, 'g')
+            os.makedirs(corpus), os.makedirs(g02)
+            for i in range(4):
+                with open(os.path.join(corpus, f'r{i}.md'), 'w') as fh:
+                    fh.write(f'# Introduction\n\nr{i} {body}\n')
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = g02_notes.main(
+                    ['--corpus', corpus, '--genre', 'G', '--split-seed', '0',
+                     '--test-fraction', '0.5', '--n', '2', '--model-url', 'MU',
+                     '--model-name', 'MN', '--out', os.path.join(g02, 'notes.jsonl'),
+                     '--sections-out', os.path.join(g02, 'originals.jsonl')],
+                    model=Fake(), genre=genre)
+            self.assertEqual(rc, 0)
+            nxt = [l for l in buf.getvalue().splitlines() if l.startswith('next: ')][0]
+            printed = [t.replace(g02, '<PRIVATE:G02>') for t in shlex.split(nxt[6:])]
+        printed = [{'MU': '<MODEL_URL>', 'MN': '<MODEL_NAME>'}.get(t, t) for t in printed]
+        step = self.text.split('### 2.3', 1)[1].split('### 2.4', 1)[0]
+        (cmd,) = [c for c in re.findall(r'`(python -m [^`]+)`', step)]
+        sheet = shlex.split(cmd)
+        i = sheet.index('--expected-sections')
+        self.assertEqual(sheet[i + 1], '30')  # the real run selects 30 sections
+        printed[printed.index('--expected-sections') + 1] = '30'
+        self.assertEqual(sheet, printed)
+
 
 class ExtractorSelfTest(unittest.TestCase):
     def test_bogus_flag_is_rejected(self):

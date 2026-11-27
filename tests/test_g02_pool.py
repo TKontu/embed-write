@@ -111,6 +111,12 @@ class CliTest(unittest.TestCase):
         self.assertIn('leak', err.lower())
         self.assertFalse(self.out.exists())
 
+    def test_empty_pool_exits_2_and_leaves_no_file(self):
+        code, out, err = self.run_cli('--min-words', '1000')
+        self.assertEqual(code, 2)
+        self.assertIn('empty', err.lower())
+        self.assertFalse(self.out.exists())
+
 
 if __name__ == '__main__':
     unittest.main()
