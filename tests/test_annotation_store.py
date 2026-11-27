@@ -342,6 +342,78 @@ class RepairTailTests(StoreCase):
         with open(self.path, 'rb') as fh:
             self.assertEqual(fh.read(), before)
 
+    def _traced_repair(self, fail=None):
+        """Run repair_tail recording fsync/open/close/truncate order."""
+        events, dir_fds = [], set()
+        self._last_events = events
+        real_open, real_fsync, real_close = os.open, os.fsync, os.close
+        real_ftrunc = os.ftruncate
+        parent = os.path.realpath(self.tmp.name)
+
+        def t_open(path, flags, *a, **k):
+            is_dir = (os.path.realpath(path) == parent
+                      and flags & getattr(os, 'O_DIRECTORY', 0))
+            if is_dir and fail == 'open':
+                raise OSError('dir open')
+            fd = real_open(path, flags, *a, **k)
+            if is_dir:
+                dir_fds.add(fd)
+                events.append('dir-open')
+            return fd
+
+        def t_fsync(fd):
+            if fd in dir_fds:
+                events.append('dir-fsync')
+                if fail == 'fsync':
+                    raise OSError('dir fsync')
+            else:
+                events.append('file-fsync')
+            return real_fsync(fd)
+
+        def t_close(fd):
+            if fd in dir_fds:
+                events.append('dir-close')
+            return real_close(fd)
+
+        def t_ftrunc(fd, n):
+            events.append('truncate')
+            return real_ftrunc(fd, n)
+
+        with mock.patch.object(st.os, 'open', t_open), \
+                mock.patch.object(st.os, 'fsync', t_fsync), \
+                mock.patch.object(st.os, 'close', t_close), \
+                mock.patch.object(st.os, 'ftruncate', t_ftrunc):
+            side = self.store.repair_tail()
+        return side, events
+
+    @unittest.skipUnless(hasattr(os, 'O_DIRECTORY'), 'needs O_DIRECTORY')
+    def test_dir_fsync_after_sidecar_before_truncate(self):
+        self._torn()
+        side, events = self._traced_repair()
+        self.assertEqual(events, ['file-fsync', 'dir-open', 'dir-fsync',
+                                  'dir-close', 'truncate', 'file-fsync'])
+        self.assertTrue(os.path.exists(side))
+
+    @unittest.skipUnless(hasattr(os, 'O_DIRECTORY'), 'needs O_DIRECTORY')
+    def test_dir_fsync_failure_keeps_store_and_sidecar(self):
+        for fail in ('open', 'fsync'):
+            with self.subTest(fail=fail):
+                for f in os.listdir(self.tmp.name):
+                    os.unlink(os.path.join(self.tmp.name, f))
+                self._torn()
+                with open(self.path, 'rb') as fh:
+                    before = fh.read()
+                with self.assertRaises(OSError):
+                    self._traced_repair(fail=fail)
+                with open(self.path, 'rb') as fh:
+                    self.assertEqual(fh.read(), before)
+                sides = [f for f in os.listdir(self.tmp.name) if '.torn-' in f]
+                self.assertEqual(len(sides), 1)
+                self.assertNotIn('truncate', self._last_events)
+                if fail == 'fsync':  # dir fd closed even when fsync raised
+                    self.assertEqual(self._last_events[-2:],
+                                     ['dir-fsync', 'dir-close'])
+
     def test_check_tail_message_names_cli(self):
         self._torn()
         with self.assertRaises(st.TruncatedRecordError) as cm:
