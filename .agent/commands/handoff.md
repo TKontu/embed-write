@@ -5,6 +5,8 @@ Read project AGENTS.md and `.agent/config.toml`; follow [the protocol](../../SPE
 Read current main, canonical backlog, PR outcomes and decisions. Use
 [the handoff template](../../templates/handoff.md); include full Main-SHA, UTC timestamp, this round's
 delta, active conflicts/blockers, unverified behavior/scale, and one exact next action with links.
+List the held items from the latest `python3 scripts/lane_cleanup.py --go --sweep` (one line per reason
+with its count, plus each held lane's round, lane and path), so the next round's preflight is expected.
 
 Keep it at most 50 lines / 500 words. Validate SHA and links. Do not copy architecture, frontier prose,
 full logs, secrets or the conversation transcript. Durable decisions/evidence belong in tracked files

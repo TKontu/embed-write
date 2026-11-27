@@ -292,6 +292,35 @@ class RoundTests(unittest.TestCase):
         self.cli("status", "R1")
         self.assertEqual(self.manifest(), before)
 
+    def _cleanup_stub(self, code):
+        script = self.repo / "scripts" / "lane_cleanup.py"
+        script.parent.mkdir(exist_ok=True)
+        script.write_text(
+            "import sys\n"
+            "assert sys.argv[1:] == ['--preflight'], sys.argv\n"
+            f"print('leftover R1: would remove /x (task/a) R1/A1') if {code} else None\n"
+            f"sys.exit({code})\n"
+        )
+        self.git("add", ".")
+        self.git("commit", "-qm", "cleanup stub")
+
+    def test_init_refuses_while_an_earlier_round_has_leftovers(self):
+        self._cleanup_stub(1)
+        result = self.cli("init", "R2", "--base", "main", ok=False)
+        self.assertIn("would remove /x", result.stderr)
+        self.assertIn("--allow-leftovers", result.stderr)
+        self.assertFalse((self.repo / ".agent-runs/R2").exists())
+
+    def test_allow_leftovers_overrides_the_preflight_with_a_warning(self):
+        self._cleanup_stub(1)
+        result = self.cli("init", "R2", "--base", "main", "--allow-leftovers")
+        self.assertIn("WARNING (--allow-leftovers)", result.stderr)
+        self.assertTrue((self.repo / ".agent-runs/R2/round.json").exists())
+
+    def test_init_passes_a_clean_preflight(self):
+        self._cleanup_stub(0)
+        self.cli("init", "R2", "--base", "main")
+
     def test_second_round_requires_reconciliation(self):
         self.cli("init", "R1", "--base", "main")
         self.cli("init", "R2", "--base", "main", ok=False)

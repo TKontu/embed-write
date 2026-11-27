@@ -138,19 +138,26 @@ decisions in HANDOFF.md.
 - Before planning new work, take over every finished lane HANDOFF.md names (check its Herdr
   agent, its result under .agent-runs/ and its PR; an idle agent is not a finished lane). Record
   it if it is not recorded yet. Lanes still running stay carried.
-- Live or long work runs only as Herdr lanes, each agent and tab named {lane_prefix}<lane> (Herdr
-  names are global across projects, so always use this prefix). A lane is a tab in this round's
-  workspace (herdr tab create --workspace "$HERDR_WORKSPACE_ID"); never create a Herdr workspace. Never wait for one to
-  finish: carry it in HANDOFF.md and end the round. Probe before starting; never duplicate.
-  Never halt, relaunch or take over a carried lane; each continues across rounds until it completes.
+- Live or long work runs only as Herdr lanes, each agent and tab named {lane_prefix}r<N>-a<M> for
+  round R<N>, lane A<M> (Herdr names are global across projects, so always use this prefix; cleanup
+  maps the label to the round ledger). A lane is a tab in this round's workspace, opened in its own
+  worktree: herdr tab create --workspace "$HERDR_WORKSPACE_ID" --cwd <lane worktree> --label
+  {lane_prefix}r<N>-a<M>. Never start a lane from the main checkout or with --add-dir. A Claude
+  lane passes its prompt after --: claude -p <flags> -- "<the lane's full task>";
+  never create a Herdr workspace. Never wait for a lane to finish: carry it in HANDOFF.md and end
+  the round. Probe before starting; never duplicate. Never halt, relaunch or take over a carried
+  lane; each continues across rounds until it completes.
 - Executor lanes run on Codex (operator ruling D-001, docs/decisions.md): in the lane tab run
   codex exec --approve-for-me -C <lane worktree> "<the lane's full task>". This host cannot create
   user namespaces, so Codex's -s workspace-write sandbox (bwrap) fails every command; never use it,
   and never --full-auto (removed). Planning, review and merge stay in Claude. Use a Claude lane only
   when Codex cannot run, and record why in HANDOFF.md.
-- Release finished lanes with python3 scripts/lane_cleanup.py --go after merge-round and before
-  handoff; it closes their idle tabs and removes their worktrees by rule. Never close lane tabs or
-  remove lane worktrees by hand.
+- Release finished lanes with python3 scripts/lane_cleanup.py --go --sweep after merge-round and
+  again before handoff; it closes their idle tabs, removes their worktrees and prunes merged or
+  closed branches by rule. List every held item it reports (with its round, lane and reason) in
+  HANDOFF.md. Never close lane tabs, remove lane worktrees or delete branches by hand. round.py init
+  refuses a new round while an earlier closed round has leftovers; --allow-leftovers is the
+  operator's alone.
 - Independent reviews of high-risk PRs run on the strong model (D-014; Agent tool model "fable"):
   any PR touching scripts/round_supervisor.py, scripts/merge_guard.py, scripts/lane_cleanup.py,
   .claude/ or gate code (experiments/gates/, the G-01/G-02 harnesses). Other reviews: default model.

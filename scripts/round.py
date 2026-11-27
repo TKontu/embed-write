@@ -122,6 +122,7 @@ def initialize(repo, root, args):
         except ValueError:
             raise ValueError(f"Unreadable round record: {other}") from None
         require(state == "closed", f"Unreconciled round: {other.parent.name}")
+    leftover_preflight(repo, args.allow_leftovers)
     save(
         root / "round.json",
         {
@@ -131,6 +132,35 @@ def initialize(repo, root, args):
             "state": "open",
             "assignments": {},
         },
+    )
+
+
+def leftover_preflight(repo, allow):
+    """Refuse a new round while an earlier closed round has what lane_cleanup would remove.
+
+    Runs the repository's own scripts/lane_cleanup.py --preflight when it has one (iknosreview's
+    dispatch preflight); a repository without it has no lane resources to check.
+    """
+    script = repo / "scripts" / "lane_cleanup.py"
+    if not script.is_file():
+        return
+    try:
+        done = subprocess.run(
+            [sys.executable, str(script), "--preflight"],
+            cwd=repo, capture_output=True, text=True, timeout=900, check=False,
+        )
+        code, out = done.returncode, (done.stdout + done.stderr).strip()
+    except (OSError, subprocess.TimeoutExpired) as error:
+        code, out = 1, f"lane_cleanup preflight did not run: {error}"
+    if not code:
+        return
+    if allow:
+        for line in out.splitlines():
+            print(f"WARNING (--allow-leftovers): {line}", file=sys.stderr)
+        return
+    raise ValueError(
+        "earlier rounds have leftovers; run python3 scripts/lane_cleanup.py --go --sweep, "
+        f"or pass --allow-leftovers (operator only):\n{out}"
     )
 
 
@@ -309,6 +339,11 @@ def parser():
         sub.add_argument("round")
         if name == "init":
             sub.add_argument("--base", required=True)
+            sub.add_argument(
+                "--allow-leftovers",
+                action="store_true",
+                help="operator only: start despite an earlier round's cleanup leftovers",
+            )
         elif name == "assign":
             sub.add_argument("assignment")
             for field in ("item", "branch", "spec"):

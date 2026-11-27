@@ -456,3 +456,352 @@ class OrphanDirTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def ledger(**rounds):
+    """ledger(R5=("closed", {"A1": ("task/a", "merged")})) -> {round id: manifest}."""
+    return {
+        rid: {
+            "id": rid,
+            "state": state,
+            "assignments": {a: {"branch": b, "state": s} for a, (b, s) in lanes.items()},
+        }
+        for rid, (state, lanes) in rounds.items()
+    }
+
+
+class BranchFake(Fake):
+    """Adds the bulk PR listing, ref listings, ancestry and branch deletion."""
+
+    def __init__(self, *args, local=(), remote=(), pr_heads=None, ahead=(), **kw):
+        super().__init__(*args, **kw)
+        self.local, self.remote = list(local), list(remote)  # branch names; tip "t-<name>"
+        self.pr_heads = pr_heads or {}  # {branch: [(state, head oid)]}, default head = tip
+        self.ahead = set(ahead)  # branches whose tip is newer than every PR head
+        self.stale, self.leased, self.bases, self.order = set(), set(), {}, []  # bases: {head: base of OPEN PR}
+
+    def run(self, cmd, timeout=None):
+        cmd = list(cmd)
+        if cmd[:3] == ["gh", "pr", "list"] and "--head" not in cmd:
+            rows = []
+            for branch, states in self.prs.items():
+                head = f"h-{branch}" if branch in self.ahead else f"t-{branch}"
+                heads = self.pr_heads.get(branch) or [(s, head) for s in states]
+                rows += [
+                    {"headRefName": branch, "state": s, "headRefOid": h,
+                     "baseRefName": self.bases.get(branch, "main")}
+                    for s, h in heads
+                ]
+            return 0, json.dumps(rows)
+        if cmd[:2] == ["git", "for-each-ref"]:
+            self.order.append(cmd[-1])
+            if cmd[-1] == "refs/heads":
+                return 0, "\n".join(f"{b} t-{b}" for b in ["main", *self.local])
+            return 0, "\n".join(f"origin/{b} t-{b}" for b in ["HEAD", "main", *self.remote])
+        if cmd[:3] == ["git", "merge-base", "--is-ancestor"]:
+            branch = cmd[3].removeprefix("t-")
+            return (1, "") if branch in self.ahead else (0, "")
+        if cmd[:3] == ["git", "branch", "-D"] or cmd[:3] == ["git", "update-ref", "-d"]:
+            self.done.append(cmd)
+            return 0, ""
+        if cmd[:3] == ["git", "fetch", "--prune"]:
+            self.order.append("fetch")
+            return 0, ""
+        if cmd[:2] == ["git", "push"]:
+            self.done.append(cmd)
+            out, rc = [], 0
+            for spec in (c for c in cmd if c.startswith(":refs/heads/")):
+                b = spec.removeprefix(":refs/heads/")
+                if b in self.stale:
+                    out.append(f"error: unable to delete '{b}': remote ref does not exist")
+                    rc = 1
+                elif b in self.leased:
+                    out.append(f"!\t{spec}\t[rejected] (stale info)")
+                    rc = 1
+                else:
+                    out.append(f"-\t{spec}\t[deleted]")
+            return rc, "\n".join(out)
+        return super().run(cmd, timeout=timeout)
+
+
+def sweep(fake, go=True, handoff="", led=None, **kw):
+    return lc.cleanup(
+        root=ROOT, prefix="live-repo-", go=go, handoff=handoff, run=fake.run, busy=fake.busy,
+        settle=0, ledger=led or {}, **kw,
+    )
+
+
+class LedgerTabTests(unittest.TestCase):
+    """A lane tab maps to R<N>/A<M> by its label, whatever the pane's cwd."""
+
+    def test_closes_a_tab_in_the_main_checkout_once_its_lane_merged(self):
+        meta, pane = tab("t1", "live-repo-r5-a1", str(ROOT))
+        fake = Fake({}, {}, tabs=[meta], panes=[pane])
+        led = ledger(R5=("open", {"A1": ("task/a", "merged")}))
+        sweep(fake, led=led)
+        self.assertEqual(fake.done, [["herdr", "tab", "close", "t1"]])
+
+    def test_closes_a_cancelled_lane_tab_and_any_tab_of_a_closed_round(self):
+        a, pa = tab("t1", "live-repo-r5-a1", str(ROOT))
+        b, pb = tab("t2", "live-repo-r6-a2", f"{ROOT}/.claude/worktrees/x")
+        fake = Fake({}, {}, tabs=[a, b], panes=[pa, pb])
+        led = ledger(
+            R5=("open", {"A1": ("task/a", "cancelled")}),
+            R6=("closed", {"A1": ("task/b", "merged")}),
+        )
+        sweep(fake, led=led)
+        self.assertEqual(
+            fake.done, [["herdr", "tab", "close", "t1"], ["herdr", "tab", "close", "t2"]]
+        )
+
+    def test_holds_an_unresolved_lane_of_an_open_round(self):
+        meta, pane = tab("t1", "live-repo-r7-a1", str(ROOT))
+        fake = Fake({}, {}, tabs=[meta], panes=[pane])
+        report = sweep(fake, led=ledger(R7=("open", {"A1": ("task/a", "result-ready")})))
+        self.assertEqual(fake.done, [])
+        self.assertIn("hold tab t1 live-repo-r7-a1: lane R7/A1 result-ready", report)
+
+    def test_keeps_every_existing_safety_hold(self):
+        led = ledger(R5=("closed", {"A1": ("task/a", "merged"), "A2": ("task/b", "merged")}))
+        working, pw = tab("t1", "live-repo-r5-a1", str(ROOT), status="working")
+        blocked, pb = tab("t2", "live-repo-r5-a2", str(ROOT), status="blocked")
+        carried, pc = tab("t3", "live-repo-r5-a3", str(ROOT))
+        prot, pp = tab("t4", "live-repo-r5-a1-planner", str(ROOT))
+        other, po = tab("t5", "live-other-r5-a1", str(ROOT))
+        fake = Fake(
+            {}, {}, tabs=[working, blocked, carried, prot, other], panes=[pw, pb, pc, pp, po]
+        )
+        handoff = "## Carried lanes\n- live-repo-r5-a3 carries over\n"
+        report = sweep(fake, led=led, handoff=handoff)
+        self.assertEqual(fake.done, [])
+        self.assertIn("hold tab t1 live-repo-r5-a1: active: working", report)
+        self.assertIn("hold tab t2 live-repo-r5-a2: active: blocked", report)
+        self.assertIn("hold tab t3 live-repo-r5-a3: carried", report)
+
+    def test_a_label_outside_the_ledger_falls_back_to_the_cwd_rule(self):
+        meta, pane = tab("t1", "live-repo-r9-a1", str(ROOT))
+        fake = Fake({}, {}, tabs=[meta], panes=[pane])
+        report = sweep(fake, led=ledger(R5=("closed", {})))
+        self.assertIn("hold tab t1 live-repo-r9-a1: foreign", report)
+
+
+class ClosedRoundWorktreeTests(unittest.TestCase):
+    LED = ledger(R5=("closed", {"A1": ("task/a", "merged")}), R7=("open", {"A1": ("task/c", "assigned")}))
+
+    def test_removes_a_clean_pushed_pr_less_tree_of_a_closed_round(self):
+        fake = Fake({f"{LANES}/r5-a1": "task/a"}, {})
+        sweep(fake, led=self.LED)
+        self.assertEqual(fake.done, [["git", "worktree", "remove", f"{LANES}/r5-a1"]])
+
+    def test_maps_a_tree_by_its_branch_when_the_path_has_no_lane_name(self):
+        fake = Fake({f"{ROOT}-wt-x": "task/a"}, {})
+        sweep(fake, led=self.LED)
+        self.assertEqual(fake.done, [["git", "worktree", "remove", f"{ROOT}-wt-x"]])
+
+    def test_keeps_dirty_or_unpushed_trees_and_names_round_and_lane(self):
+        led = ledger(R5=("closed", {"A1": ("task/a", "merged"), "A2": ("task/b", "merged")}))
+        fake = Fake(
+            {f"{LANES}/r5-a1": "task/a", f"{LANES}/r5-a2": "task/b"},
+            {"task/a": ["MERGED"]},
+            dirty=[f"{LANES}/r5-a1"],
+            unpushed=[f"{LANES}/r5-a2"],
+        )
+        report = sweep(fake, led=led)
+        self.assertEqual(fake.done, [])
+        self.assertIn(f"hold {LANES}/r5-a1 (task/a) R5/A1: dirty", report)
+        self.assertIn(f"hold {LANES}/r5-a2 (task/b) R5/A2: unpushed", report)
+
+    def test_an_open_pr_still_keeps_a_closed_rounds_tree(self):
+        fake = Fake({f"{LANES}/r5-a1": "task/a"}, {"task/a": ["OPEN"]})
+        report = sweep(fake, led=self.LED)
+        self.assertEqual(fake.done, [])
+        self.assertIn(f"hold {LANES}/r5-a1 (task/a) R5/A1: open-pr", report)
+
+    def test_an_open_rounds_pr_less_tree_is_still_held(self):
+        fake = Fake({f"{LANES}/r7-a1": "task/c"}, {})
+        report = sweep(fake, led=self.LED)
+        self.assertEqual(fake.done, [])
+        self.assertIn(f"hold {LANES}/r7-a1 (task/c) R7/A1: no-pr", report)
+
+    def test_sweep_adds_claude_agent_worktrees_but_never_forces(self):
+        path = f"{ROOT}/.claude/worktrees/agent-1"
+        fake = BranchFake({path: "task/z"}, {"task/z": ["MERGED"]})
+        sweep(fake, led=self.LED)
+        self.assertEqual(fake.done, [])
+        sweep(fake, led=self.LED, sweep=True)
+        self.assertEqual(fake.done, [["git", "worktree", "remove", path]])
+        self.assertFalse(any("--force" in c for c in fake.done))
+
+
+class BranchPruneTests(unittest.TestCase):
+    def test_deletes_finished_local_branches_and_remote_ones_only_under_go(self):
+        fake = BranchFake(
+            {f"{LANES}/r5-a1": "task/kept"},
+            {"task/m": ["MERGED"], "task/c": ["CLOSED"], "task/kept": ["OPEN"]},
+            local=["task/m", "task/c", "task/kept"],
+            remote=["task/m"],
+        )
+        report = sweep(fake, go=False, sweep=True)
+        self.assertEqual(fake.done, [])
+        self.assertIn("would delete branch task/m: merged", report)
+        self.assertIn("would delete remote branch origin/task/m: merged", report)
+        sweep(fake, sweep=True)
+        self.assertIn(["git", "branch", "-D", "task/m"], fake.done)
+        self.assertIn(["git", "branch", "-D", "task/c"], fake.done)
+        [push] = [c for c in fake.done if c[:2] == ["git", "push"]]
+        self.assertIn("--force-with-lease=refs/heads/task/m:t-task/m", push)
+        self.assertIn(":refs/heads/task/m", push)
+        self.assertNotIn(":refs/heads/task/c", push)  # not on origin
+
+    def test_never_touches_main_open_pr_checked_out_pr_less_or_newer_branches(self):
+        fake = BranchFake(
+            {f"{LANES}/r5-a1": "task/out"},
+            {"main": ["MERGED"], "task/o": ["MERGED", "OPEN"], "task/out": ["MERGED"],
+             "task/new": ["MERGED"]},
+            local=["task/o", "task/out", "task/none", "task/new"],
+            remote=["task/o", "task/none", "task/new"],
+            dirty=[f"{LANES}/r5-a1"],
+            ahead=["task/new"],
+        )
+        report = sweep(fake, sweep=True)
+        self.assertEqual(fake.done, [])
+        self.assertIn("hold branch task/new: newer-than-pr", report)
+        self.assertIn("hold branch task/out: checked-out", report)
+
+    def test_branches_of_an_open_rounds_unresolved_lane_are_kept(self):
+        fake = BranchFake({}, {"task/c": ["CLOSED"]}, local=["task/c"])
+        report = sweep(fake, sweep=True, led=ledger(R7=("open", {"A1": ("task/c", "assigned")})))
+        self.assertEqual(fake.done, [])
+        self.assertIn("hold branch task/c: lane R7/A1 assigned", report)
+
+
+class ReviewFixTests(unittest.TestCase):
+    def test_fetch_prune_runs_before_remote_branches_are_listed(self):
+        fake = BranchFake({}, {"task/m": ["MERGED"]}, remote=["task/m"])
+        sweep(fake, go=False, sweep=True)
+        self.assertEqual(fake.order, ["refs/heads", "fetch", "refs/remotes/origin"])
+
+    def test_a_stale_tracking_ref_counts_as_deleted_and_is_dropped(self):
+        fake = BranchFake({}, {"task/s": ["MERGED"]}, remote=["task/s"])
+        fake.stale = {"task/s"}
+        report = sweep(fake, sweep=True)
+        self.assertIn("deleted remote branch origin/task/s: merged (already gone)", report)
+        self.assertIn(["git", "update-ref", "-d", "refs/remotes/origin/task/s"], fake.done)
+
+    def test_a_lease_rejection_is_held_not_deleted(self):
+        fake = BranchFake({}, {"task/m": ["MERGED"]}, remote=["task/m"])
+        fake.leased = {"task/m"}
+        report = sweep(fake, sweep=True)
+        self.assertTrue(any(l.startswith("hold remote branch origin/task/m: delete failed")
+                            for l in report), report)
+
+    def test_remote_deletes_are_batched(self):
+        names = [f"task/b{i}" for i in range(120)]
+        fake = BranchFake({}, {n: ["MERGED"] for n in names}, remote=names)
+        sweep(fake, sweep=True)
+        pushes = [c for c in fake.done if c[:2] == ["git", "push"]]
+        self.assertEqual(len(pushes), 3)
+
+    def test_skips_the_base_of_an_open_pr(self):
+        fake = BranchFake({}, {"task/base": ["MERGED"], "task/top": ["OPEN"]}, local=["task/base"])
+        fake.bases = {"task/top": "task/base"}
+        report = sweep(fake, sweep=True)
+        self.assertNotIn(["git", "branch", "-D", "task/base"], fake.done)
+        self.assertIn("hold branch task/base: base-of-open-pr", report)
+
+    def test_a_closed_rounds_tab_stays_while_its_held_worktree_exists(self):
+        path = f"{LANES}/r5-a1"
+        meta, pane = tab("t1", "live-repo-r5-a1", path)
+        other, po = tab("t2", "live-repo-r5-a2", str(ROOT))
+        led = ledger(R5=("closed", {"A1": ("task/a", "merged"), "A2": ("task/b", "merged")}))
+        fake = Fake({path: "task/a", f"{LANES}/r5-a2": "task/b"}, {"task/a": ["MERGED"]},
+                    tabs=[meta, other], panes=[pane, po], dirty=[path], unpushed=[f"{LANES}/r5-a2"])
+        report = sweep(fake, led=led)
+        self.assertEqual(fake.done, [])
+        self.assertIn("hold tab t1 live-repo-r5-a1: worktree-kept", report)
+        self.assertIn("hold tab t2 live-repo-r5-a2: worktree-kept", report)
+
+
+class PreflightTests(unittest.TestCase):
+    def test_a_tree_busy_with_another_process_does_not_block(self):
+        fake = BranchFake({f"{LANES}/r5-a1": "task/a"}, {"task/a": ["MERGED"]},
+                          busy=[f"{LANES}/r5-a1/sub"])
+        led = ledger(R5=("closed", {"A1": ("task/a", "merged")}))
+        problems = lc.preflight(
+            root=ROOT, prefix="live-repo-", handoff="", run=fake.run, busy=fake.busy, ledger=led
+        )
+        self.assertEqual(problems, [])
+
+    def test_what_failed_last_go_run_does_not_block(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = Path(tmp) / "failed.json"
+            fake = BranchFake({f"{LANES}/r5-a1": "task/a"}, {"task/a": ["MERGED"]})
+            fake.remove_out = (1, "fatal: cannot remove")
+            led = ledger(R5=("closed", {"A1": ("task/a", "merged")}))
+            sweep(fake, led=led, state=state)
+            problems = lc.preflight(root=ROOT, prefix="live-repo-", handoff="", run=fake.run,
+                                    busy=fake.busy, ledger=led, state=state)
+            self.assertEqual(problems, [])
+            fake.remove_out = None
+            sweep(fake, led=led, state=state)  # a later run that succeeds clears the record
+            self.assertEqual(json.loads(state.read_text()), [])
+
+    def test_refuses_while_a_closed_round_has_removable_leftovers(self):
+        fake = BranchFake({f"{LANES}/r5-a1": "task/a"}, {"task/a": ["MERGED"]}, local=["task/a"])
+        led = ledger(R5=("closed", {"A1": ("task/a", "merged")}))
+        problems = lc.preflight(
+            root=ROOT, prefix="live-repo-", handoff="", run=fake.run, busy=fake.busy, ledger=led
+        )
+        self.assertTrue(any("R5" in p and "would remove" in p for p in problems), problems)
+        self.assertEqual(fake.done, [])
+
+    def test_passes_when_only_held_or_unmapped_items_remain(self):
+        fake = BranchFake(
+            {f"{LANES}/r5-a1": "task/a", f"{LANES}/misc": "task/x"},
+            {"task/a": ["MERGED"], "task/x": ["MERGED"]},
+            dirty=[f"{LANES}/r5-a1"],
+        )
+        led = ledger(R5=("closed", {"A1": ("task/a", "merged")}))
+        problems = lc.preflight(
+            root=ROOT, prefix="live-repo-", handoff="", run=fake.run, busy=fake.busy, ledger=led
+        )
+        self.assertEqual(problems, [])
+
+    def test_an_open_rounds_resolved_lane_tab_does_not_block(self):
+        meta, pane = tab("t1", "live-repo-r7-a1", str(ROOT))
+        fake = BranchFake({}, {}, tabs=[meta], panes=[pane])
+        led = ledger(R7=("open", {"A1": ("task/a", "merged")}))
+        problems = lc.preflight(
+            root=ROOT, prefix="live-repo-", handoff="", run=fake.run, busy=fake.busy, ledger=led
+        )
+        self.assertEqual(problems, [])
+
+    def test_fails_closed_when_herdr_or_gh_cannot_answer(self):
+        fake = BranchFake({}, {})
+        real = fake.run
+        fake.run = lambda cmd, timeout=None: (1, "down") if cmd[0] == "herdr" else real(cmd, timeout)
+        problems = lc.preflight(
+            root=ROOT, prefix="live-repo-", handoff="", run=fake.run, busy=fake.busy, ledger={}
+        )
+        self.assertTrue(any("herdr" in p for p in problems), problems)
+
+
+class LedgerLoadTests(unittest.TestCase):
+    def test_reads_round_records_and_skips_other_dirs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runs = Path(tmp) / ".agent-runs"
+            (runs / "R3").mkdir(parents=True)
+            (runs / "R3" / "round.json").write_text(json.dumps({"id": "R3", "state": "closed",
+                                                                "assignments": {}}))
+            (runs / "next").mkdir()
+            (runs / "R4").mkdir()
+            (runs / "R4" / "round.json").write_text("{broken")
+            self.assertEqual(sorted(lc.load_ledger(Path(tmp))), ["R3"])
+
+    def test_summary_counts_actions_and_reasons(self):
+        lines = ["hold a (b): dirty", "hold c (d) R5/A1: dirty", "would remove e (f)",
+                 "hold tab t1 x: foreign"]
+        self.assertEqual(
+            lc.summary(lines),
+            ["summary: hold dirty=2", "summary: hold tab foreign=1", "summary: would remove=1"],
+        )

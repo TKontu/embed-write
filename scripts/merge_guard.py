@@ -6,7 +6,9 @@ Usage: python3 scripts/merge_guard.py PR --head FULL_REVIEWED_SHA
 The only merge path for planners: raw `gh pr merge` stays denied in .claude/settings.json.
 It merges only when the PR is open, not a draft, mergeable, targets the default branch, still
 has exactly the reviewed head, and touches no operator-owned path. GitHub re-checks the head
-at merge time (--match-head-commit), and the merge is confirmed by re-reading the PR.
+at merge time (--match-head-commit), and the merge is confirmed by re-reading the PR. The head
+branch is left in place: `gh pr merge --delete-branch` would remove a lane worktree that has it
+checked out and force-delete its branches, bypassing every hold; lane_cleanup.py --sweep prunes it.
 Review and the gate are the planner's /review-round and /merge-round duties; this script cannot
 see them, nor whether a PR decides an [H] item.
 """

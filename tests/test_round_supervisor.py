@@ -639,7 +639,10 @@ class RepoNameTests(unittest.TestCase):
 
     def test_round_prompt_names_lanes_with_the_repo_prefix(self):
         prompt = rs.ROUND_PROMPT.format(round=1, script="s", lane_prefix=rs.LANE_PREFIX)
-        self.assertIn(rs.LANE_PREFIX + "<lane>", prompt)
+        self.assertIn(rs.LANE_PREFIX + "r<N>-a<M>", prompt)
+        self.assertIn('--cwd <lane worktree> --label', prompt)
+        self.assertIn('claude -p <flags> -- "', prompt)
+        self.assertIn("lane_cleanup.py --go --sweep", prompt)
 
     def test_never_adopts_another_checkouts_planner(self):
         tmp = tempfile.TemporaryDirectory()
