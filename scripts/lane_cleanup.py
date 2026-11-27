@@ -13,6 +13,9 @@ The one tolerated untracked entry is a `node_modules` symlink at any depth (e.g.
 it does not make a tree `dirty`, and under --go the link itself (never its target) is unlinked right
 before `git worktree remove`. A real node_modules directory, any other untracked file or any
 tracked change still holds the tree as `dirty`; a dry run unlinks nothing.
+A directory at a lane path that is not a registered worktree and holds none (e.g. left by a remove
+killed at its timeout) is reported as `orphan <path>: unregistered directory, not removed`; it is
+never deleted or modified, in a dry run or under --go.
 
 Tabs: a tab labelled <lane prefix><lane> is closed with `herdr tab close <id>` only when its
 worktree is gone (or was removed in this run), every pane is idle, done or unknown, it is not carried, and
@@ -119,6 +122,34 @@ def _is_lane_path(path: str, root: Path) -> bool:
         return True
     rel = path.removeprefix(str(root) + "/worktrees/")
     return rel != path and rel not in ("", ".", "..") and "/" not in rel
+
+
+LANE_NAME = re.compile(r"r\d+-[a-z]+\d*")  # round lane names such as r221-a1; never -lanes, -results
+
+
+def orphan_dirs(root: Path, trees: Iterable[str]) -> list[str]:
+    """Directories at lane paths that are not registered worktrees and hold none (report only).
+
+    Scans one listing each of root.parent (<root>-... siblings) and root/worktrees. A container such
+    as <root>-lanes that holds a registered worktree is not an orphan. Nothing is ever modified.
+    """
+    registered = set(trees)
+    found = []
+    for base in (root.parent, root / "worktrees"):
+        try:
+            entries = sorted(base.iterdir())
+        except OSError:
+            continue
+        for entry in entries:
+            path = str(entry)
+            if not _is_lane_path(path, root) or entry.is_symlink() or not entry.is_dir():
+                continue
+            if base == root.parent and not LANE_NAME.fullmatch(path.removeprefix(str(root) + "-")):
+                continue  # containers and other siblings are not lanes
+            if path in registered or any(t.startswith(path + "/") for t in registered):
+                continue
+            found.append(path)
+    return found
 
 
 def _inside(path: str, cwds: Iterable[str]) -> bool:
@@ -257,6 +288,8 @@ def cleanup(
                 removed = True
     if removed:
         run(["git", "worktree", "prune"])
+    for path in orphan_dirs(root, trees):  # trees as listed before any removal this run
+        report.append(f"orphan {path}: unregistered directory, not removed")
     return report
 
 
