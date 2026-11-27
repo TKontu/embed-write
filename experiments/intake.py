@@ -6,6 +6,9 @@ duplicated logic):
 1. ``ingest``: CO-04 ``experiments.ingest.convert_dir`` SRC -> OUT/converted (+ ingest_report.json)
 2. ``conversion_quality``: CO-05 ``build_report``/``write_report`` -> OUT/conversion_quality.json
 3. ``corpus_stats``: CO-09 ``build_report``/``write_report`` over OUT/converted -> OUT/corpus_stats.json
+3b. ``boilerplate``: CO-07 ``boilerplate.build_report`` (defaults) over OUT/converted ->
+   OUT/boilerplate.json (private: flag ``text`` is corpus text). The report holds totals only
+   (documents, flags, by_kind, passage_table_capped).
 4. ``metadata``: CO-06 ``validate_file`` (only with --metadata; else skipped)
 5. ``sections``: CO-14 ``section_inference.infer_sections`` for documents with no ATX headings
    (D-015) -> OUT/sections.json (private; line numbers and methods, marked inferred). The report
@@ -69,7 +72,8 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-from experiments import annotate, annotation_sample, conversion_quality, corpus_metadata
+from experiments import annotate, annotation_sample, boilerplate, conversion_quality
+from experiments import corpus_metadata
 from experiments import corpus_stats, ingest, move_discovery, prelabel, section_inference
 from experiments.corpus import iter_documents
 from experiments.splits import split_documents
@@ -77,16 +81,17 @@ from service.genre import load_genre
 
 REPORT_NAME = "intake_report.json"
 CONVERTED = "converted"
-STEPS = ("ingest", "conversion_quality", "corpus_stats", "metadata", "sections",
+STEPS = ("ingest", "conversion_quality", "corpus_stats", "boilerplate", "metadata", "sections",
          "annotation_sample", "prelabel", "discovery")
 DEPENDS = {"conversion_quality": "ingest", "corpus_stats": "ingest",
-           "annotation_sample": "ingest", "prelabel": "annotation_sample",
+           "annotation_sample": "ingest", "boilerplate": "ingest", "prelabel": "annotation_sample",
            "discovery": "corpus_stats", "sections": "corpus_stats"}
 NO_METADATA = "metadata owed by the expert (CO-06)"
 NO_MODEL = "no local model endpoint given"
 NO_DISCOVER = "not requested"
 DISCOVERY_NAME = "move_discovery.json"
 SECTIONS_NAME = "sections.json"
+BOILERPLATE_NAME = "boilerplate.json"
 MODEL_DIR_ENV = "EMBED_WRITE_MODEL_DIR"
 # CO-14 (c): expert section corrections saved by the demo (private, gitignored edit-log/).
 SECTION_CORRECTIONS_ENV = "SECTION_CORRECTIONS_DIR"
@@ -94,7 +99,7 @@ DEFAULT_SECTION_CORRECTIONS = Path(__file__).resolve().parent.parent / "edit-log
 # Files intake itself writes into OUT (besides CONVERTED); a run removes these first so a
 # --force rerun leaves no stale output. Never other files (annotations.jsonl is the expert's).
 OWNED = ("conversion_quality.json", "corpus_stats.json", "manifest.json", "prelabels.jsonl",
-         DISCOVERY_NAME, SECTIONS_NAME, REPORT_NAME)
+         DISCOVERY_NAME, SECTIONS_NAME, BOILERPLATE_NAME, REPORT_NAME)
 
 
 def _code(exc: BaseException) -> str:
@@ -137,6 +142,17 @@ def _stats(converted: Path, out: Path) -> dict:
     return _step("ok", None, str(path), {"documents": report["documents"],
                                          "sections": report["sections"]["count"],
                                          "sentences": sentences})
+
+
+def _boilerplate(converted: Path, out: Path) -> dict:
+    """CO-07: flags (with corpus text) go to private OUT/boilerplate.json; totals only reported."""
+    report = boilerplate.build_report(converted)
+    path = out / BOILERPLATE_NAME
+    boilerplate.write_report(report, path, force=True)
+    t = report["totals"]
+    return _step("ok", None, str(path), {"documents": t["documents"], "flags": t["flags"],
+                                         "by_kind": dict(sorted(t["by_kind"].items())),
+                                         "passage_table_capped": t["passage_table_capped"]})
 
 
 def _metadata(meta: str) -> dict:
@@ -358,6 +374,7 @@ def run(args, model=None) -> tuple[int, dict]:
     attempt("ingest", do_ingest)
     attempt("conversion_quality", _quality, converted, out)
     attempt("corpus_stats", _stats, converted, out)
+    attempt("boilerplate", _boilerplate, converted, out)
     if args.metadata:
         attempt("metadata", _metadata, args.metadata)
     else:
