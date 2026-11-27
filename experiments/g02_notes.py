@@ -21,8 +21,10 @@ are skipped.
 check: it flags every note sharing a word n-gram with its source section and draws a seeded
 expert sample. The verdict belongs to the expert (G-02.2 is [A→H]); this never decides it.
 
-Stdout: a ``next:`` line naming the ``g02_generate`` command with the actual paths (the exemplar
-pool is the placeholder ``POOL_JSONL``: no stage writes one), then the JSON summary line.
+Stdout, only when every selected section has a notes record: a ``pool:`` line naming the
+``experiments.g02_pool`` command (same corpus, genre, split and ``--min-words``; output
+``g02_pool.jsonl`` next to ``--out``) and a ``next:`` line naming the ``g02_generate`` command with
+that pool and the actual paths; always last, the JSON summary line.
 
 ``--sections-out PATH`` also writes the selected original sections as private JSONL
 ``{section_id, report_id, section_type, text}`` (mode 0600; refused if PATH exists), the
@@ -234,18 +236,24 @@ def main(argv=None, *, model=None, genre=None) -> int:
     review = leak_review(sections, records, n=a.ngram, sample_size=a.sample_size, seed=a.seed)
     Path(a.out + '.review.json').write_text(json.dumps(review, sort_keys=True, indent=2) + '\n',
                                             encoding='utf-8')
-    nxt = ['python', '-m', 'experiments.g02_generate', '--notes', a.out, '--pool', 'POOL_JSONL',
-           '--out', os.path.join(os.path.dirname(a.out), 'g02_generations.jsonl')]
-    if a.sections_out:
-        nxt += ['--originals', a.sections_out]
-    nxt += ['--expected-sections', str(len(sections))]
-    if a.model_url:
-        nxt += ['--model-url', a.model_url, '--model-name', a.model_name]
-    print('note: POOL_JSONL is a placeholder; no G-02 stage writes the exemplar pool')
-    print('next: ' + shlex.join(nxt))
+    complete = review['n_records'] == len(sections)
+    if complete:
+        pool_out = os.path.join(os.path.dirname(a.out), 'g02_pool.jsonl')
+        print('pool: ' + shlex.join([
+            'python', '-m', 'experiments.g02_pool', '--corpus', a.corpus, '--genre', a.genre,
+            '--split-seed', str(a.split_seed), '--test-fraction', str(a.test_fraction),
+            '--min-words', str(a.min_words), '--out', pool_out]))
+        nxt = ['python', '-m', 'experiments.g02_generate', '--notes', a.out, '--pool', pool_out,
+               '--out', os.path.join(os.path.dirname(a.out), 'g02_generations.jsonl')]
+        if a.sections_out:
+            nxt += ['--originals', a.sections_out]
+        nxt += ['--expected-sections', str(len(sections))]
+        if a.model_url:
+            nxt += ['--model-url', a.model_url, '--model-name', a.model_name]
+        print('next: ' + shlex.join(nxt))
     print(json.dumps({'selected': len(sections), 'written': len(written),
                       'records': review['n_records'], 'flagged': len(review['flagged'])}))
-    return 0 if review['n_records'] == len(sections) else 1
+    return 0 if complete else 1
 
 
 if __name__ == '__main__':
