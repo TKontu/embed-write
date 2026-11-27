@@ -178,3 +178,74 @@ class ResidualsTest(Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReviewTest(Base):
+    """CO-07 review listing (LLM-built synthetic fixtures)."""
+
+    def report_file(self, report, name="r.json"):
+        import json
+        path = self.root / name
+        path.write_text(json.dumps(report), encoding="utf-8")
+        return path
+
+    def review(self, *argv):
+        out, err = io.StringIO(), io.StringIO()
+        from contextlib import redirect_stdout
+        with redirect_stdout(out), redirect_stderr(err):
+            code = bp.main(["review", *map(str, argv)])
+        return code, out.getvalue(), err.getvalue()
+
+    def sample(self):
+        files = {f"d{i}.md": f"{BODIES[i]}\n\n{DISCLAIMER}\n" for i in range(3)}
+        files["e.md"] = BODIES[0] + "\n"
+        self.write(files)
+        report = bp.build_report(self.corpus, min_docs=3, threshold=0.5)
+        report["flags"].append({"kind": "near_duplicate_docs", "documents": ["z", "y"],
+                                "count": 2, "similarity": 0.9375})
+        return report
+
+    def test_lists_repeated_and_near_duplicate(self):
+        path = self.report_file(self.sample())
+        code, out, err = self.review(path)
+        self.assertEqual(code, 0, err)
+        self.assertIn("flag", out.splitlines()[0].lower())
+        self.assertIn(bp.normalize(DISCLAIMER), out)
+        self.assertRegex(out, r"\[\d\] repeated  count: 3")
+        self.assertIn("near_duplicate_docs", out)
+        self.assertIn("similarity: 0.9375", out)
+        self.assertIn("documents: y, z", out)
+        self.assertIn("documents: d0, d1, d2", out)
+        self.assertNotIn("capped", out)
+        self.assertEqual(self.review(path)[1], out)
+
+    def test_capped_line(self):
+        report = self.sample()
+        report["totals"]["passage_table_capped"] = True
+        code, out, _ = self.review(self.report_file(report))
+        self.assertEqual(code, 0)
+        self.assertIn("passage table capped", out)
+
+    def test_limit_omits(self):
+        report = self.sample()
+        n = len(report["flags"])
+        self.assertGreaterEqual(n, 2)
+        code, out, _ = self.review(self.report_file(report), "--limit", "1")
+        self.assertEqual(code, 0)
+        self.assertIn("[1]", out)
+        self.assertNotIn("[2]", out)
+        self.assertIn(f"{n - 1} more flag(s) omitted", out)
+        with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            bp.main(["review", str(self.report_file(report)), "--limit", "0"])
+
+    def test_bad_input_exit_2(self):
+        bad_json = self.root / "bad.json"
+        bad_json.write_text("{not json", encoding="utf-8")
+        wrong = self.report_file({"flags": "nope"}, "wrong.json")
+        wrong2 = self.report_file({"flags": [{"kind": "repeated"}], "totals": {}}, "w2.json")
+        for path in (self.root / "missing.json", bad_json, wrong, wrong2, self.root):
+            code, out, err = self.review(path)
+            self.assertEqual(code, 2, path)
+            self.assertIn(str(path), err)
+            self.assertNotIn("Traceback", err)
+            self.assertEqual(len(err.strip().splitlines()), 1)

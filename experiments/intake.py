@@ -8,7 +8,9 @@ duplicated logic):
 3. ``corpus_stats``: CO-09 ``build_report``/``write_report`` over OUT/converted -> OUT/corpus_stats.json
 3b. ``boilerplate``: CO-07 ``boilerplate.build_report`` (defaults) over OUT/converted ->
    OUT/boilerplate.json (private: flag ``text`` is corpus text). The report holds totals only
-   (documents, flags, by_kind, passage_table_capped).
+   (documents, flags, by_kind, passage_table_capped). When flags > 0, next_steps adds
+   ``python -m experiments.boilerplate review OUT/boilerplate.json``, which prints the flags to
+   the expert's terminal on request (never into this report or intake's own output).
 4. ``metadata``: CO-06 ``validate_file`` (only with --metadata; else skipped)
 5. ``sections``: CO-14 ``section_inference.infer_sections`` for documents with no ATX headings
    (D-015) -> OUT/sections.json (private; line numbers and methods, marked inferred). The report
@@ -318,6 +320,9 @@ def _next_steps(steps: dict, out: Path, converted: Path, genre_path: str,
         if _converted_key(path, converted) in inferred:  # CO-14: show them as provisional
             cmd += f" --sections {sections}"
         lines.append(cmd)
+    bp = steps["boilerplate"]
+    if bp["status"] == "ok" and bp["counts"]["flags"] > 0:  # CO-07: expert reviews the flags
+        lines.append(f"python -m experiments.boilerplate review {q(str(out / BOILERPLATE_NAME))}")
     return lines
 
 

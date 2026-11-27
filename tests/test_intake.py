@@ -4,6 +4,7 @@ import io
 import os
 import json
 import re
+import shlex
 import shutil
 import tempfile
 import unittest
@@ -148,11 +149,14 @@ class IntakeTest(unittest.TestCase):
     def test_next_steps_name_existing_files(self):
         _, rep, _, _ = self.run_intake()
         cmds = rep["next_steps"]
-        self.assertEqual(len(cmds), 4)
+        self.assertEqual(len(cmds), 5)  # annotate, 3 demos, CO-07 review (demo has flags)
         ann = cmds[0].split()
         for flag in ("--manifest", "--corpus", "--genre"):
             self.assertTrue(Path(ann[ann.index(flag) + 1]).exists(), flag)
-        for cmd in cmds[1:]:
+        review = cmds[-1].split()
+        self.assertEqual(review[:4], ["python", "-m", "experiments.boilerplate", "review"])
+        self.assertTrue(Path(review[4]).is_file())
+        for cmd in cmds[1:-1]:
             self.assertTrue(cmd.startswith("cd editor && npm run demo -- --report "))
             path = Path(cmd.split()[-1])
             self.assertTrue((path if path.is_absolute() else REPO / "editor" / path).is_file())
@@ -567,6 +571,31 @@ class IntakeTest(unittest.TestCase):
             self.assertNotIn("marmalade", blob.lower())
         self.assertEqual(list(intake.STEPS).index("boilerplate"),
                          list(intake.STEPS).index("corpus_stats") + 1)
+
+    def test_next_steps_review_line_iff_flags(self):
+        """CO-07: intake prints the review command only when the step found flags."""
+        sentinel = "Quillfrond sentinel marmalade disclaimer applies to every report"
+        for i in range(3):
+            (self.src / f"bp{i}.md").write_text(
+                f"# Part {i}\n\nUnique body number {i} about topic {i * 7}.\n\n{sentinel}.\n",
+                encoding="utf-8")
+        _, rep, text, printed = self.run_intake()
+        review = ("python -m experiments.boilerplate review "
+                  + shlex.quote(str(self.out / intake.BOILERPLATE_NAME)))
+        self.assertGreater(rep["steps"]["boilerplate"]["counts"]["flags"], 0)
+        self.assertIn(review, rep["next_steps"])
+        for blob in (text, printed):
+            self.assertNotIn("quillfrond", blob.lower())
+        empty = {"params": {}, "flags": [], "totals": {
+            "documents": 0, "distinct_passages": 0, "flags": 0,
+            "by_kind": {"near_duplicate_docs": 0, "repeated": 0},
+            "passage_table_capped": False}}
+        with mock.patch("experiments.boilerplate.build_report", return_value=empty):
+            _, rep, _, _ = self.run_intake()
+        self.assertFalse(any("experiments.boilerplate review" in c for c in rep["next_steps"]))
+        with mock.patch("experiments.boilerplate.build_report", side_effect=RuntimeError("x")):
+            _, rep, _, _ = self.run_intake()
+        self.assertFalse(any("experiments.boilerplate review" in c for c in rep["next_steps"]))
 
     def test_boilerplate_blocked_by_ingest(self):
         for p in self.src.iterdir():
