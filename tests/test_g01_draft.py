@@ -270,6 +270,31 @@ class DraftTest(DraftFixture):
         self.assertIn('preregistration', err.lower())
         self.assertFalse(os.path.exists(os.path.dirname(self.out)))
 
+    def test_default_preregistration_root_exit_2(self):
+        # R231/A3 review: omitting --preregistration-root crashed with a PosixPath TypeError.
+        empty = Path(self.tmp.name, 'empty-prereg')
+        empty.mkdir()
+        argv = self.argv()
+        i = argv.index('--preregistration-root')
+        del argv[i:i + 2]
+        with unittest.mock.patch.object(g01_draft, 'DEFAULT_ROOT', empty):
+            code, err = self.main(argv)
+        self.assertEqual(code, 2, err)
+        self.assertIn('preregistration', err)
+        self.assertNotIn('Traceback', err)
+
+    def test_no_shared_sentence_ids_exit_2_with_hint(self):
+        # R231/A3 review: an empty expert/LLM pairing escaped as a raw ValueError traceback.
+        with unittest.mock.patch.object(
+                g01_draft.runner, 'run_gate',
+                side_effect=ValueError('expert and llm share no sentence ids')):
+            code, err = self.main(self.argv())
+        self.assertEqual(code, 2, err)
+        self.assertIn('error: expert and llm share no sentence ids', err)
+        self.assertIn('--include-non-blind', err)
+        self.assertNotIn('Traceback', err)
+        self.assertFalse(os.path.exists(self.out + '.json'))
+
     def test_unconfirmed_preregistration_exit_2(self):
         Path(self.prereg, 'g01.json').write_text(
             json.dumps({**fixture_record(), 'gate': 'g01', 'confirmed_by': ''}),

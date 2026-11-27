@@ -92,7 +92,7 @@ class IntakeTest(unittest.TestCase):
         n = rep["steps"]["annotation_sample"]["counts"]["n_drawn"]
         self.assertEqual(pre["counts"]["records"], n)
         self.assertEqual(sum(pre["counts"]["by_status"].values()), n)
-        self.assertIn("--prelabels", rep["next_steps"][0])
+        self.assertNotIn("--prelabels", rep["next_steps"][0])  # blind: g01_inputs excludes assisted
         self.assert_private(text, printed)
 
     def test_rerun_is_byte_identical(self):
@@ -149,17 +149,44 @@ class IntakeTest(unittest.TestCase):
     def test_next_steps_name_existing_files(self):
         _, rep, _, _ = self.run_intake()
         cmds = rep["next_steps"]
-        self.assertEqual(len(cmds), 5)  # annotate, 3 demos, CO-07 review (demo has flags)
+        self.assertEqual(len(cmds), 6)  # annotate, repeat, 3 demos, CO-07 review (demo has flags)
         ann = cmds[0].split()
         for flag in ("--manifest", "--corpus", "--genre"):
             self.assertTrue(Path(ann[ann.index(flag) + 1]).exists(), flag)
         review = cmds[-1].split()
         self.assertEqual(review[:4], ["python", "-m", "experiments.boilerplate", "review"])
         self.assertTrue(Path(review[4]).is_file())
-        for cmd in cmds[1:-1]:
+        for cmd in cmds[2:-1]:
             self.assertTrue(cmd.startswith("cd editor && npm run demo -- --report "))
             path = Path(cmd.split()[-1])
             self.assertTrue((path if path.is_absolute() else REPO / "editor" / path).is_file())
+
+    def test_next_steps_name_repeat_pass_and_g01_draft(self):
+        """R231/A3: after annotating, the expert needs the repeat pass, then the g01_draft line."""
+        _, rep, _, _ = self.run_intake()
+        cmds = rep["next_steps"]
+        first, repeat = shlex.split(cmds[0]), shlex.split(cmds[1])
+        self.assertEqual(repeat[:3], ["python", "-m", "experiments.annotate"])
+        self.assertEqual(repeat[-2:], ["--pass", "repeat"])
+        self.assertEqual(repeat[:-2], first)
+        self.assertFalse(any("g01_draft" in c for c in cmds))  # no pre-labels: no LLM side
+
+        _, rep, _, _ = self.run_intake(model=FakeModel())
+        cmds = rep["next_steps"]
+        first, repeat, draft = (shlex.split(c) for c in cmds[:3])
+        self.assertNotIn("--prelabels", first)  # blind: pre-label labels are excluded by G-01
+        self.assertNotIn("--prelabels", repeat)  # the repeat pass is shown no LLM suggestion
+        self.assertEqual(repeat[-2:], ["--pass", "repeat"])
+        self.assertEqual(draft[:3], ["python", "-m", "experiments.g01_draft"])
+        opt = dict(zip(draft[3::2], draft[4::2]))
+        self.assertEqual(opt["--manifest"], first[first.index("--manifest") + 1])
+        self.assertEqual(opt["--genre"], first[first.index("--genre") + 1])
+        self.assertEqual(opt["--store"], first[first.index("--store") + 1])
+        self.assertEqual(opt["--prelabel"], str(self.out / "prelabels.jsonl"))
+        self.assertEqual(opt["--annotator"], "EXPERT")
+        self.assertEqual(opt["--model-id"], "fake")
+        self.assertEqual(opt["--seed"], "0")
+        self.assertEqual(opt["--out"], str(self.out / "g01-draft"))
 
     def test_privacy_check_detects_a_leak(self):
         with self.assertRaises(AssertionError):
