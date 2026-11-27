@@ -31,7 +31,8 @@ duplicated logic):
    section type, sentences sampled/seen, whether the embedder is development-only).
 
 It writes OUT/intake_report.json: per step ``status`` (ok/failed/skipped), ``reason``, ``output``
-and counts only, then ``next_steps`` (exact expert command lines built from the actual paths).
+and counts only, then ``next_steps`` (exact expert command lines built from the actual paths:
+annotate first pass, annotate ``--pass repeat``, and with pre-labels the ``g01_draft`` line).
 A failed step makes its dependents ``skipped`` with reason ``blocked by <step>``.
 
 Privacy (acceptance-critical): the report and everything printed hold file names, codes and
@@ -303,16 +304,23 @@ def _editor_path(path: str) -> str:
 
 
 def _next_steps(steps: dict, out: Path, converted: Path, genre_path: str,
-                outputs: list[str]) -> list[str]:
+                outputs: list[str], model_id: str | None = None) -> list[str]:
     q = shlex.quote
     lines = []
     if steps["annotation_sample"]["status"] == "ok":
-        cmd = (f"python -m experiments.annotate --manifest {q(str(out / 'manifest.json'))} "
+        manifest, store = q(str(out / "manifest.json")), q(str(out / "annotations.jsonl"))
+        cmd = (f"python -m experiments.annotate --manifest {manifest} "
                f"--corpus {q(str(converted))} --genre {q(genre_path)} "
-               f"--store {q(str(out / 'annotations.jsonl'))} --annotator EXPERT")
-        if steps["prelabel"]["status"] == "ok":
-            cmd += f" --prelabels {q(str(out / 'prelabels.jsonl'))}"
-        lines.append(cmd)
+               f"--store {store} --annotator EXPERT")
+        prelabels = q(str(out / "prelabels.jsonl"))
+        pre_ok = steps["prelabel"]["status"] == "ok"
+        lines.append(cmd + (f" --prelabels {prelabels}" if pre_ok else ""))
+        lines.append(cmd + " --pass repeat")  # AN-04, never shown a pre-label
+        if pre_ok:  # G-01.6 agent half over the labels just written
+            lines.append(f"python -m experiments.g01_draft --store {store} "
+                         f"--genre {q(genre_path)} --manifest {manifest} --prelabel {prelabels} "
+                         f"--annotator EXPERT --model-id {q(str(model_id))} --seed 0 "
+                         f"--out {q(str(out / 'g01-draft'))}")
     inferred = _inferred_documents(steps, out)
     sections = q(_editor_path(str(out / SECTIONS_NAME)))
     for path in outputs:
@@ -387,9 +395,12 @@ def run(args, model=None) -> tuple[int, dict]:
     attempt("sections", _sections, converted, out)
     attempt("annotation_sample", _sample, converted, out, genre, args,
             steps["sections"]["status"] == "ok")
+    model_id = None
     if model is not None or args.model_url:
         def do_prelabel():
+            nonlocal model_id
             m = model or prelabel.local_model(args.model_url, model=args.model_name)
+            model_id = m.model_id
             return _prelabel(converted, out, genre, m)
         attempt("prelabel", do_prelabel)
     else:
@@ -403,7 +414,8 @@ def run(args, model=None) -> tuple[int, dict]:
         steps["discovery"] = _step("skipped", NO_DISCOVER)
     report = {"schema_version": 1, "source": args.src, "out": args.out,
               "steps": {name: steps[name] for name in STEPS},
-              "next_steps": _next_steps(steps, out, converted, args.genre, outputs)}
+              "next_steps": _next_steps(steps, out, converted, args.genre, outputs,
+                                            model_id)}
     (out / REPORT_NAME).write_text(json.dumps(report, indent=2, sort_keys=True) + "\n",
                                    encoding="utf-8")
     code = 1 if any(s["status"] == "failed" for s in steps.values()) else 0
