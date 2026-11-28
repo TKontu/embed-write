@@ -178,6 +178,7 @@ Needs no editor. Can run before the classifier exists by using the LLM as critic
 ## G-09 — Overlay legibility
 
 - [ ] **G-09.1** `[A]` Colour-blind simulation on the legend — check: minimum pairwise colour difference above threshold in all three simulations
+  - partial (R240/A1): `python -m experiments.legend_cvd check GENRE_JSON [--min-delta-e X] [--json OUT]` (stdlib; Machado 2009 severity 1.0 protan/deutan/tritan in linear RGB, CIEDE2000) reports per-simulation minimum pairwise difference over moves + other, pairs below threshold; exit 0/1/2. Default 10.0 is PROPOSED, expert confirms (G-09 prereg [H]). seen: tests/test_legend_cvd.py 7 OK; demo genre (synthetic placeholder colours) min normal 21.51, protan 11.56, deutan 7.65 (gap/method), tritan 9.82 (context/method) -> exit 1. Residuals: no expert-run-sheet line (no MV-04 colour step there yet); threshold and MV-04 colours open.
 - [ ] **G-09.2** `[H]` Legend recall after one session
 - [ ] **G-09.3** `[H]` Reading comparison: tinted prose vs plain vs margin-only
 - [ ] **G-09.4** `[H]` Can the expert tell provisional from confirmed without reading the inspector?
