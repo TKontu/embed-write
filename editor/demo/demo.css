@@ -263,3 +263,31 @@ body {
 .provisional-section.section-removed { opacity: 0.45; text-decoration: line-through; }
 .provisional-section.expert-section { border-top: 2px solid #2d5a2d; color: #2d5a2d; font-style: normal; }
 .section-controls input { width: 5em; }
+
+/* FM-01: in-page link dialog for Mod-k (no window.prompt). */
+.link-dialog {
+  position: fixed;
+  top: 4rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  padding: 0.75rem 1rem;
+  background: Canvas;
+  border: 1px solid #8888;
+  border-radius: 6px;
+  box-shadow: 0 4px 16px #0004;
+}
+
+.link-dialog[hidden] {
+  display: none;
+}
+
+.link-dialog p {
+  margin: 0 0 0.5rem;
+}
+
+.link-dialog input {
+  font: inherit;
+  width: 22rem;
+  max-width: 70vw;
+}
