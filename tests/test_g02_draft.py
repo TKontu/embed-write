@@ -95,6 +95,15 @@ class G02DraftTest(unittest.TestCase):
         self.assertIn('INCOMPLETE run', md)
         self.assertIn('0 of 0 session items', md)
         self.assertIn('no session items', md)
+        warns = [l for l in err.splitlines() if l.startswith('warning:')]
+        self.assertEqual(len(warns), 1, err)
+        self.assertIn(self.session, warns[0])
+        self.assertIn('empty', warns[0])
+
+    def test_non_empty_session_no_warning(self):
+        code, _, err = self.main()
+        self.assertEqual(code, 0, err)
+        self.assertNotIn('warning:', err)
 
     def test_contradiction_exit_2_nothing_written(self):
         lines = Path(self.choices).read_text().splitlines(keepends=True)

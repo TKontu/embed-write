@@ -115,6 +115,10 @@ class CliTest(unittest.TestCase):
         code, out, err = self.run_cli('--min-words', '1000')
         self.assertEqual(code, 2)
         self.assertIn('empty', err.lower())
+        errs = [l for l in err.splitlines() if l.startswith('error:')]
+        self.assertEqual(len(errs), 1, err)
+        self.assertIn('no training-split section', errs[0])
+        self.assertEqual(out, '')
         self.assertFalse(self.out.exists())
 
 

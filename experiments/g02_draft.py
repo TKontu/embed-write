@@ -143,12 +143,15 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     try:
         output_paths(a.out)
-        draft(a.session, a.choices, seed=a.seed, out_path=a.out, n_resamples=a.n_resamples,
+        run = draft(a.session, a.choices, seed=a.seed, out_path=a.out, n_resamples=a.n_resamples,
               text_model=a.text_model, judge_is_expert=a.judge_is_expert,
               preregistration_root=a.preregistration_root)
     except (DraftError, OSError, ValueError, KeyError) as e:
         print(f'error: {e}', file=sys.stderr)
         return 2
+    if not run['result']['completeness']['session_items']:
+        print(f'warning: session {a.session} is empty (no session items); draft marked '
+              'INCOMPLETE run', file=sys.stderr)
     print(f'draft written: {a.out}.json, {a.out}.md (verdict owed to the expert)')
     return 0
 
