@@ -36,9 +36,12 @@ real module and only flags it accepts.
   expert self-agreement κ ≥ 0.7, `other` ≤ 15 %; G-02 see `docs/todo-01-experiments.md` G-02.
 - Command (once per gate, expert only; refuses to overwrite an existing record):
   `python -m experiments.preregistration confirm g01 --threshold "<THRESHOLD>" --metric "<METRIC>" --confirmed-by "<PRIVATE:EXPERT_NAME>"`
-  then the same with `g02`. It writes `experiments/preregistration/g01.json` / `g02.json` with the
+  then the same with `g02`. For `g02` the `--threshold` must be a bare rate in [0, 1] such as
+  `0.70` (not `70 %` or prose): `g02_draft` (2.6) reads it as the A_vs_C pass line and exits 2 on
+  anything else, after judging is done, and the record cannot then be changed. It writes `experiments/preregistration/g01.json` / `g02.json` with the
   fields in `experiments/preregistration/README.md`; `confirmed_at` is the current UTC time.
-- Worked: the draft steps (1.5, 2.6) run instead of exiting 2 with "preregistration not confirmed".
+- Worked: the draft steps (1.5, 2.6) run instead of exiting 2 with "preregistration not confirmed";
+  2.6 still exits 2 if the g02 threshold is not a bare rate in [0, 1].
 
 ### 0.3 Choose the legend colours (MV-04, expert)
 
@@ -165,7 +168,7 @@ intake run (intake defaults: 0 and 0.5).
 
 ### 2.7 G-02 verdict (G-02.5, expert)
 
-- Decides: pass or fail. The DRAFT's hint uses the proposed 0.70, not the confirmed threshold;
+- Decides: pass or fail. The DRAFT's hint uses the confirmed g02 preregistration threshold;
   the draft says "Verdict: owed to the expert (G-02.5 [H])". The expert records the verdict; only
   then does `experiments/results/G-02.md` get written.
 
@@ -176,4 +179,4 @@ intake run (intake defaults: 0 and 0.5).
   (`pool:`/`next:`, `next:`, `serve:`, `after judging:`).
 - `g01_draft` line from intake has `--seed 0` and `--annotator EXPERT` fixed; the printed
   `g02_draft` line has `--seed 0` and `--text-model` from the generation run.
-- The G-02 hint cannot read the confirmed threshold; the repeat-pass week gap is not enforced.
+- The G-02 repeat-pass week gap is not enforced.

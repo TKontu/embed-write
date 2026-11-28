@@ -4,8 +4,9 @@
 text_model=None, judge_is_expert=False, preregistration_root=DEFAULT_ROOT)`` runs
 ``experiments.gates.g02.run`` only through ``experiments.runner.run_gate`` (confirmed ``g02``
 preregistration required) and writes ``<out>.json`` (``runner.serialize``) and a DRAFT
-``<out>.md``: Basis line, the three comparison rows with intervals and n, self-consistency,
-completeness counts, the A_vs_C ``verdict_hint`` (a hint, never a status) and
+``<out>.md``: Basis line (thresholds source "preregistration"), the three comparison rows with intervals and n, self-consistency,
+completeness counts, the A_vs_C ``verdict_hint`` against the confirmed record's ``threshold``
+(numeric or numeric text in [0, 1], else DraftError; a hint, never a status) and
 "Verdict: owed to the expert (G-02.5 [H])". The person choosing is called "judge" unless
 ``judge_is_expert``. No section or reason text is written (non-empty reason count only).
 
@@ -21,12 +22,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 
 from experiments import runner
 from experiments.g01_draft import DraftError, output_paths, write_pair
 from experiments.gates import g02
-from experiments.preregistration import DEFAULT_ROOT, PreregistrationError
+from experiments.preregistration import DEFAULT_ROOT, PreregistrationError, require_confirmed
 
 _ROWS = (("A_vs_C", "C preferred over A (headline)"), ("A_vs_B", "B preferred over A"),
          ("C_vs_original", "C preferred over the original"))
@@ -77,6 +79,20 @@ def render(run, *, text_model=None, judge_is_expert=False) -> str:
     return '\n'.join(lines)
 
 
+def _record_threshold(record) -> float:
+    """The confirmed record's ``threshold`` as a rate in [0, 1] (confirm stores it as text)."""
+    raw = record.get('threshold')
+    try:
+        if isinstance(raw, bool) or not isinstance(raw, (int, float, str)):
+            raise ValueError
+        value = float(raw)
+    except ValueError:
+        value = math.nan
+    if not math.isfinite(value) or not 0.0 <= value <= 1.0:
+        raise DraftError(f'g02 preregistration threshold {raw!r} is not a number in [0, 1]')
+    return value
+
+
 def draft(session_path, choices_path, *, seed, out_path, n_resamples=None, text_model=None,
           judge_is_expert=False, preregistration_root=DEFAULT_ROOT) -> dict:
     json_path, md_path = output_paths(out_path)
@@ -84,8 +100,13 @@ def draft(session_path, choices_path, *, seed, out_path, n_resamples=None, text_
         session = json.load(fh)
     if not isinstance(session, list) or not all(isinstance(d, dict) for d in session):
         raise DraftError('session file must be a JSON list of objects')
+    try:
+        threshold = _record_threshold(require_confirmed('g02', root=preregistration_root))
+    except PreregistrationError as e:
+        raise DraftError(f'g02 preregistration not confirmed: {e}') from e
     with open(choices_path, encoding='utf-8') as choices:
-        cfg = {'session': session, 'choices': choices}
+        cfg = {'session': session, 'choices': choices, 'thresholds': {'c_over_a': threshold},
+               'thresholds_source': 'preregistration'}
         if n_resamples is not None:
             cfg['n_resamples'] = n_resamples
         if text_model:
@@ -97,6 +118,8 @@ def draft(session_path, choices_path, *, seed, out_path, n_resamples=None, text_
             raise DraftError(f'g02 preregistration not confirmed: {e}') from e
         except g02.G02ContradictionError as e:
             raise DraftError(f'{e}; counts {json.dumps(e.completeness, sort_keys=True)}') from e
+    if _record_threshold(run['manifest']['preregistration']) != threshold:
+        raise DraftError('g02 preregistration threshold changed during the run')
     md = render(run, text_model=text_model, judge_is_expert=judge_is_expert)
     try:
         json_path.parent.mkdir(parents=True, exist_ok=True)

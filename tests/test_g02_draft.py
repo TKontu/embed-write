@@ -20,7 +20,8 @@ class G02DraftTest(unittest.TestCase):
         self.prereg = os.path.join(d, 'prereg')
         os.mkdir(self.prereg)
         Path(self.prereg, 'g02.json').write_text(
-            json.dumps({**fixture_record(), 'gate': 'g02'}), encoding='utf-8')
+            json.dumps({**fixture_record(), 'gate': 'g02', 'threshold': '0.70'}),
+            encoding='utf-8')
         s, lines = fixture()
         s[0]['left'] = 'SECRETSECTIONTEXT'
         lines[2] = lines[2].replace('"why"', '"SECRETREASON"')
@@ -57,7 +58,7 @@ class G02DraftTest(unittest.TestCase):
         self.assertIn('hint', md.lower())
         self.assertIn('consistency', md.lower())
         self.assertIn('non-empty reasons: 1', md)
-        self.assertIn('proposed', md)
+        self.assertIn('thresholds preregistration: {"c_over_a": 0.7}', md)
         for text in (md, out, Path(self.out + '.json').read_text()):
             self.assertNotIn('SECRETSECTIONTEXT', text)
             self.assertNotIn('SECRETREASON', text)
@@ -118,6 +119,38 @@ class G02DraftTest(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn('experiments/results', err)
         self.assertFalse(Path(stem + '.json').exists())
+
+    def _prereg_threshold(self, value):
+        Path(self.prereg, 'g02.json').write_text(
+            json.dumps({**fixture_record(), 'gate': 'g02', 'threshold': value}),
+            encoding='utf-8')
+
+    def test_hint_uses_confirmed_record_threshold(self):
+        # observed A_vs_C rate is 2.5/3 ~ 0.833; move the record threshold across it
+        for value, hint in (('0.8', 'meets'), ('0.9', 'misses'), ('0.70', 'meets'), ('0.85', 'misses')):
+            with self.subTest(value=value):
+                self._prereg_threshold(value)
+                code, _, err = self.main()
+                self.assertEqual(code, 0, err)
+                run = json.loads(Path(self.out + '.json').read_text(encoding='utf-8'))
+                res = run['result']
+                self.assertEqual(res['thresholds_source'], 'preregistration')
+                self.assertEqual(res['thresholds'], {'c_over_a': float(value)})
+                self.assertEqual(res['comparisons']['A_vs_C']['verdict_hint'], hint)
+                md = Path(self.out + '.md').read_text(encoding='utf-8')
+                self.assertIn('thresholds preregistration:', md)
+                self.assertNotIn('proposed', md)
+
+    def test_bad_record_threshold_exit_2_nothing_written(self):
+        for value in ('synthetic score >= 1', 'nan', 'inf', '1.5', '-0.1', 0.7, None):
+            with self.subTest(value=value):
+                self._prereg_threshold(value)
+                code, out, err = self.main()
+                self.assertEqual(code, 2)
+                self.assertEqual(len(err.strip().splitlines()), 1, err)
+                self.assertIn('threshold', err)
+                self.assertFalse(os.path.exists(self.out + '.json'))
+                self.assertFalse(os.path.exists(self.out + '.md'))
 
     def test_reuses_g01_helpers(self):
         self.assertIs(g02_draft.DraftError, g01_draft.DraftError)
