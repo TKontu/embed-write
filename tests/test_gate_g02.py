@@ -83,6 +83,12 @@ class G02Test(unittest.TestCase):
         self.assertFalse(c['complete'])
         self.assertTrue(run(*fixture())['completeness']['complete'])
 
+    def test_empty_session_not_complete(self):
+        c = run([], [])['completeness']
+        self.assertEqual(c['session_items'], 0)
+        self.assertEqual(c['unanswered'], 0)
+        self.assertFalse(c['complete'])
+
     def test_contradiction_is_error(self):
         s, lines = fixture()
         for key, value in (('comparison', 'A_vs_B'), ('winner', 'B')):

@@ -50,7 +50,9 @@ def render(run, *, text_model=None, judge_is_expert=False) -> str:
              'no gate status.', '']
     if not c['complete']:
         lines += [f"**INCOMPLETE run**: {c['unanswered']} of {c['session_items']} session "
-                  'items have no choice.', '']
+                  'items have no choice'
+                  + ('; the session has no session items.' if not c['session_items'] else '.'),
+                  '']
     lines += [f"Basis: population = {population} blind pairs judged (first presentations; "
               f"{c['session_items']} session items); metric = win rate of the reported arm, "
               f"ties at half credit, seeded percentile bootstrap 95 % interval; reference = "

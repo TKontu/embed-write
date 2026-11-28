@@ -84,6 +84,18 @@ class G02DraftTest(unittest.TestCase):
         self.assertIn('INCOMPLETE', md)
         self.assertIn('unanswered: 3', md)
 
+    def test_empty_session_said_incomplete(self):
+        Path(self.session).write_text('[]', encoding='utf-8')
+        Path(self.choices).write_text('', encoding='utf-8')
+        code, _, err = self.main()
+        self.assertEqual(code, 0, err)
+        run = json.loads(Path(self.out + '.json').read_text(encoding='utf-8'))
+        self.assertFalse(run['result']['completeness']['complete'])
+        md = Path(self.out + '.md').read_text(encoding='utf-8')
+        self.assertIn('INCOMPLETE run', md)
+        self.assertIn('0 of 0 session items', md)
+        self.assertIn('no session items', md)
+
     def test_contradiction_exit_2_nothing_written(self):
         lines = Path(self.choices).read_text().splitlines(keepends=True)
         bad = json.loads(lines[0])
