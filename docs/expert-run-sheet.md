@@ -36,9 +36,12 @@ real module and only flags it accepts.
   expert self-agreement κ ≥ 0.7, `other` ≤ 15 %; G-02 see `docs/todo-01-experiments.md` G-02.
 - Command (once per gate, expert only; refuses to overwrite an existing record):
   `python -m experiments.preregistration confirm g01 --threshold "<THRESHOLD>" --metric "<METRIC>" --confirmed-by "<PRIVATE:EXPERT_NAME>"`
-  then the same with `g02`. It writes `experiments/preregistration/g01.json` / `g02.json` with the
+  then the same with `g02`. For `g02` the `--threshold` must be a bare rate in [0, 1] such as
+  `0.70` (not `70 %` or prose): `g02_draft` (2.6) reads it as the A_vs_C pass line and exits 2 on
+  anything else, after judging is done, and the record cannot then be changed. It writes `experiments/preregistration/g01.json` / `g02.json` with the
   fields in `experiments/preregistration/README.md`; `confirmed_at` is the current UTC time.
-- Worked: the draft steps (1.5, 2.6) run instead of exiting 2 with "preregistration not confirmed".
+- Worked: the draft steps (1.5, 2.6) run instead of exiting 2 with "preregistration not confirmed";
+  2.6 still exits 2 if the g02 threshold is not a bare rate in [0, 1].
 
 ### 0.3 Choose the legend colours (MV-04, expert)
 
