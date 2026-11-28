@@ -162,6 +162,54 @@ class ExpertRunSheetTest(unittest.TestCase):
         for n in (4, 5, 6):  # prose too: no bare short names left
             self.assertIsNone(re.search(r'(?<![\w/])(session\.json|choices\.jsonl)', self.step(n)), n)
 
+    def test_step_2_6_is_the_after_judging_line_g02_session_prints(self):
+        import contextlib, io, json, os, tempfile
+        from experiments import g02_generate, g02_session
+
+        def fake(prompt, temperature=None):  # LLM-built synthetic fixture, no model
+            return 'generated text'
+        fake.model_id = 'fake'
+        with tempfile.TemporaryDirectory() as d:
+            g02 = os.path.join(d, 'g')
+            os.makedirs(g02)
+            notes, pool = os.path.join(g02, 'notes.jsonl'), os.path.join(g02, 'g02_pool.jsonl')
+            with open(notes, 'w') as fh:
+                for i in range(2):
+                    fh.write(json.dumps({'section_id': f'r{i}-s', 'report_id': f'r{i}',
+                                         'section_type': 'intro', 'notes': f'fact {i}'}) + '\n')
+            with open(pool, 'w') as fh:
+                fh.write(json.dumps({'section_id': 'ex', 'report_id': 'rx',
+                                     'section_type': 'intro', 'text': 'fact words'}) + '\n')
+            with open(os.path.join(g02, 'originals.jsonl'), 'w') as fh:
+                for i in range(2):
+                    fh.write(json.dumps({'section_id': f'r{i}-s', 'text': f'original {i}'}) + '\n')
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = g02_generate.main(
+                    ['--notes', notes, '--pool', pool,
+                     '--out', os.path.join(g02, 'g02_generations.jsonl'),
+                     '--originals', os.path.join(g02, 'originals.jsonl'),
+                     '--expected-sections', '2', '--n-candidates', '2'],
+                    model=fake, critic=lambda c, ctx: 0.0)
+            self.assertEqual(rc, 0, buf.getvalue())
+            nxt = [l for l in buf.getvalue().splitlines() if l.startswith('next: ')][0]
+            argv = shlex.split(nxt[6:])[3:]  # drop 'python -m experiments.g02_session'
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = g02_session.main(argv)
+            self.assertEqual(rc, 0, buf.getvalue())
+            line = [l for l in buf.getvalue().splitlines() if l.startswith('after judging: ')][0]
+            printed = [t.replace(g02, '<PRIVATE:G02>') for t in shlex.split(line[15:])]
+        (cmd,) = re.findall(r'`(python -m [^`]+)`', self.step(6))
+        sheet = shlex.split(cmd)
+        self.assertEqual(sheet[:3], printed[:3])
+        for flag in ('--session', '--choices', '--seed', '--out'):  # not --text-model
+            with self.subTest(flag=flag):
+                self.assertEqual(sheet[sheet.index(flag) + 1], printed[printed.index(flag) + 1])
+        out = sheet[sheet.index('--out') + 1].rsplit('/', 1)[1]
+        self.assertIn(f'`{out}.json`', self.step(6))  # prose names g02_draft's real outputs
+        self.assertIn(f'`{out}.md`', self.step(6))
+
 
 class ExtractorSelfTest(unittest.TestCase):
     def test_bogus_flag_is_rejected(self):
