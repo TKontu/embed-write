@@ -586,7 +586,12 @@ def convert_pdf(path: Path, info: dict | None = None) -> str:
         head = fh.read(PDF_HEADER_WINDOW)
     if b"%PDF-" not in head:
         raise ValueError(f"pdf: not a pdf (starts with {_byte_signature(head)})")
-    reader = PdfReader(str(path))
+    try:
+        # pypdf checks an AES-256 key inside the constructor (verify_v5), so a missing
+        # cryptography package can raise DependencyError here as well as in decrypt().
+        reader = PdfReader(str(path))
+    except PdfDependencyError as e:
+        raise ValueError(PDF_AES_REASON) from e
     if reader.is_encrypted:
         try:
             ok = reader.decrypt("")

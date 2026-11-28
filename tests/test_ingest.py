@@ -126,6 +126,12 @@ def make_pdf(pages: list[list[str]]) -> bytes:
 
 
 PDF_SKIP = "pypdf not installed"
+try:
+    import cryptography  # noqa: F401 - needed by pypdf to write/read AES-256 test PDFs
+    HAVE_CRYPTOGRAPHY = True
+except ImportError:
+    HAVE_CRYPTOGRAPHY = False
+AES_SKIP = "pypdf or cryptography not installed (AES-256 test PDFs need both)"
 SECRET = "Confidential synthetic sentence."
 
 
@@ -291,12 +297,12 @@ class IngestTest(unittest.TestCase):
         self.assertEqual(rep["good.pdf"]["headings"], 1)
         self.assertEqual(rep["a.txt"]["status"], "ok")
 
-    def _encrypted(self, user_pw: str) -> bytes:
+    def _encrypted(self, user_pw: str, algorithm: str = "RC4-128") -> bytes:
         from pypdf import PdfReader, PdfWriter
         w = PdfWriter()
         for page in PdfReader(io.BytesIO(make_pdf([["1. Intro", "", SECRET]]))).pages:
             w.add_page(page)
-        w.encrypt(user_password=user_pw, owner_password="owner-pw", algorithm="RC4-128")
+        w.encrypt(user_password=user_pw, owner_password="owner-pw", algorithm=algorithm)
         buf = io.BytesIO()
         w.write(buf)
         return buf.getvalue()
@@ -326,6 +332,40 @@ class IngestTest(unittest.TestCase):
                 ingest.convert_pdf(self.src / "e.pdf")
         self.assertIn("cryptography", str(cm.exception))
         self.assertNotEqual(str(cm.exception), "pdf: encrypted")
+
+    @unittest.skipUnless(ingest.HAVE_PYPDF and HAVE_CRYPTOGRAPHY, AES_SKIP)
+    def test_pdf_aes256_empty_password_converts(self):
+        (self.src / "e.pdf").write_bytes(self._encrypted("", "AES-256"))
+        md = ingest.convert_pdf(self.src / "e.pdf")
+        self.assertIn(SECRET, md)
+        self.assertIn("# 1. Intro", md)
+
+    @unittest.skipUnless(ingest.HAVE_PYPDF and HAVE_CRYPTOGRAPHY, AES_SKIP)
+    def test_pdf_aes256_password_protected_fails_encrypted(self):
+        (self.src / "e.pdf").write_bytes(self._encrypted("s3cret", "AES-256"))
+        with self.assertRaises(ValueError) as cm:
+            ingest.convert_pdf(self.src / "e.pdf")
+        self.assertEqual(str(cm.exception), "pdf: encrypted")
+
+    @unittest.skipUnless(ingest.HAVE_PYPDF and HAVE_CRYPTOGRAPHY, AES_SKIP)
+    def test_pdf_aes256_without_cryptography_in_constructor(self):
+        # Make cryptography unavailable to pypdf's AES-256 key check: swap the provider
+        # functions pypdf._encryption bound at import for pypdf's own no-provider fallbacks,
+        # so the real PdfReader constructor (__init__ -> _handle_encryption -> verify_v5)
+        # raises pypdf's DependencyError exactly as on a host without cryptography.
+        from pypdf._crypt_providers import _fallback
+        (self.src / "e.pdf").write_bytes(self._encrypted("", "AES-256"))
+        with mock.patch("pypdf._encryption.aes_cbc_decrypt", _fallback.aes_cbc_decrypt), \
+                mock.patch("pypdf._encryption.aes_ecb_decrypt", _fallback.aes_ecb_decrypt), \
+                mock.patch("pypdf._encryption.CryptAES", _fallback.CryptAES):
+            with self.assertRaises(ValueError) as cm:
+                ingest.convert_pdf(self.src / "e.pdf")
+            self.run_cli()
+        self.assertEqual(str(cm.exception), ingest.PDF_AES_REASON)
+        e = self.report()["e.pdf"]
+        self.assertEqual(e["status"], "failed")
+        self.assertIn(ingest.PDF_AES_REASON, e["error"])
+        self.assertNotIn("DependencyError", e["error"])
 
     @unittest.skipUnless(ingest.HAVE_PYPDF, PDF_SKIP)
     def test_pdf_html_bytes_fail_not_a_pdf(self):
