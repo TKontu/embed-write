@@ -37,6 +37,7 @@ export const demoState = state;
  * FM-01 (demo): the in-page link dialog behind createEditor's onLinkRequest. Resolves the trimmed
  * href on OK/Enter, null on Cancel, Escape or an empty field; never uses window.prompt. While open,
  * Tab / Shift+Tab wrap among href, OK and Cancel, and Escape cancels from any of them (R250).
+ * A pointer press outside the dialog cancels it too (R251).
  * @param {string} text @returns {Promise<string | null>}
  */
 function requestLink(text) {
@@ -55,6 +56,7 @@ function requestLink(text) {
       cancel.removeEventListener('click', onCancel);
       input.removeEventListener('keydown', onKey);
       dialog.removeEventListener('keydown', onDialogKey);
+      document.removeEventListener('mousedown', onOutside, true);
       dialog.hidden = true;
       state.editor?.view.focus();
       resolve(href || null);
@@ -75,7 +77,12 @@ function requestLink(text) {
         (e.shiftKey ? cancel : input).focus();
       }
     };
+    /** Press outside the dialog = Cancel. @param {MouseEvent} e */
+    const onOutside = (e) => {
+      if (!dialog.contains(/** @type {Node} */ (e.target))) done(null);
+    };
     form.addEventListener('submit', onSubmit);
+    document.addEventListener('mousedown', onOutside, true);
     cancel.addEventListener('click', onCancel);
     input.addEventListener('keydown', onKey);
     dialog.addEventListener('keydown', onDialogKey);
