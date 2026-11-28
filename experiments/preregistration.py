@@ -93,8 +93,9 @@ def main(argv=None) -> int:
 
     root = Path(args.root)
     path = root / f"{args.gate}.json"
-    if path.exists():
-        print(f"refusing to overwrite {path}: thresholds are fixed once confirmed", file=sys.stderr)
+    refusal = f"refusing to overwrite {path}: thresholds are fixed once confirmed"
+    if os.path.lexists(path):
+        print(refusal, file=sys.stderr)
         return 1
     record = {
         "gate": args.gate,
@@ -106,18 +107,22 @@ def main(argv=None) -> int:
     }
     if args.recorded_commit is not None:
         record["recorded_commit"] = args.recorded_commit
-    root.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=root, prefix=f".{args.gate}.", suffix=".tmp")
+    tmp = None
     try:
+        root.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=root, prefix=f".{args.gate}.", suffix=".tmp")
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(json.dumps(record, indent=2, ensure_ascii=False) + "\n")
-        if path.exists():
-            print(f"refusing to overwrite {path}: thresholds are fixed once confirmed",
-                  file=sys.stderr)
-            return 1
-        os.replace(tmp, path)
+        os.chmod(tmp, 0o644)
+        os.link(tmp, path)  # fails if path exists in any form, never overwrites
+    except FileExistsError:
+        print(refusal, file=sys.stderr)
+        return 1
+    except OSError as exc:
+        print(f"cannot write {path}: {exc}", file=sys.stderr)
+        return 1
     finally:
-        if os.path.exists(tmp):
+        if tmp is not None and os.path.lexists(tmp):
             os.unlink(tmp)
     load(args.gate, root)
     print(f"wrote {path}")

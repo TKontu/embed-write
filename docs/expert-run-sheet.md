@@ -35,7 +35,7 @@ real module and only flags it accepts.
 - Decides: the pass line each gate is judged against. Proposed: G-01 expert vs LLM κ ≥ 0.6,
   expert self-agreement κ ≥ 0.7, `other` ≤ 15 %; G-02 see `docs/todo-01-experiments.md` G-02.
 - Command (once per gate, expert only; refuses to overwrite an existing record):
-  `python -m experiments.preregistration confirm g01 --threshold "<THRESHOLD>" --metric "<METRIC>" --confirmed-by <PRIVATE:EXPERT_NAME>`
+  `python -m experiments.preregistration confirm g01 --threshold "<THRESHOLD>" --metric "<METRIC>" --confirmed-by "<PRIVATE:EXPERT_NAME>"`
   then the same with `g02`. It writes `experiments/preregistration/g01.json` / `g02.json` with the
   fields in `experiments/preregistration/README.md`; `confirmed_at` is the current UTC time.
 - Worked: the draft steps (1.5, 2.6) run instead of exiting 2 with "preregistration not confirmed".

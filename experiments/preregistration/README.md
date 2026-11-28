@@ -2,8 +2,9 @@
 
 Before a gate runs, save its record as `<gate>.json` in this directory. Only the
 expert fills `confirmed_by`; confirming a threshold is an [H] act. Agents must
-not create confirmations. Confirm or change the threshold before the run; after
-that it is fixed (architecture §6).
+not create confirmations. A confirmed record is fixed (architecture §6):
+the tool never overwrites or changes it. If a record is wrong, the expert deletes
+it by hand before any run, then confirms again.
 
 Command: the expert writes a record with
 `python -m experiments.preregistration confirm GATE --threshold TEXT --metric TEXT --confirmed-by NAME [--root DIR] [--recorded-commit REF]`.
