@@ -94,7 +94,7 @@ def main(argv=None) -> int:
     root = Path(args.root)
     path = root / f"{args.gate}.json"
     refusal = f"refusing to overwrite {path}: thresholds are fixed once confirmed"
-    if root.exists() and not root.is_dir():
+    if os.path.exists(root) and not os.path.isdir(root):  # os.path swallows OSError
         print(f"cannot write {path}: {root} is not a directory", file=sys.stderr)
         return 1
     if os.path.lexists(path):

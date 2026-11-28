@@ -164,6 +164,18 @@ class PreregistrationCliTest(unittest.TestCase):
         self.assertNotIn("Traceback", err)
         self.assertEqual(list(root.iterdir()), [])
 
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0,
+                     "running as root: mode 000 does not block access")
+    def test_unsearchable_parent_root_is_one_line(self):
+        locked = self.root / "locked"
+        locked.mkdir()
+        os.chmod(locked, 0)
+        self.addCleanup(os.chmod, locked, 0o755)
+        code, out, err = run(self.args(extra=("--root", str(locked / "inner"))))
+        self.assertEqual(code, 1)
+        self.assertEqual(len(err.strip().splitlines()), 1, err)
+        self.assertNotIn("Traceback", err)
+
     def test_help_says_expert_only(self):
         code, out, _ = run(["confirm", "--help"])
         self.assertEqual(code, 0)
