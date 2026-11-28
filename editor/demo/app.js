@@ -464,6 +464,15 @@ function toggleSource() {
   }
 }
 
+/** Mod-Shift-m anywhere on the page: same as the Source view button (inert under the link dialog). */
+function onSourceShortcut(event) {
+  const mod = /Mac|iP(hone|ad|od)/.test(navigator.platform) ? event.metaKey : event.ctrlKey;
+  if (!mod || !event.shiftKey || event.altKey || event.key.toLowerCase() !== 'm') return;
+  event.preventDefault();
+  if (event.repeat || !byId('link-dialog').hidden) return;
+  toggleSource();
+}
+
 async function init() {
   try {
     // legend.json stays the provisional-marking record (and a report folder's own override);
@@ -497,6 +506,7 @@ async function init() {
     });
     ui.save.addEventListener('click', () => { save(); });
     ui.source.addEventListener('click', toggleSource);
+    document.addEventListener('keydown', onSourceShortcut);
     ui.overlay.addEventListener('click', toggleOverlay);
     ui.granularity.addEventListener('change', selectGranularity);
     ui.overlaySelect.addEventListener('change', selectOverlay);
