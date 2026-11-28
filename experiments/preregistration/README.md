@@ -5,6 +5,12 @@ expert fills `confirmed_by`; confirming a threshold is an [H] act. Agents must
 not create confirmations. Confirm or change the threshold before the run; after
 that it is fixed (architecture §6).
 
+Command: the expert writes a record with
+`python -m experiments.preregistration confirm GATE --threshold TEXT --metric TEXT --confirmed-by NAME [--root DIR] [--recorded-commit REF]`.
+It sets `confirmed_at` to the current UTC time, writes `ROOT/GATE.json` atomically, re-validates it
+with `load` and prints `wrote PATH`. It refuses to overwrite an existing record (exit 1) and
+rejects a blank name or bad gate id (exit 2). Only the expert runs it.
+
 Record fields:
 
 | Field | Format |
