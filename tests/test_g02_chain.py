@@ -217,7 +217,7 @@ class G02ChainRehearsalTest(unittest.TestCase):
         self.assertEqual(do["--text-model"], "stub-model")
         prereg = self.tmp / "prereg"
         prereg.mkdir()
-        (prereg / "g02.json").write_text(json.dumps({**fixture_record(), "gate": "g02"}),
+        (prereg / "g02.json").write_text(json.dumps({**fixture_record(), "gate": "g02", "threshold": "0.70"}),
                                          encoding="utf-8")
         stem = Path(do["--out"])
         self.assertTrue(stem.is_relative_to(self.tmp), stem)

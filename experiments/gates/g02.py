@@ -95,7 +95,8 @@ def run(rng: random.Random, config: Mapping[str, Any]) -> dict:
     if "thresholds" in config and config["thresholds"] is None:
         thresholds, source = None, "none"
     elif "thresholds" in config:
-        thresholds, source = {**PROPOSED_THRESHOLDS, **dict(config["thresholds"])}, "config"
+        thresholds = {**PROPOSED_THRESHOLDS, **dict(config["thresholds"])}
+        source = config.get("thresholds_source", "config")  # g02_draft.draft: "preregistration"
     else:
         thresholds, source = dict(PROPOSED_THRESHOLDS), "proposed"
 

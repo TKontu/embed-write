@@ -165,7 +165,7 @@ intake run (intake defaults: 0 and 0.5).
 
 ### 2.7 G-02 verdict (G-02.5, expert)
 
-- Decides: pass or fail. The DRAFT's hint uses the proposed 0.70, not the confirmed threshold;
+- Decides: pass or fail. The DRAFT's hint uses the confirmed g02 preregistration threshold;
   the draft says "Verdict: owed to the expert (G-02.5 [H])". The expert records the verdict; only
   then does `experiments/results/G-02.md` get written.
 
@@ -176,4 +176,4 @@ intake run (intake defaults: 0 and 0.5).
   (`pool:`/`next:`, `next:`, `serve:`, `after judging:`).
 - `g01_draft` line from intake has `--seed 0` and `--annotator EXPERT` fixed; the printed
   `g02_draft` line has `--seed 0` and `--text-model` from the generation run.
-- The G-02 hint cannot read the confirmed threshold; the repeat-pass week gap is not enforced.
+- The G-02 repeat-pass week gap is not enforced.
