@@ -121,6 +121,49 @@ class PreregistrationCliTest(unittest.TestCase):
         self.assertNotIn("Traceback", err)
         self.assertFalse(any(p.name.endswith(".tmp") for p in self.root.rglob("*")))
 
+    def assert_not_dir_error(self, root, blocker):
+        before = blocker.read_bytes()
+        code, out, err = run(self.args(extra=("--root", str(root))))
+        self.assertEqual(code, 1)
+        self.assertEqual(out, "")
+        self.assertEqual(len(err.strip().splitlines()), 1, err)
+        self.assertNotIn("refusing to overwrite", err)
+        self.assertNotIn("Traceback", err)
+        self.assertIn("not a directory", err.lower())
+        self.assertEqual(blocker.read_bytes(), before)
+
+    def test_root_is_regular_file(self):
+        blocker = self.root / "plain"
+        blocker.write_text("synthetic\n")
+        self.assert_not_dir_error(blocker, blocker)
+
+    def test_root_parent_is_regular_file(self):
+        blocker = self.root / "plain"
+        blocker.write_text("synthetic\n")
+        self.assert_not_dir_error(blocker / "child", blocker)
+
+    def test_cleanup_unlink_error_does_not_mask_outcome(self):
+        with mock.patch.object(prereg.os, "unlink", side_effect=PermissionError(1, "EPERM")):
+            code, out, err = run(self.args())
+        self.assertEqual(code, 0)
+        self.assertIn("wrote", out)
+        self.assertNotIn("Traceback", err)
+        self.assertLessEqual(len(err.strip().splitlines()), 1, err)
+        self.assertEqual(prereg.load("g01", self.root)["gate"], "g01")
+
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0,
+                     "running as root: chmod 0555 does not block writes")
+    def test_real_unwritable_root(self):
+        root = self.root / "locked"
+        root.mkdir()
+        os.chmod(root, 0o555)
+        self.addCleanup(os.chmod, root, 0o755)
+        code, out, err = run(self.args(extra=("--root", str(root))))
+        self.assertEqual(code, 1)
+        self.assertEqual(len(err.strip().splitlines()), 1, err)
+        self.assertNotIn("Traceback", err)
+        self.assertEqual(list(root.iterdir()), [])
+
     def test_help_says_expert_only(self):
         code, out, _ = run(["confirm", "--help"])
         self.assertEqual(code, 0)

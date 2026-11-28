@@ -94,6 +94,9 @@ def main(argv=None) -> int:
     root = Path(args.root)
     path = root / f"{args.gate}.json"
     refusal = f"refusing to overwrite {path}: thresholds are fixed once confirmed"
+    if root.exists() and not root.is_dir():
+        print(f"cannot write {path}: {root} is not a directory", file=sys.stderr)
+        return 1
     if os.path.lexists(path):
         print(refusal, file=sys.stderr)
         return 1
@@ -114,16 +117,22 @@ def main(argv=None) -> int:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(json.dumps(record, indent=2, ensure_ascii=False) + "\n")
         os.chmod(tmp, 0o644)
-        os.link(tmp, path)  # fails if path exists in any form, never overwrites
-    except FileExistsError:
-        print(refusal, file=sys.stderr)
-        return 1
+        try:
+            os.link(tmp, path)  # fails if path exists in any form, never overwrites
+        except FileExistsError:
+            print(refusal, file=sys.stderr)
+            return 1
     except OSError as exc:
         print(f"cannot write {path}: {exc}", file=sys.stderr)
         return 1
     finally:
-        if tmp is not None and os.path.lexists(tmp):
-            os.unlink(tmp)
+        if tmp is not None:
+            try:
+                os.unlink(tmp)
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                print(f"warning: could not remove {tmp}: {exc}", file=sys.stderr)
     load(args.gate, root)
     print(f"wrote {path}")
     return 0
