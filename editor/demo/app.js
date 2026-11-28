@@ -35,7 +35,8 @@ export const demoState = state;
 
 /**
  * FM-01 (demo): the in-page link dialog behind createEditor's onLinkRequest. Resolves the trimmed
- * href on OK/Enter, null on Cancel, Escape or an empty field; never uses window.prompt.
+ * href on OK/Enter, null on Cancel, Escape or an empty field; never uses window.prompt. While open,
+ * Tab / Shift+Tab wrap among href, OK and Cancel, and Escape cancels from any of them (R250).
  * @param {string} text @returns {Promise<string | null>}
  */
 function requestLink(text) {
@@ -53,6 +54,7 @@ function requestLink(text) {
       form.removeEventListener('submit', onSubmit);
       cancel.removeEventListener('click', onCancel);
       input.removeEventListener('keydown', onKey);
+      dialog.removeEventListener('keydown', onDialogKey);
       dialog.hidden = true;
       state.editor?.view.focus();
       resolve(href || null);
@@ -62,12 +64,21 @@ function requestLink(text) {
     const onCancel = () => done(null);
     /** @param {KeyboardEvent} e */
     const onKey = (e) => {
-      if (e.key === 'Escape') { e.preventDefault(); done(null); }
-      else if (e.key === 'Enter') { e.preventDefault(); done(input.value.trim()); }
+      if (e.key === 'Enter') { e.preventDefault(); done(input.value.trim()); }
+    };
+    /** Focus trap + Escape for the whole dialog. @param {KeyboardEvent} e */
+    const onDialogKey = (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); done(null); return; }
+      if (e.key !== 'Tab') return;
+      if (e.target === (e.shiftKey ? input : cancel)) {
+        e.preventDefault();
+        (e.shiftKey ? cancel : input).focus();
+      }
     };
     form.addEventListener('submit', onSubmit);
     cancel.addEventListener('click', onCancel);
     input.addEventListener('keydown', onKey);
+    dialog.addEventListener('keydown', onDialogKey);
   });
 }
 /** @type {{ block: number, move: string }[]} */
