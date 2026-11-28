@@ -535,6 +535,9 @@ class GenerateTests(unittest.TestCase):
         self.assertEqual(len(self.notes), 1)
         self.assertIn('ORIGINALS_JSONL', self.notes[0])
         self.assertIn('--sections-out', self.notes[0])
+        self.assertIn('file g02_notes wrote with --sections-out', self.notes[0])
+        self.assertIn('if g02_notes ran without it, rerun g02_notes with --sections-out PATH',
+                      self.notes[0])
         nl = [i for i, l in enumerate(self.lines) if l.startswith('next: ')][0]
         self.assertEqual(self.lines[nl - 1], self.notes[0])  # note directly precedes next
         os.unlink(self.out)
