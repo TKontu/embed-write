@@ -50,9 +50,11 @@ from experiments import mineru_native
 
 try:
     from pypdf import PdfReader
+    from pypdf.errors import DependencyError as PdfDependencyError
     HAVE_PYPDF = True
 except ImportError:  # pragma: no cover - exercised by monkeypatching HAVE_PYPDF
     PdfReader = None
+    PdfDependencyError = ImportError
     HAVE_PYPDF = False
 
 REPO = Path(__file__).resolve().parent.parent
@@ -543,6 +545,24 @@ def _convert_pdf_mineru(path: Path, base_url: str, timeout: float) -> tuple[str,
     raise AssertionError("unreachable")  # pragma: no cover
 
 
+PDF_HEADER_WINDOW = 1024  # PDF readers accept %PDF- anywhere in the first 1 KiB
+PDF_AES_REASON = "pdf: encrypted (AES; needs the cryptography package)"
+
+
+def _byte_signature(head: bytes) -> str:
+    """A short fixed label for non-PDF bytes; never echoes document content."""
+    h = head.lstrip(b"\xef\xbb\xbf \t\r\n").lower()
+    if not h:
+        return "empty"
+    if h.startswith((b"<!doctype html", b"<html")) or b"<html" in h[:512]:
+        return "html"
+    if h.startswith(b"<?xml") or h.startswith(b"<"):
+        return "xml"
+    if h.startswith(b"pk\x03\x04"):
+        return "zip"
+    return "unknown"
+
+
 def convert_pdf(path: Path, info: dict | None = None) -> str:
     """PDF -> Markdown. With PARSER_BASE_URL set, MinerU first (one retry on a timeout or
     connection error), then pypdf for this file on any MinerU failure. ``info`` receives
@@ -562,9 +582,20 @@ def convert_pdf(path: Path, info: dict | None = None) -> str:
     info["parser"] = "pypdf"
     if not HAVE_PYPDF:
         raise ValueError(PDF_REASON)
+    with open(path, "rb") as fh:
+        head = fh.read(PDF_HEADER_WINDOW)
+    if b"%PDF-" not in head:
+        raise ValueError(f"pdf: not a pdf (starts with {_byte_signature(head)})")
     reader = PdfReader(str(path))
     if reader.is_encrypted:
-        raise ValueError("pdf: encrypted")
+        try:
+            ok = reader.decrypt("")
+        except PdfDependencyError as e:
+            raise ValueError(PDF_AES_REASON) from e
+        except Exception as e:  # noqa: BLE001 - any decrypt failure is "encrypted"
+            raise ValueError("pdf: encrypted") from e
+        if not ok:
+            raise ValueError("pdf: encrypted")
     md = pdf_text_to_markdown(page.extract_text() for page in reader.pages)
     if not md.strip():
         raise ValueError(OCR_REASON)
