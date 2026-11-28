@@ -351,8 +351,9 @@ def main(argv=None, *, model: Model | None = None, critic: Critic | None = None)
     if summary['complete']:
         d = os.path.dirname(a.out)
         if a.originals == 'ORIGINALS_JSONL':
-            print('note: replace ORIGINALS_JSONL with the originals file g02_notes wrote '
-                  '(its --sections-out path), or rerun with --originals PATH')
+            print('note: replace ORIGINALS_JSONL with the file g02_notes wrote with '
+                  '--sections-out; if g02_notes ran without it, rerun g02_notes with '
+                  '--sections-out PATH first, then pass that PATH as --originals')
         print('next: ' + shlex.join([
             'python', '-m', 'experiments.g02_session', '--generations', a.out,
             '--originals', a.originals, '--out', os.path.join(d, 'g02_session.json'),
