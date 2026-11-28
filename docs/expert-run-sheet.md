@@ -149,9 +149,9 @@ intake run (intake defaults: 0 and 0.5).
 ### 2.6 G-02 DRAFT result (agent half of G-02.5)
 
 - Command:
-  `python -m experiments.g02_draft --session <PRIVATE:G02>/g02_session.json --choices <PRIVATE:G02>/g02_choices.jsonl --out <PRIVATE:G02>/g02-draft --seed 0 --text-model <MODEL_NAME> --judge-is-expert`
-- Reads: session, choices, `experiments/preregistration/g02.json`. Writes `g02-draft.json`
-  and `g02-draft.md`. Use `--judge-is-expert` only when the expert made every choice.
+  `python -m experiments.g02_draft --session <PRIVATE:G02>/g02_session.json --choices <PRIVATE:G02>/g02_choices.jsonl --out <PRIVATE:G02>/g02_draft --seed 0 --text-model <MODEL_NAME> --judge-is-expert`
+- Reads: session, choices, `experiments/preregistration/g02.json`. Writes `g02_draft.json`
+  and `g02_draft.md`. Use `--judge-is-expert` only when the expert made every choice.
 - Worked: prints `draft written: ... (verdict owed to the expert)`.
 
 ### 2.7 G-02 verdict (G-02.5, expert)
