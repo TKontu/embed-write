@@ -291,6 +291,69 @@ class IngestTest(unittest.TestCase):
         self.assertEqual(rep["good.pdf"]["headings"], 1)
         self.assertEqual(rep["a.txt"]["status"], "ok")
 
+    def _encrypted(self, user_pw: str) -> bytes:
+        from pypdf import PdfReader, PdfWriter
+        w = PdfWriter()
+        for page in PdfReader(io.BytesIO(make_pdf([["1. Intro", "", SECRET]]))).pages:
+            w.add_page(page)
+        w.encrypt(user_password=user_pw, owner_password="owner-pw", algorithm="RC4-128")
+        buf = io.BytesIO()
+        w.write(buf)
+        return buf.getvalue()
+
+    @unittest.skipUnless(ingest.HAVE_PYPDF, PDF_SKIP)
+    def test_pdf_empty_password_encrypted_converts(self):
+        (self.src / "e.pdf").write_bytes(self._encrypted(""))
+        md = ingest.convert_pdf(self.src / "e.pdf")
+        self.assertIn(SECRET, md)
+        self.assertIn("# 1. Intro", md)
+
+    @unittest.skipUnless(ingest.HAVE_PYPDF, PDF_SKIP)
+    def test_pdf_password_protected_fails_encrypted(self):
+        (self.src / "e.pdf").write_bytes(self._encrypted("s3cret"))
+        self.run_cli()
+        e = self.report()["e.pdf"]
+        self.assertEqual(e["status"], "failed")
+        self.assertIn("pdf: encrypted", e["error"])
+
+    @unittest.skipUnless(ingest.HAVE_PYPDF, PDF_SKIP)
+    def test_pdf_aes_without_cryptography_names_dependency(self):
+        from pypdf.errors import DependencyError
+        (self.src / "e.pdf").write_bytes(self._encrypted(""))
+        with mock.patch("pypdf.PdfReader.decrypt",
+                        side_effect=DependencyError("cryptography>=3.1 is required for AES")):
+            with self.assertRaises(ValueError) as cm:
+                ingest.convert_pdf(self.src / "e.pdf")
+        self.assertIn("cryptography", str(cm.exception))
+        self.assertNotEqual(str(cm.exception), "pdf: encrypted")
+
+    @unittest.skipUnless(ingest.HAVE_PYPDF, PDF_SKIP)
+    def test_pdf_html_bytes_fail_not_a_pdf(self):
+        (self.src / "page.pdf").write_bytes(
+            b"<!DOCTYPE html><html><body>" + SECRET.encode() + b"</body></html>")
+        with mock.patch.object(ingest, "PdfReader") as reader:
+            with self.assertRaises(ValueError) as cm:
+                ingest.convert_pdf(self.src / "page.pdf")
+        reader.assert_not_called()
+        self.assertEqual(str(cm.exception), "pdf: not a pdf (starts with html)")
+        self.run_cli()
+        e = self.report()["page.pdf"]
+        self.assertEqual(e["status"], "failed")
+        self.assertIn("pdf: not a pdf (starts with html)", e["error"])
+        self.assertNotIn("Confidential", json.dumps(e))
+
+    @unittest.skipUnless(ingest.HAVE_PYPDF, PDF_SKIP)
+    def test_pdf_unknown_bytes_signature_sanitised(self):
+        (self.src / "x.pdf").write_bytes(SECRET.encode())
+        with self.assertRaises(ValueError) as cm:
+            ingest.convert_pdf(self.src / "x.pdf")
+        self.assertEqual(str(cm.exception), "pdf: not a pdf (starts with unknown)")
+
+    @unittest.skipUnless(ingest.HAVE_PYPDF, PDF_SKIP)
+    def test_pdf_header_after_leading_junk_still_converts(self):
+        (self.src / "j.pdf").write_bytes(b"\x00junk\n" + make_pdf([["Body text here."]]))
+        self.assertIn("Body text here.", ingest.convert_pdf(self.src / "j.pdf"))
+
     def test_pdf_unsupported_without_pypdf(self):
         orig = ingest.HAVE_PYPDF
         ingest.HAVE_PYPDF = False
