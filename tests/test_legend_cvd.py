@@ -97,5 +97,74 @@ class Cli(unittest.TestCase):
         self.assertIn(proc.returncode, (0, 1))
 
 
+DEMO = ROOT / 'examples/demo/genre.json'
+
+
+class Suggest(unittest.TestCase):
+    def run_suggest(self, path, *extra):
+        with tempfile.TemporaryDirectory() as d:
+            out = Path(d) / 's.json'
+            proc = subprocess.run([sys.executable, '-m', 'experiments.legend_cvd', 'suggest', str(path),
+                                   '--json', str(out), *extra], cwd=ROOT, capture_output=True,
+                                  text=True, timeout=60)
+            data = json.loads(out.read_text()) if out.exists() else None
+        return proc, data
+
+    def test_demo_palettes_pass_check_with_demo_keys(self):
+        keys = set(lc.read_legend(json.loads(DEMO.read_text())))
+        proc, data = self.run_suggest(DEMO)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn('MV-04 [H]', proc.stdout)
+        self.assertIn('PROPOSED', proc.stdout)
+        self.assertGreaterEqual(len(data['candidates']), 1)
+        for c in data['candidates']:
+            self.assertEqual(set(c['colors']), keys)
+            rep = lc.check(c['colors'], 10.0)
+            self.assertTrue(rep['pass'])
+            for sim in lc.SIMULATIONS:
+                self.assertGreaterEqual(rep['simulations'][sim]['min_delta_e'], 10.0, sim)
+                self.assertIn(f"{sim} min {rep['simulations'][sim]['min_delta_e']:.2f}", proc.stdout)
+
+    def test_seed_is_deterministic(self):
+        keys = ['a', 'b', 'c', 'other']
+        self.assertEqual(lc.suggest(keys, seed=3), lc.suggest(keys, seed=3))
+        a, _ = self.run_suggest(DEMO, '--seed', '1')
+        b, _ = self.run_suggest(DEMO, '--seed', '1')
+        self.assertEqual(a.stdout, b.stdout)
+        lc.suggest(keys, seed=4)  # a different seed may differ; it must still run
+
+    def test_other_is_neutral_and_moves_in_band(self):
+        for c in lc.suggest(['a', 'b', 'c', 'd', 'other'], count=3, seed=0):
+            L, a, b = lc.linear_to_lab(lc.hex_to_linear(c['colors']['other']))
+            self.assertLess((a * a + b * b) ** 0.5, 10.0)
+            for k, h in c['colors'].items():
+                self.assertTrue(35 <= lc.linear_to_lab(lc.hex_to_linear(h))[0] <= 75, k)
+
+    def test_impossible_threshold_exits_1(self):
+        proc, data = self.run_suggest(DEMO, '--min-delta-e', '60')
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn('no palette', proc.stderr)
+        self.assertEqual(data['candidates'], [])
+
+    def test_exit_2_bad_input(self):
+        with tempfile.TemporaryDirectory() as d:
+            nolegend = Path(d) / 'n.json'
+            nolegend.write_text(json.dumps({'moves': [{'id': 'a'}]}))
+            for name, path, extra in (('missing legend', nolegend, ()),
+                                      ('unreadable', Path(d) / 'absent.json', ()),
+                                      ('count < 1', DEMO, ('--count', '0'))):
+                proc, data = self.run_suggest(path, *extra)
+                self.assertEqual(proc.returncode, 2, name)
+                self.assertIn('error:', proc.stderr, name)
+                self.assertIsNone(data, name)
+
+    def test_json_and_count(self):
+        proc, data = self.run_suggest(DEMO, '--count', '2', '--seed', '7')
+        self.assertEqual(proc.returncode, 0)
+        self.assertEqual(len(data['candidates']), 2)
+        self.assertEqual(data['threshold_status'], 'proposed')
+        self.assertEqual(data['seed'], 7)
+
+
 if __name__ == '__main__':
     unittest.main()

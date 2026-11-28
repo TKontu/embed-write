@@ -40,6 +40,15 @@ real module and only flags it accepts.
   `confirmed_by`, `confirmed_at`). Only the expert fills `confirmed_by`.
 - Worked: the draft steps (1.5, 2.6) run instead of exiting 2 with "preregistration not confirmed".
 
+### 0.3 Choose the legend colours (MV-04, expert)
+
+- Decides: one colour per move plus the neutral `other` (G-09.1 checks them; threshold PROPOSED).
+- Command (prepares LLM-built proposals; writes nothing to the genre file):
+  `python -m experiments.legend_cvd suggest <PRIVATE:GENRE.json> --min-delta-e 10.0 --count 3 --seed 0`
+- The expert picks or adapts one, types it into `legend.colors` / `legend.other` by hand, then checks:
+  `python -m experiments.legend_cvd check <PRIVATE:GENRE.json> --min-delta-e 10.0`
+- Worked: `check` exits 0 (all four views pass). Exit 1 names the failing simulation and pair.
+
 ## Part 1. G-01: can moves be labelled reliably?
 
 ### 1.1 Intake (operator or expert)
