@@ -13,6 +13,14 @@ for protanopia, deuteranopia and tritanopia applied in linear RGB, clipped to [0
 The default ``--min-delta-e 10.0`` is a PROPOSED threshold that the expert confirms (the G-09
 preregistration is [H]); the report always prints the threshold used. This tool only checks
 colours (invariant I3: the legend is fixed per genre, never computed); it never picks them.
+
+``python -m experiments.legend_cvd suggest GENRE_JSON [--min-delta-e X] [--count N] [--seed S]
+[--json OUT]`` is offline preparation for MV-04 [H]: it reads the legend's keys (moves + ``other``)
+and prints up to N candidate palettes that pass ``check`` at the threshold in all four views. Search:
+fixed sRGB grid restricted to CIELAB L* 35-75 (legible tints); ``other`` is a neutral grey (chroma
+< 10); moves are chosen by greedy max-min CIEDE2000 over all four views, the first pick drawn from
+``random.Random(seed)``. The palettes are LLM-built proposals; the expert chooses and writes the
+genre file by hand. Exit 0 if at least one candidate passes, 1 if none, 2 on bad input.
 """
 from __future__ import annotations
 
@@ -20,6 +28,7 @@ import argparse
 import itertools
 import json
 import math
+import random
 import re
 import sys
 from pathlib import Path
@@ -185,6 +194,87 @@ def format_report(report: dict) -> str:
     return '\n'.join(lines)
 
 
+L_BAND = (35.0, 75.0)
+NEUTRAL_CHROMA = 10.0
+MOVE_MIN_CHROMA = 20.0  # moves must read as tints, distinct from the grey ``other``
+_GRID = [round(i * 255 / 11) for i in range(12)]
+
+
+def _views(hexcolor: str) -> tuple:
+    lin = hex_to_linear(hexcolor)
+    return tuple(linear_to_lab(simulate(lin, sim)) for sim in SIMULATIONS)
+
+
+def _grid():
+    moves, greys = [], []
+    for r in _GRID:
+        for g in _GRID:
+            for b in _GRID:
+                h = f'#{r:02x}{g:02x}{b:02x}'
+                lab = linear_to_lab(hex_to_linear(h))
+                if not L_BAND[0] <= lab[0] <= L_BAND[1]:
+                    continue
+                chroma = math.hypot(lab[1], lab[2])
+                if chroma < NEUTRAL_CHROMA:
+                    greys.append(h)
+                elif chroma >= MOVE_MIN_CHROMA:
+                    moves.append(h)
+    return moves, greys
+
+
+def _min_de(v1, v2) -> float:
+    return min(ciede2000(a, b) for a, b in zip(v1, v2))
+
+
+def suggest(keys, min_delta_e: float = DEFAULT_MIN_DELTA_E, count: int = 3, seed: int = 0,
+            attempts: int | None = None) -> list[dict]:
+    """Return up to ``count`` distinct passing palettes [{'colors': {...}, 'report': check(...)}]."""
+    moves_keys = [k for k in keys if k != 'other']
+    cands, greys = _grid()
+    views = {h: _views(h) for h in cands + greys}
+    rng = random.Random(seed)
+    out, seen = [], set()
+    for _ in range(attempts or count * 4):
+        if len(out) >= count:
+            break
+        grey = rng.choice(greys)
+        chosen = [grey]
+        best = {h: _min_de(views[h], views[grey]) for h in cands}
+        first = True
+        for _k in moves_keys:
+            pool = [h for h in cands if h not in chosen]
+            if first:  # seeded start among the colours already far from ``other``
+                ok = [h for h in pool if best[h] >= min_delta_e] or pool
+                pick, first = rng.choice(ok), False
+            else:
+                pick = max(pool, key=lambda h: (best[h], h))
+            chosen.append(pick)
+            for h in pool:
+                if h != pick:
+                    best[h] = min(best[h], _min_de(views[h], views[pick]))
+        colors = dict(zip(moves_keys, chosen[1:]))
+        colors['other'] = grey
+        sig = tuple(sorted(colors.values()))
+        if sig in seen:
+            continue
+        seen.add(sig)
+        report = check(colors, min_delta_e)
+        if report['pass']:
+            out.append({'colors': colors, 'report': report})
+    return out
+
+
+def format_suggestions(found: list[dict], min_delta_e: float, seed: int) -> str:
+    lines = ['LLM-built candidate palettes for the expert to choose from (MV-04 [H]); '
+             'nothing is written to the genre file.',
+             f'threshold: CIEDE2000 >= {min_delta_e} (PROPOSED; expert confirms); seed {seed}']
+    for i, c in enumerate(found, 1):
+        lines.append(f'candidate {i}: ' + json.dumps(c['colors']))
+        lines.append('  ' + ', '.join(f"{sim} min {s['min_delta_e']:.2f}"
+                                      for sim, s in c['report']['simulations'].items()))
+    return '\n'.join(lines)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog='python -m experiments.legend_cvd', description=__doc__.split('\n')[0])
     sub = ap.add_subparsers(dest='cmd', required=True)
@@ -194,13 +284,36 @@ def main(argv=None) -> int:
                    help='minimum pairwise CIEDE2000 (default 10.0: a PROPOSED threshold the expert '
                         'confirms; G-09 preregistration is [H])')
     c.add_argument('--json', type=Path, help='also write the report as JSON to this path')
+    s = sub.add_parser('suggest', help='propose palettes that pass check (MV-04 [H]: expert chooses)')
+    s.add_argument('genre_json', type=Path)
+    s.add_argument('--min-delta-e', type=float, default=DEFAULT_MIN_DELTA_E,
+                   help='minimum pairwise CIEDE2000 in all four views (default 10.0, PROPOSED)')
+    s.add_argument('--count', type=int, default=3, help='palettes to propose (default 3, >= 1)')
+    s.add_argument('--seed', type=int, default=0, help='random.Random seed (default 0)')
+    s.add_argument('--json', type=Path, help='also write the candidates as JSON to this path')
     args = ap.parse_args(argv)
+    if args.cmd == 'suggest' and args.count < 1:
+        print('error: --count must be >= 1', file=sys.stderr)
+        return 2
     try:
         genre = json.loads(args.genre_json.read_text(encoding='utf-8'))
         colors = read_legend(genre)
     except (OSError, json.JSONDecodeError, LegendError) as exc:
         print(f'error: {exc}', file=sys.stderr)
         return 2
+    if args.cmd == 'suggest':
+        found = suggest(list(colors), args.min_delta_e, args.count, args.seed)
+        print(format_suggestions(found, args.min_delta_e, args.seed))
+        if args.json:
+            args.json.write_text(json.dumps(
+                {'status': 'LLM-built proposals; expert chooses (MV-04 [H])',
+                 'threshold': args.min_delta_e, 'threshold_status': 'proposed', 'seed': args.seed,
+                 'candidates': found}, indent=2) + '\n', encoding='utf-8')
+        if not found:
+            print(f'no palette for {len(colors)} colours passes CIEDE2000 >= {args.min_delta_e} '
+                  'in all four views; lower the threshold or reduce moves', file=sys.stderr)
+            return 1
+        return 0
     report = check(colors, args.min_delta_e)
     print(format_report(report))
     if args.json:
