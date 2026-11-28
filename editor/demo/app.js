@@ -30,6 +30,46 @@ const ui = {
 
 /** @type {{ editor: Awaited<ReturnType<typeof createEditor>> | null, sample: string | null }} */
 const state = { editor: null, sample: null };
+/** Read-only handle for the jsdom demo tests (editor/test/demo-link-prompt.test.js); no other caller. */
+export const demoState = state;
+
+/**
+ * FM-01 (demo): the in-page link dialog behind createEditor's onLinkRequest. Resolves the trimmed
+ * href on OK/Enter, null on Cancel, Escape or an empty field; never uses window.prompt.
+ * @param {string} text @returns {Promise<string | null>}
+ */
+function requestLink(text) {
+  const dialog = byId('link-dialog');
+  const form = /** @type {HTMLFormElement} */ (byId('link-form'));
+  const input = /** @type {HTMLInputElement} */ (byId('link-href'));
+  const cancel = byId('link-cancel');
+  byId('link-text').textContent = text;
+  input.value = '';
+  dialog.hidden = false;
+  input.focus();
+  return new Promise((resolve) => {
+    /** @param {string | null} href */
+    const done = (href) => {
+      form.removeEventListener('submit', onSubmit);
+      cancel.removeEventListener('click', onCancel);
+      input.removeEventListener('keydown', onKey);
+      dialog.hidden = true;
+      state.editor?.view.focus();
+      resolve(href || null);
+    };
+    /** @param {Event} e */
+    const onSubmit = (e) => { e.preventDefault(); done(input.value.trim()); };
+    const onCancel = () => done(null);
+    /** @param {KeyboardEvent} e */
+    const onKey = (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); done(null); }
+      else if (e.key === 'Enter') { e.preventDefault(); done(input.value.trim()); }
+    };
+    form.addEventListener('submit', onSubmit);
+    cancel.addEventListener('click', onCancel);
+    input.addEventListener('keydown', onKey);
+  });
+}
 /** @type {{ block: number, move: string }[]} */
 let moves = [];
 /** @type {any} */
@@ -147,7 +187,7 @@ async function load(name) {
   registerFlags = regFlags;
   state.sample = name;
   ui.root.replaceChildren();
-  const editor = await createEditor({ root: ui.root, markdown });
+  const editor = await createEditor({ root: ui.root, markdown, onLinkRequest: requestLink });
   if (token !== loadToken) { await editor.destroy(); return; }
   const plugin = moveOverlayPlugin(() => moves, () => genre, {
     initiallyOn: overlayOn,

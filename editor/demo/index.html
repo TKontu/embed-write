@@ -42,6 +42,14 @@
       <div id="legend-panel"></div>
     </aside>
   </main>
+  <div id="link-dialog" class="link-dialog" role="dialog" aria-modal="true" aria-labelledby="link-title" hidden>
+    <form id="link-form">
+      <p id="link-title">Link <q id="link-text"></q> to</p>
+      <input id="link-href" type="text" inputmode="url" aria-label="Link address" placeholder="https://…" autocomplete="off">
+      <button id="link-ok" type="submit">OK</button>
+      <button id="link-cancel" type="button">Cancel</button>
+    </form>
+  </div>
   <script type="module" src="/@app/demo/app.js"></script>
 </body>
 </html>
