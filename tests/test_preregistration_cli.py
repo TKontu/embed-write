@@ -2,9 +2,12 @@
 import contextlib
 import io
 import json
+import os
+import stat
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from experiments import preregistration as prereg
 
@@ -69,6 +72,54 @@ class PreregistrationCliTest(unittest.TestCase):
         self.assertEqual(out, "")
         self.assertEqual(path.read_text(encoding="utf-8"), "original")
         self.assertEqual([p.name for p in self.root.iterdir()], ["g01.json"])
+
+    def test_dangling_symlink_refused_target_not_created(self):
+        target = self.root / "elsewhere.json"
+        (self.root / "g01.json").symlink_to(target)
+        code, out, err = run(self.args())
+        self.assertEqual(code, 1)
+        self.assertIn("refusing to overwrite", err)
+        self.assertFalse(target.exists())
+        self.assertTrue((self.root / "g01.json").is_symlink())
+        self.assertEqual([p.name for p in self.root.iterdir()], ["g01.json"])
+
+    def test_concurrent_writer_refused(self):
+        path = self.root / "g01.json"
+        real_link = os.link
+
+        def racing_link(src, dst, *a, **k):
+            Path(dst).write_text("other", encoding="utf-8")
+            return real_link(src, dst, *a, **k)
+
+        with mock.patch.object(prereg.os, "link", racing_link):
+            code, _, err = run(self.args())
+        self.assertEqual(code, 1)
+        self.assertIn("refusing to overwrite", err)
+        self.assertEqual(path.read_text(encoding="utf-8"), "other")
+        self.assertEqual([p.name for p in self.root.iterdir()], ["g01.json"])
+
+    def test_record_mode_0644(self):
+        self.assertEqual(run(self.args())[0], 0)
+        mode = stat.S_IMODE((self.root / "g01.json").stat().st_mode)
+        self.assertEqual(mode, 0o644)
+
+    def test_oserror_one_line_no_traceback(self):
+        with mock.patch.object(prereg.os, "link", side_effect=PermissionError(13, "denied")):
+            code, out, err = run(self.args())
+        self.assertEqual(code, 1)
+        self.assertEqual(out, "")
+        self.assertEqual(len(err.strip().splitlines()), 1, err)
+        self.assertNotIn("Traceback", err)
+        self.assertEqual(list(self.root.iterdir()), [])
+
+    def test_unwritable_root_one_line(self):
+        root = self.root / "missing" / "nested"
+        with mock.patch.object(prereg.tempfile, "mkstemp", side_effect=PermissionError(13, "denied")):
+            code, out, err = run(self.args(extra=("--root", str(root))))
+        self.assertEqual(code, 1)
+        self.assertEqual(len(err.strip().splitlines()), 1, err)
+        self.assertNotIn("Traceback", err)
+        self.assertFalse(any(p.name.endswith(".tmp") for p in self.root.rglob("*")))
 
     def test_help_says_expert_only(self):
         code, out, _ = run(["confirm", "--help"])
