@@ -82,6 +82,12 @@ class ExpertRunSheetTest(unittest.TestCase):
         from experiments import g02_notes
         genre = {'section_types': [{'id': 'intro', 'headings': ['Introduction']}]}
         body = ' '.join(f'w{i}' for i in range(50))
+        (s1,) = re.findall(r'`(python -m [^`]+)`', self.step(1))  # names come from 2.1/2.2
+        t1 = shlex.split(s1)
+        notes_out, sections_out = t1[t1.index('--out') + 1], t1[t1.index('--sections-out') + 1]
+        (s2,) = re.findall(r'`(python -m [^`]+)`', self.step(2))
+        t2 = shlex.split(s2)
+        pool_out = t2[t2.index('--out') + 1]
 
         class Fake:  # LLM-built synthetic fixture, no model
             model_id = 'fake'
@@ -99,8 +105,8 @@ class ExpertRunSheetTest(unittest.TestCase):
                 rc = g02_notes.main(
                     ['--corpus', corpus, '--genre', 'G', '--split-seed', '0',
                      '--test-fraction', '0.5', '--n', '2', '--model-url', 'MU',
-                     '--model-name', 'MN', '--out', os.path.join(g02, 'notes.jsonl'),
-                     '--sections-out', os.path.join(g02, 'originals.jsonl')],
+                     '--model-name', 'MN', '--out', notes_out.replace('<PRIVATE:G02>', g02),
+                     '--sections-out', sections_out.replace('<PRIVATE:G02>', g02)],
                     model=Fake(), genre=genre)
             self.assertEqual(rc, 0)
             nxt = [l for l in buf.getvalue().splitlines() if l.startswith('next: ')][0]
@@ -113,6 +119,10 @@ class ExpertRunSheetTest(unittest.TestCase):
         self.assertEqual(sheet[i + 1], '30')  # the real run selects 30 sections
         printed[printed.index('--expected-sections') + 1] = '30'
         self.assertEqual(sheet, printed)
+        for flag, want in (('--notes', notes_out), ('--originals', sections_out),
+                           ('--pool', pool_out)):  # 2.3 consumes what 2.1/2.2 wrote
+            with self.subTest(flag=flag):
+                self.assertEqual(sheet[sheet.index(flag) + 1], want)
 
     def step(self, n):
         return self.text.split(f'### 2.{n}', 1)[1].split(f'### 2.{n + 1}', 1)[0]
@@ -159,8 +169,8 @@ class ExpertRunSheetTest(unittest.TestCase):
         d = shlex.split(draft)
         self.assertEqual(d[d.index('--session') + 1], session)
         self.assertEqual(d[d.index('--choices') + 1], choices)
-        for n in (4, 5, 6):  # prose too: no bare short names left
-            self.assertIsNone(re.search(r'(?<![\w/])(session\.json|choices\.jsonl)', self.step(n)), n)
+        for n in (4, 5, 6):  # prose too: no bare or /-prefixed short names left
+            self.assertIsNone(re.search(r'(?<![\w-])(session\.json|choices\.jsonl)', self.step(n)), n)
 
     def test_step_2_6_is_the_after_judging_line_g02_session_prints(self):
         import contextlib, io, json, os, tempfile
