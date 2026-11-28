@@ -19,8 +19,9 @@ Completeness counts: unanswered session items, choices for unknown item ids, dup
 choices for an already answered item (blind_ui treats an item with any recorded choice as done,
 so the first recorded choice counts and later ones are ignored and counted), malformed lines,
 a torn final line, and contradicting choices (comparison, repeat_of, pair_id, choice or winner not
-matching the session item); ``complete`` is false for a session with no items. A session breaking the shared contract (unknown comparison, wrong
-arm pair, duplicate item id) raises G02SessionError. Any contradiction raises G02ContradictionError (no numbers).
+matching the session item); ``complete`` is false for a session with no items. A session
+breaking the shared contract (unknown comparison, wrong arm pair, duplicate item id) raises
+G02SessionError. Any contradiction raises G02ContradictionError (no numbers).
 
 Only ``A_vs_C`` carries a ``verdict_hint`` (meets / misses / n/a); no gate status is emitted.
 Reason texts and section texts never enter the output (count of non-empty reasons only).
